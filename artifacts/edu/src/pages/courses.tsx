@@ -9,7 +9,6 @@ import { useState } from "react";
 import { Search, Star, Clock, Users, BookOpen, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const CATEGORIES = ["All", "Forex", "Crypto", "Stocks", "Options", "Risk Management", "Technical Analysis"];
 const LEVELS = ["All Levels", "Beginner", "Intermediate", "Advanced"];
 
 const levelColors: Record<string, string> = {
@@ -24,9 +23,16 @@ export default function Courses() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeLevel, setActiveLevel] = useState("All Levels");
 
+  // Build category list dynamically from real data so pills always match DB values
+  const categories = [
+    "All",
+    ...Array.from(new Set((courses ?? []).map((c) => c.category).filter(Boolean)))
+      .sort() as string[],
+  ];
+
   const filtered = (courses ?? []).filter((c) => {
     const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase());
-    const matchCat = activeCategory === "All" || c.category === activeCategory;
+    const matchCat = activeCategory === "All" || c.category?.toLowerCase() === activeCategory.toLowerCase();
     const matchLevel = activeLevel === "All Levels" || c.level?.toLowerCase() === activeLevel.toLowerCase();
     return matchSearch && matchCat && matchLevel;
   });
@@ -64,13 +70,13 @@ export default function Courses() {
 
       {/* Category pills */}
       <div className="flex gap-2 flex-wrap">
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
             className={cn(
-              "px-3 py-1.5 rounded-full text-sm font-medium border transition-all",
-              activeCategory === cat
+              "px-3 py-1.5 rounded-full text-sm font-medium border transition-all capitalize",
+              activeCategory.toLowerCase() === cat.toLowerCase()
                 ? "bg-primary text-white border-primary shadow-sm"
                 : "bg-white text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
             )}
