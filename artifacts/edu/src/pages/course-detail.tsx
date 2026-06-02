@@ -16,37 +16,34 @@ import {
   MessageSquare, Trophy, Zap, BarChart2, PlayCircle, CheckCheck,
 } from "lucide-react";
 
-/* ─── Static curriculum ─────────────────────────────────────────── */
-const CHAPTERS = [
-  { id: 1, title: "Foundations of Price Action", dur: "1h 42m",
-    lessons: [
-      { t: "What is Price Action?", d: "8:24" },
-      { t: "Reading Candlestick Charts", d: "11:08" },
-      { t: "Support & Resistance Basics", d: "14:32" },
-      { t: "Trend Identification", d: "9:55" },
-    ]},
-  { id: 2, title: "Technical Analysis Essentials", dur: "2h 05m",
-    lessons: [
-      { t: "Chart Patterns Overview", d: "12:40" },
-      { t: "Moving Averages Deep Dive", d: "15:22" },
-      { t: "RSI & MACD Explained", d: "17:08" },
-      { t: "Bollinger Bands Strategy", d: "13:50" },
-    ]},
-  { id: 3, title: "Risk Management Mastery", dur: "1h 28m",
-    lessons: [
-      { t: "Position Sizing Formula", d: "10:12" },
-      { t: "Stop Loss Strategies", d: "12:30" },
-      { t: "Risk-Reward Optimization", d: "14:05" },
-      { t: "Portfolio Risk Management", d: "11:48" },
-    ]},
-  { id: 4, title: "Advanced Entry & Exit", dur: "1h 55m",
-    lessons: [
-      { t: "Multi-Timeframe Analysis", d: "16:20" },
-      { t: "Order Flow Basics", d: "13:44" },
-      { t: "Scaling In & Out", d: "12:18" },
-      { t: "Psychology of a Trade", d: "17:52" },
-    ]},
-];
+/* ─── Chapter builder (from DB lessons) ─────────────────────────── */
+const CHAPTER_TITLES: Record<string, string[]> = {
+  forex:   ["Forex Foundations", "Technical Analysis", "Trade Execution", "Risk & Psychology", "Advanced Mastery"],
+  crypto:  ["Blockchain & Crypto Basics", "Trading Techniques", "DeFi & On-Chain", "Portfolio Strategy"],
+  options: ["Options Fundamentals", "Core Strategies", "Advanced Greeks", "Income Mastery"],
+  futures: ["Futures Basics", "Contracts & Mechanics", "Advanced Strategies", "Risk Management"],
+  stocks:  ["Market Foundations", "Security Analysis", "Portfolio Building", "Advanced Techniques"],
+};
+const CHAPTER_SIZE = 4;
+
+type DbLesson = { id: number; title: string; duration: number | null; order: number; isFree: boolean; type: string };
+
+function buildChapters(dbLessons: DbLesson[], category: string) {
+  const titles = CHAPTER_TITLES[(category ?? "").toLowerCase()] ?? [];
+  const groups: { id: number; title: string; dur: string; lessons: DbLesson[] }[] = [];
+  for (let i = 0; i < dbLessons.length; i += CHAPTER_SIZE) {
+    const chunk = dbLessons.slice(i, i + CHAPTER_SIZE);
+    const totalMin = chunk.reduce((s, l) => s + (l.duration ?? 0), 0);
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    groups.push({
+      id: i / CHAPTER_SIZE + 1,
+      title: titles[i / CHAPTER_SIZE] ?? `Chapter ${i / CHAPTER_SIZE + 1}`,
+      dur: h > 0 ? `${h}h ${m}m` : `${m}m`,
+      lessons: chunk,
+    });
+  }
+  return groups;
+}
 
 /* ─── Quiz ─────────────────────────────────────────────────────── */
 const QUIZ: { q: string; opts: string[]; ans: number }[] = [
@@ -92,11 +89,14 @@ export default function CourseDetail() {
   const [score,        setScore]        = useState(0);
   const [doneTasks,    setDoneTasks]    = useState<Set<number>>(new Set());
 
-  const isEnrolled = enrollments?.some(e => e.courseId === courseId) ?? false;
-  const allLessons = CHAPTERS.flatMap(c => c.lessons.map(l => ({ ...l, ch: c.title })));
-  const totalL     = allLessons.length;
-  const pct        = totalL ? Math.round((done.size / totalL) * 100) : 0;
-  const cur        = allLessons[activeIdx];
+  const isEnrolled    = enrollments?.some(e => e.courseId === courseId) ?? false;
+  const dbLessons     = (lessons ?? []) as DbLesson[];
+  const chapterGroups = buildChapters(dbLessons, course?.category ?? "forex");
+  const totalL        = dbLessons.length;
+  const pct           = totalL ? Math.round((done.size / totalL) * 100) : 0;
+  const cur           = dbLessons[activeIdx];
+  const curChapter    = chapterGroups.find(ch => ch.lessons.some(l => l.id === cur?.id));
+  const chIdx         = curChapter ? chapterGroups.indexOf(curChapter) : 0;
 
   const doEnroll = async () => {
     try {
@@ -240,17 +240,20 @@ export default function CourseDetail() {
             <span className="text-[11px] text-slate-400">{totalL} lessons</span>
           </div>
           <div className="overflow-y-auto max-h-[560px] divide-y divide-slate-100">
-            {CHAPTERS.map((ch, ci) => {
-              const startIdx = CHAPTERS.slice(0,ci).reduce((a,c) => a+c.lessons.length, 0);
+            {chapterGroups.length === 0 && (
+              <p className="px-4 py-6 text-[12px] text-slate-400 text-center">Curriculum loading…</p>
+            )}
+            {chapterGroups.map((ch, ci) => {
+              const startIdx = chapterGroups.slice(0, ci).reduce((a, c) => a + c.lessons.length, 0);
               const open = expanded === ch.id;
-              const chDone = ch.lessons.every((_,li) => done.has(String(startIdx+li)));
+              const chDone = ch.lessons.every((_, li) => done.has(String(startIdx + li)));
               return (
                 <div key={ch.id}>
                   <button onClick={() => setExpanded(open ? -1 : ch.id)}
                     className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-slate-50 transition-colors text-left">
                     <div className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
                       chDone ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-500")}>
-                      {chDone ? <CheckCheck className="h-3 w-3" /> : ci+1}
+                      {chDone ? <CheckCheck className="h-3 w-3" /> : ci + 1}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[12.5px] font-semibold text-slate-700 truncate">{ch.title}</p>
@@ -265,9 +268,9 @@ export default function CourseDetail() {
                         const idx = startIdx + li;
                         const isDone   = done.has(String(idx));
                         const isActive = activeIdx === idx;
-                        const locked   = !isEnrolled && idx > 1;
+                        const locked   = !isEnrolled && !l.isFree && idx > 1;
                         return (
-                          <button key={li} disabled={locked}
+                          <button key={l.id} disabled={locked}
                             onClick={() => { setActiveIdx(idx); setTab("overview"); }}
                             className={cn("w-full flex items-center gap-2.5 px-5 py-2 text-left transition-colors",
                               isActive ? "bg-blue-50 border-l-[3px] border-blue-600" : "border-l-[3px] border-transparent hover:bg-slate-100",
@@ -280,9 +283,11 @@ export default function CourseDetail() {
                             <span className={cn("flex-1 text-[12px] truncate",
                               isActive ? "text-blue-700 font-semibold"
                             : isDone  ? "text-slate-400 line-through" : "text-slate-600")}>
-                              {l.t}
+                              {l.title}
                             </span>
-                            <span className="text-[10.5px] text-slate-400 shrink-0">{l.d}</span>
+                            <span className="text-[10.5px] text-slate-400 shrink-0">
+                              {l.duration ? `${l.duration}m` : "—"}
+                            </span>
                           </button>
                         );
                       })}
@@ -304,8 +309,8 @@ export default function CourseDetail() {
                 <Play className="h-6 w-6 text-white fill-white ml-0.5" />
               </button>
               <div className="absolute bottom-3 left-4 right-4">
-                <p className="text-white font-semibold text-[13px]">{cur?.t}</p>
-                <p className="text-white/60 text-[11px]">{cur?.ch} · {cur?.d}</p>
+                <p className="text-white font-semibold text-[13px]">{cur?.title}</p>
+                <p className="text-white/60 text-[11px]">{curChapter?.title ?? ""} · {cur?.duration ? `${cur.duration}m` : "—"}</p>
               </div>
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/20">
                 <div className="h-full bg-blue-500 w-1/3" />
@@ -335,19 +340,19 @@ export default function CourseDetail() {
               {tab === "overview" && (
                 <div className="space-y-4">
                   <div>
-                    <h2 className="text-[17px] font-bold text-slate-800 mb-0.5">{cur?.t}</h2>
-                    <p className="text-[12px] text-slate-400">{cur?.ch}</p>
+                    <h2 className="text-[17px] font-bold text-slate-800 mb-0.5">{cur?.title}</h2>
+                    <p className="text-[12px] text-slate-400">{curChapter?.title ?? ""}</p>
                   </div>
                   <p className="text-[13px] text-slate-500 leading-relaxed">
-                    In this lesson you'll explore <em>{cur?.t?.toLowerCase()}</em> in depth. Professional traders use these
+                    In this lesson you'll explore <em>{cur?.title?.toLowerCase()}</em> in depth. Professional traders use these
                     techniques to identify high-probability setups with clear entry, stop loss, and take profit levels.
                     By the end you'll have a practical framework applicable to any market immediately.
                   </p>
                   <div className="grid sm:grid-cols-3 gap-2.5">
                     {[
-                      { Icon: Clock,    l: "Duration", v: cur?.d ?? "—" },
+                      { Icon: Clock,    l: "Duration", v: cur?.duration ? `${cur.duration}m` : "—" },
                       { Icon: Zap,      l: "XP Reward", v: "+50 XP" },
-                      { Icon: BarChart2,l: "Chapter", v: `Ch. ${CHAPTERS.findIndex(c=>c.title===cur?.ch)+1}` },
+                      { Icon: BarChart2,l: "Chapter", v: `Ch. ${chIdx + 1}` },
                     ].map(item => (
                       <div key={item.l} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
                         <item.Icon className="h-4 w-4 text-blue-600 shrink-0" />

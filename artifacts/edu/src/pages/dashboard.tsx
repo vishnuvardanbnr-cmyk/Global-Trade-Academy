@@ -1,34 +1,42 @@
-import { useGetMe, useGetDashboardSummary, useGetLeaderboard } from "@workspace/api-client-react";
+import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
 import {
-  BookOpen, Trophy, TrendingUp, Video, Flame, ArrowUpRight, ArrowDownRight,
+  BookOpen, Trophy, TrendingUp, Video, ArrowUpRight, ArrowDownRight,
   Star, Clock, CheckCircle2, Target, Zap, BarChart3, Activity,
+  Users, GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 
-const watchlistData = [
-  { symbol: "BTC/USD", price: "$67,420", change: "+3.12%", up: true },
-  { symbol: "ETH/USD", price: "$3,840", change: "+1.87%", up: true },
-  { symbol: "EUR/USD", price: "1.0842", change: "-0.14%", up: false },
-  { symbol: "GLD", price: "$2,180", change: "+0.72%", up: true },
-  { symbol: "SPX500", price: "5,248", change: "+0.44%", up: true },
-];
+const ACTIVITY_META: Record<string, { icon: typeof CheckCircle2; color: string; xp: string }> = {
+  enrollment:      { icon: GraduationCap, color: "text-blue-500 bg-blue-50",    xp: "+25 XP" },
+  lesson_complete: { icon: CheckCircle2,  color: "text-emerald-500 bg-emerald-50", xp: "+50 XP" },
+  live_class:      { icon: Video,          color: "text-blue-500 bg-blue-50",    xp: "+30 XP" },
+  post:            { icon: Users,          color: "text-violet-500 bg-violet-50", xp: "+10 XP" },
+  copy_trade:      { icon: TrendingUp,     color: "text-emerald-500 bg-emerald-50", xp: "+25 XP" },
+  achievement:     { icon: Star,           color: "text-amber-500 bg-amber-50",  xp: "+100 XP" },
+};
 
-const recentActivity = [
-  { icon: CheckCircle2, color: "text-emerald-500 bg-emerald-50", label: "Completed: Advanced Price Action", time: "2h ago", xp: "+50 XP" },
-  { icon: Star, color: "text-amber-500 bg-amber-50", label: "Earned Badge: First Trade Analysis", time: "5h ago", xp: "+100 XP" },
-  { icon: Video, color: "text-blue-500 bg-blue-50", label: "Joined Live Session: Forex Scalping", time: "Yesterday", xp: "+30 XP" },
-  { icon: TrendingUp, color: "text-violet-500 bg-violet-50", label: "Copied Trade: BTC Long +2.1%", time: "2d ago", xp: "+25 XP" },
-];
+function timeAgo(date: string | Date) {
+  const diff = Date.now() - new Date(date).getTime();
+  const h = Math.floor(diff / 3600000);
+  if (h < 1) return "Just now";
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "Yesterday";
+  if (d < 7) return `${d}d ago`;
+  return `${Math.floor(d / 7)}w ago`;
+}
 
 export default function Dashboard() {
   const { data: user, isLoading: userLoading } = useGetMe();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
   const { data: leaderboard, isLoading: leaderLoading } = useGetLeaderboard();
+  const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
+  const { data: enrollments } = useListEnrollments();
+  const { data: allCourses } = useListCourses({});
 
   const isLoading = userLoading || summaryLoading;
 
@@ -43,25 +51,30 @@ export default function Dashboard() {
     {
       label: "Total XP",
       value: isLoading ? "—" : (user?.xp ?? 0).toLocaleString(),
-      sub: "Top 15% of students",
+      sub: "Keep learning to earn more",
       icon: Trophy,
       gradient: "stat-card-amber",
     },
     {
-      label: "Copy P&L",
-      value: "+$1,240.50",
-      sub: "+4.5% this month",
+      label: "Copy Subscriptions",
+      value: isLoading ? "—" : String(summary?.copySubscriptions ?? 0),
+      sub: "Active traders copied",
       icon: TrendingUp,
       gradient: "stat-card-green",
     },
     {
       label: "Upcoming Classes",
       value: isLoading ? "—" : String(summary?.upcomingClasses ?? 0),
-      sub: "Next in 2 hours",
+      sub: summary?.upcomingClasses ? "Registered & scheduled" : "Browse live sessions",
       icon: Video,
       gradient: "stat-card-purple",
     },
   ];
+
+  const enrolledCourses = (enrollments ?? [])
+    .map(e => ({ enrollment: e, course: (allCourses ?? []).find(c => c.id === e.courseId) }))
+    .filter(ec => ec.course)
+    .slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -76,10 +89,6 @@ export default function Dashboard() {
             </h1>
           )}
           <p className="text-sm text-muted-foreground">Here's what's happening with your portfolio and learning today.</p>
-        </div>
-        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-full px-3 py-1.5 text-sm font-medium">
-          <Flame className="h-3.5 w-3.5" />
-          <span>7-day streak</span>
         </div>
       </div>
 
@@ -103,39 +112,56 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Learning Progress */}
+      {/* Learning Progress + Quick Actions */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2 shadow-xs border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Learning Progress</CardTitle>
+            <CardTitle className="text-base font-semibold">My Courses</CardTitle>
             <Link href="/courses">
               <button className="text-xs font-medium text-primary hover:underline flex items-center gap-1">
-                View All <ArrowUpRight className="h-3.5 w-3.5" />
+                Browse All <ArrowUpRight className="h-3.5 w-3.5" />
               </button>
             </Link>
           </CardHeader>
-          <CardContent className="space-y-5">
-            {[
-              { name: "Forex Fundamentals", progress: 78, lessons: "14/18", color: "bg-blue-500" },
-              { name: "Technical Analysis Pro", progress: 45, lessons: "9/20", color: "bg-violet-500" },
-              { name: "Risk Management Mastery", progress: 20, lessons: "3/15", color: "bg-emerald-500" },
-            ].map((course) => (
-              <div key={course.name}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm font-medium text-foreground">{course.name}</span>
-                  <span className="text-xs text-muted-foreground">{course.lessons} lessons</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 bg-secondary rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${course.color} transition-all`}
-                      style={{ width: `${course.progress}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-semibold text-muted-foreground w-9 text-right">{course.progress}%</span>
-                </div>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-4">
+                {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
-            ))}
+            ) : enrolledCourses.length > 0 ? (
+              <div className="space-y-5">
+                {enrolledCourses.map(({ enrollment, course }) => (
+                  <Link key={enrollment.id} href={`/courses/${course!.id}`}>
+                    <div className="cursor-pointer group">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate max-w-[280px]">{course!.title}</span>
+                        <div className="flex items-center gap-2 ml-2 shrink-0">
+                          <Badge variant="outline" className="text-[10px] capitalize">{course!.level}</Badge>
+                          <span className="text-xs text-muted-foreground">{course!.lessonCount} lessons</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 bg-secondary rounded-full h-2 overflow-hidden">
+                          <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: "0%" }} />
+                        </div>
+                        <span className="text-xs font-semibold text-muted-foreground w-9 text-right">0%</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <GraduationCap className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-sm font-medium text-foreground mb-1">No courses enrolled yet</p>
+                <p className="text-xs text-muted-foreground mb-4">Start with a free course to earn your first XP</p>
+                <Link href="/courses">
+                  <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity">
+                    Browse Courses
+                  </button>
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -146,10 +172,10 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="space-y-2">
             {[
-              { icon: BookOpen, label: "Continue Learning", sub: "Forex Fundamentals", href: "/courses", color: "bg-blue-50 text-blue-600" },
-              { icon: BarChart3, label: "Open Markets", sub: "BTC/USD up 3.1%", href: "/trading", color: "bg-emerald-50 text-emerald-600" },
-              { icon: Target, label: "Copy a Trader", sub: "3 new verified traders", href: "/copy-trading", color: "bg-violet-50 text-violet-600" },
-              { icon: Zap, label: "Live Session", sub: "Starts in 2 hours", href: "/live", color: "bg-amber-50 text-amber-600" },
+              { icon: BookOpen, label: "Browse Courses", sub: `${(allCourses ?? []).length} courses available`, href: "/courses", color: "bg-blue-50 text-blue-600" },
+              { icon: BarChart3, label: "Trading Chat", sub: "Live market analysis", href: "/trading-chat", color: "bg-emerald-50 text-emerald-600" },
+              { icon: Target, label: "Copy a Trader", sub: "6 verified traders", href: "/copy-trading", color: "bg-violet-50 text-violet-600" },
+              { icon: Zap, label: "Live Sessions", sub: `${summary?.upcomingClasses ?? 0} upcoming`, href: "/live", color: "bg-amber-50 text-amber-600" },
             ].map((action) => (
               <Link key={action.label} href={action.href}>
                 <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary transition-colors cursor-pointer group">
@@ -168,60 +194,77 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Market + Activity */}
+      {/* Market Watchlist placeholder + Activity */}
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Watchlist */}
+        {/* Watchlist — prices from external feed, show symbols only */}
         <Card className="shadow-xs border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base font-semibold">Market Watchlist</CardTitle>
-            <Link href="/trading">
+            <Link href="/trading-chat">
               <button className="text-xs font-medium text-primary hover:underline">Open Chart</button>
             </Link>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-border">
-              {watchlistData.map((item) => (
+              {[
+                { symbol: "BTC/USD", market: "crypto" },
+                { symbol: "ETH/USD", market: "crypto" },
+                { symbol: "EUR/USD", market: "forex" },
+                { symbol: "XAU/USD", market: "commodity" },
+                { symbol: "SPX500",  market: "index" },
+              ].map((item) => (
                 <div key={item.symbol} className="flex items-center justify-between px-6 py-3 hover:bg-secondary/50 transition-colors">
                   <div>
                     <p className="text-sm font-semibold text-foreground">{item.symbol}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{item.market}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-foreground">{item.price}</p>
-                    <p className={cn("text-xs font-medium flex items-center justify-end gap-0.5", item.up ? "text-emerald-600" : "text-red-500")}>
-                      {item.up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                      {item.change}
-                    </p>
-                  </div>
+                  <Link href="/trading-chat">
+                    <button className="text-xs text-primary hover:underline flex items-center gap-0.5">
+                      View <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  </Link>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* Activity feed */}
+        {/* Activity feed — real from DB */}
         <Card className="lg:col-span-2 shadow-xs border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
+            <CardTitle className="text-base font-semibold">Platform Activity</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="space-y-4">
-            {recentActivity.map((item, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${item.color}`}>
-                  <item.icon className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground leading-tight">{item.label}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <Clock className="h-3 w-3 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground">{item.time}</p>
-                  </div>
-                </div>
-                <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 text-xs shrink-0">
-                  {item.xp}
-                </Badge>
+            {activityLoading ? (
+              <div className="space-y-3">
+                {[1,2,3,4].map(i => <Skeleton key={i} className="h-12 w-full" />)}
               </div>
-            ))}
+            ) : (activity ?? []).length > 0 ? (
+              (activity ?? []).slice(0, 5).map((item) => {
+                const meta = ACTIVITY_META[item.type] ?? ACTIVITY_META.achievement;
+                const Icon = meta.icon;
+                return (
+                  <div key={item.id} className="flex items-start gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${meta.color}`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground leading-tight">{item.description}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <Clock className="h-3 w-3 text-muted-foreground" />
+                        <p className="text-xs text-muted-foreground">{timeAgo(item.createdAt as string)}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 text-xs shrink-0">
+                      {meta.xp}
+                    </Badge>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-6">No recent activity yet.</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -230,7 +273,7 @@ export default function Dashboard() {
       <Card className="shadow-xs border-border">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-base font-semibold">XP Leaderboard</CardTitle>
-          <Badge variant="secondary" className="text-xs">This Week</Badge>
+          <Badge variant="secondary" className="text-xs">All Time</Badge>
         </CardHeader>
         <CardContent>
           {leaderLoading ? (
@@ -260,7 +303,7 @@ export default function Dashboard() {
                 );
               })}
               {(!leaderboard || leaderboard.length === 0) && (
-                <p className="text-sm text-muted-foreground text-center py-6">No leaderboard data yet.</p>
+                <p className="text-sm text-muted-foreground text-center py-6">Be the first on the leaderboard — enroll in a course!</p>
               )}
             </div>
           )}
