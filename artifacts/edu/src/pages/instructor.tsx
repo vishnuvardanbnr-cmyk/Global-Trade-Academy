@@ -5,6 +5,7 @@ import {
   getListCoursesQueryKey, getListLiveClassesQueryKey,
   useListInstructorReviews, useApproveGate, useRejectGate,
   getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
+  useGetGateAnalytics, getGetGateAnalyticsQueryKey,
   type GateReviewItem,
 } from "@workspace/api-client-react";
 import { useUser } from "@clerk/react";
@@ -23,7 +24,7 @@ import { useForm } from "react-hook-form";
 import {
   Plus, BookOpen, Video, Users, Trash2, Settings2,
   ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  FileQuestion, Clock,
+  FileQuestion, Clock, BarChart3,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
@@ -341,6 +342,114 @@ function ReviewQueueCard() {
   );
 }
 
+/* ─── Quiz Analytics Card ─── */
+function QuizAnalyticsCard({ courses }: { courses?: { id: number; title: string }[] }) {
+  const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>(undefined);
+
+  const { data: analytics, isLoading } = useGetGateAnalytics(
+    selectedCourseId != null ? { courseId: selectedCourseId } : {},
+    { query: { queryKey: getGetGateAnalyticsQueryKey(selectedCourseId != null ? { courseId: selectedCourseId } : {}) } },
+  );
+
+  const rows = analytics ?? [];
+
+  return (
+    <Card data-testid="quiz-analytics-card">
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <div className="flex items-center gap-2">
+          <CardTitle>Quiz Analytics</CardTitle>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={selectedCourseId != null ? String(selectedCourseId) : "all"}
+            onValueChange={(v) => setSelectedCourseId(v === "all" ? undefined : parseInt(v))}
+          >
+            <SelectTrigger className="w-48 h-8 text-sm" data-testid="select-analytics-course">
+              <SelectValue placeholder="All courses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All courses</SelectItem>
+              {courses?.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <BarChart3 className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+        ) : rows.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground">
+            <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No gate data yet. Analytics will appear once students submit quiz gates.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground text-xs">
+                  <th className="text-left py-2 pr-3 font-medium">Lesson</th>
+                  {selectedCourseId == null && <th className="text-left py-2 pr-3 font-medium">Course</th>}
+                  <th className="text-right py-2 pr-3 font-medium">Pass Rate</th>
+                  <th className="text-right py-2 pr-3 font-medium">Avg Score</th>
+                  <th className="text-right py-2 pr-3 font-medium">Total</th>
+                  <th className="text-right py-2 pr-3 font-medium text-amber-600">Pending</th>
+                  <th className="text-right py-2 pr-3 font-medium text-emerald-600">Approved</th>
+                  <th className="text-right py-2 font-medium text-red-500">Rejected</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.courseId}:${row.lessonId}`} className="border-b border-border/40 hover:bg-secondary/20 transition-colors" data-testid={`analytics-row-${row.lessonId}`}>
+                    <td className="py-2.5 pr-3">
+                      <p className="font-medium text-foreground truncate max-w-[180px]">{row.lessonTitle ?? `Lesson #${row.lessonId}`}</p>
+                      {row.quizTitle && <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{row.quizTitle}</p>}
+                    </td>
+                    {selectedCourseId == null && (
+                      <td className="py-2.5 pr-3 text-muted-foreground truncate max-w-[140px]">{row.courseTitle}</td>
+                    )}
+                    <td className="py-2.5 pr-3 text-right">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 font-semibold",
+                        row.passRate >= 70 ? "text-emerald-600" : row.passRate >= 40 ? "text-amber-600" : "text-red-500"
+                      )}>
+                        {row.approved + row.rejected > 0 ? (
+                          <>{row.passRate}%</>
+                        ) : (
+                          <span className="text-muted-foreground text-xs font-normal">—</span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-3 text-right text-muted-foreground">
+                      {row.averageScore != null ? `${row.averageScore}%` : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right font-medium">{row.total}</td>
+                    <td className="py-2.5 pr-3 text-right">
+                      {row.pending > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                          <Clock className="h-3 w-3" />{row.pending}
+                        </span>
+                      ) : <span className="text-muted-foreground">0</span>}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right">
+                      <span className={row.approved > 0 ? "text-emerald-600 font-medium" : "text-muted-foreground"}>{row.approved}</span>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      <span className={row.rejected > 0 ? "text-red-500 font-medium" : "text-muted-foreground"}>{row.rejected}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function InstructorPanel() {
   const { user } = useUser();
   const qc = useQueryClient();
@@ -407,6 +516,9 @@ export default function InstructorPanel() {
 
       {/* Review Queue — always visible for instructor */}
       <ReviewQueueCard />
+
+      {/* Quiz Analytics */}
+      <QuizAnalyticsCard courses={courses?.map((c) => ({ id: c.id, title: c.title }))} />
 
       {/* Courses */}
       <Card>

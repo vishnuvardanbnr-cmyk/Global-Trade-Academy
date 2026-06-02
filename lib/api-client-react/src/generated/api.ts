@@ -42,10 +42,12 @@ import type {
   EnrollmentInput,
   GateRejectInput,
   GateReviewItem,
+  GetGateAnalyticsParams,
   HealthStatus,
   LeaderboardEntry,
   Lesson,
   LessonGate,
+  LessonGateAnalytics,
   LessonInput,
   LessonProgress,
   LessonProgressUpdate,
@@ -5614,6 +5616,90 @@ export function useGetLessonGate<TData = Awaited<ReturnType<typeof getLessonGate
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetLessonGateQueryOptions(lessonId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetGateAnalyticsUrl = (params?: GetGateAnalyticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/instructor/gates/analytics?${stringifiedParams}` : `/api/instructor/gates/analytics`
+}
+
+/**
+ * @summary Get per-lesson quiz gate analytics (instructor)
+ */
+export const getGateAnalytics = async (params?: GetGateAnalyticsParams, options?: RequestInit): Promise<LessonGateAnalytics[]> => {
+
+  return customFetch<LessonGateAnalytics[]>(getGetGateAnalyticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGateAnalyticsQueryKey = (params?: GetGateAnalyticsParams,) => {
+    return [
+    `/api/instructor/gates/analytics`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetGateAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getGateAnalytics>>, TError = ErrorType<unknown>>(params?: GetGateAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGateAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGateAnalyticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGateAnalytics>>> = ({ signal }) => getGateAnalytics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGateAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetGateAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getGateAnalytics>>>
+export type GetGateAnalyticsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get per-lesson quiz gate analytics (instructor)
+ */
+
+export function useGetGateAnalytics<TData = Awaited<ReturnType<typeof getGateAnalytics>>, TError = ErrorType<unknown>>(
+ params?: GetGateAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGateAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetGateAnalyticsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

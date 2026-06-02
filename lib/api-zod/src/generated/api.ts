@@ -1503,6 +1503,29 @@ export const GetLessonGateResponse = zod.object({
 
 
 /**
+ * @summary Get per-lesson quiz gate analytics (instructor)
+ */
+export const GetGateAnalyticsQueryParams = zod.object({
+  "courseId": zod.coerce.number().optional()
+})
+
+export const GetGateAnalyticsResponseItem = zod.object({
+  "lessonId": zod.number(),
+  "lessonTitle": zod.string().nullish(),
+  "courseId": zod.number(),
+  "courseTitle": zod.string().nullish(),
+  "quizTitle": zod.string().nullish(),
+  "total": zod.number(),
+  "pending": zod.number(),
+  "approved": zod.number(),
+  "rejected": zod.number(),
+  "passRate": zod.number(),
+  "averageScore": zod.number().nullish()
+})
+export const GetGateAnalyticsResponse = zod.array(GetGateAnalyticsResponseItem)
+
+
+/**
  * @summary List pending and recent gate reviews (instructor)
  */
 export const ListInstructorReviewsQueryParams = zod.object({

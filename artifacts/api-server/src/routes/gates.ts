@@ -53,6 +53,118 @@ router.get("/lessons/:lessonId/gate", async (req, res): Promise<void> => {
   }
 });
 
+/* ── INSTRUCTOR: GET /instructor/gates/analytics ─────────────────── */
+router.get("/instructor/gates/analytics", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const courseIdFilter = req.query.courseId ? parseInt(req.query.courseId as string) : undefined;
+
+    const myCourses = await db
+      .select({ id: coursesTable.id, title: coursesTable.title })
+      .from(coursesTable)
+      .where(eq(coursesTable.instructorId, clerkId));
+
+    if (myCourses.length === 0) { res.json([]); return; }
+
+    const courseMap = new Map(myCourses.map((c) => [c.id, c.title]));
+    let courseIds = myCourses.map((c) => c.id);
+    if (courseIdFilter && !isNaN(courseIdFilter)) {
+      if (!courseMap.has(courseIdFilter)) { res.status(403).json({ error: "Forbidden" }); return; }
+      courseIds = [courseIdFilter];
+    }
+
+    // Load all gates for these courses
+    const gates = await db
+      .select()
+      .from(lessonGatesTable)
+      .where(inArray(lessonGatesTable.courseId, courseIds));
+
+    if (gates.length === 0) { res.json([]); return; }
+
+    // Collect unique lesson/quiz IDs for name lookups
+    const lessonIds = [...new Set(gates.map((g) => g.lessonId))];
+    const quizIds = [...new Set(gates.map((g) => g.requiredQuizId))];
+
+    const [lessons, quizzes] = await Promise.all([
+      db.select({ id: lessonsTable.id, title: lessonsTable.title })
+        .from(lessonsTable)
+        .where(inArray(lessonsTable.id, lessonIds)),
+      db.select({ id: quizzesTable.id, title: quizzesTable.title })
+        .from(quizzesTable)
+        .where(inArray(quizzesTable.id, quizIds)),
+    ]);
+
+    const lessonMap = new Map(lessons.map((l) => [l.id, l.title]));
+    const quizMap = new Map(quizzes.map((q) => [q.id, q.title]));
+
+    // Aggregate per (courseId, lessonId)
+    type Bucket = {
+      lessonId: number;
+      courseId: number;
+      total: number;
+      pending: number;
+      approved: number;
+      rejected: number;
+      scoreSum: number;
+      scoreCount: number;
+    };
+    const buckets = new Map<string, Bucket>();
+
+    for (const gate of gates) {
+      const key = `${gate.courseId}:${gate.lessonId}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, { lessonId: gate.lessonId, courseId: gate.courseId, total: 0, pending: 0, approved: 0, rejected: 0, scoreSum: 0, scoreCount: 0 });
+      }
+      const b = buckets.get(key)!;
+      b.total++;
+      if (gate.status === "pending_review") b.pending++;
+      else if (gate.status === "approved") b.approved++;
+      else if (gate.status === "rejected") b.rejected++;
+      if (gate.score != null) { b.scoreSum += gate.score; b.scoreCount++; }
+    }
+
+    // Determine representative quizId for each lesson (most common)
+    const lessonQuizCount = new Map<string, Map<number, number>>();
+    for (const gate of gates) {
+      const key = `${gate.courseId}:${gate.lessonId}`;
+      if (!lessonQuizCount.has(key)) lessonQuizCount.set(key, new Map());
+      const qm = lessonQuizCount.get(key)!;
+      qm.set(gate.requiredQuizId, (qm.get(gate.requiredQuizId) ?? 0) + 1);
+    }
+
+    const result = [...buckets.values()].map((b) => {
+      const key = `${b.courseId}:${b.lessonId}`;
+      const reviewed = b.approved + b.rejected;
+      const passRate = reviewed > 0 ? Math.round((b.approved / reviewed) * 100) : 0;
+      const qm = lessonQuizCount.get(key);
+      const topQuizId = qm ? [...qm.entries()].sort((a, z) => z[1] - a[1])[0]?.[0] : undefined;
+      return {
+        lessonId: b.lessonId,
+        lessonTitle: lessonMap.get(b.lessonId) ?? null,
+        courseId: b.courseId,
+        courseTitle: courseMap.get(b.courseId) ?? null,
+        quizTitle: topQuizId != null ? (quizMap.get(topQuizId) ?? null) : null,
+        total: b.total,
+        pending: b.pending,
+        approved: b.approved,
+        rejected: b.rejected,
+        passRate,
+        averageScore: b.scoreCount > 0 ? Math.round(b.scoreSum / b.scoreCount) : null,
+      };
+    });
+
+    // Sort by courseId asc, lessonId asc
+    result.sort((a, b) => a.courseId !== b.courseId ? a.courseId - b.courseId : a.lessonId - b.lessonId);
+
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error getting gate analytics");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── INSTRUCTOR: GET /instructor/reviews/count ───────────────────── */
 // Must be declared before /instructor/reviews/:gateId/... to avoid param collision
 router.get("/instructor/reviews/count", async (req, res): Promise<void> => {

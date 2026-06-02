@@ -661,6 +661,24 @@ export interface CourseAnalytics {
   quizStats?: QuizStat[];
 }
 
+export interface LessonGateAnalytics {
+  lessonId: number;
+  /** @nullable */
+  lessonTitle?: string | null;
+  courseId: number;
+  /** @nullable */
+  courseTitle?: string | null;
+  /** @nullable */
+  quizTitle?: string | null;
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  passRate: number;
+  /** @nullable */
+  averageScore?: number | null;
+}
+
 export interface LessonGate {
   id: number;
   userId: string;
@@ -757,6 +775,10 @@ authorId?: string;
 export type ListTradersParams = {
 sortBy?: string;
 verified?: boolean;
+};
+
+export type GetGateAnalyticsParams = {
+courseId?: number;
 };
 
 export type ListInstructorReviewsParams = {
