@@ -443,6 +443,10 @@ paths:
           in: query
           schema:
             type: string
+        - name: courseId
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Live classes
@@ -543,6 +547,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LiveClassRegistration"
+
+  /live-classes/{classId}/start:
+    post:
+      operationId: startLiveClass
+      tags: [liveClasses]
+      summary: Start a live class (instructor only)
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated live class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClass"
+
+  /live-classes/{classId}/end:
+    post:
+      operationId: endLiveClass
+      tags: [liveClasses]
+      summary: End a live class (instructor only)
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated live class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClass"
 
   # ── ATTENDANCE ─────────────────────────────────────────────────────────────
   /attendance:
@@ -1776,6 +1818,8 @@ components:
       required: [id, title, instructorId, scheduledAt, status]
       properties:
         id: { type: integer }
+        courseId: { type: ["integer", "null"] }
+        courseName: { type: ["string", "null"] }
         title: { type: string }
         description: { type: ["string", "null"] }
         instructorId: { type: string }
@@ -1783,6 +1827,7 @@ components:
         scheduledAt: { type: string }
         duration: { type: ["integer", "null"] }
         status: { type: string }
+        roomName: { type: ["string", "null"] }
         meetingUrl: { type: ["string", "null"] }
         replayUrl: { type: ["string", "null"] }
         category: { type: ["string", "null"] }
@@ -1799,6 +1844,7 @@ components:
         description: { type: string }
         scheduledAt: { type: string }
         duration: { type: integer }
+        courseId: { type: integer }
         meetingUrl: { type: string }
         category: { type: string }
         maxAttendees: { type: integer }
@@ -1812,6 +1858,7 @@ components:
         scheduledAt: { type: string }
         duration: { type: integer }
         status: { type: string }
+        courseId: { type: integer }
         meetingUrl: { type: string }
         replayUrl: { type: string }
         category: { type: string }

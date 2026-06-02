@@ -12,6 +12,7 @@ export interface LiveClassUpdate {
   scheduledAt?: string;
   duration?: number;
   status?: string;
+  courseId?: number;
   meetingUrl?: string;
   replayUrl?: string;
   category?: string;

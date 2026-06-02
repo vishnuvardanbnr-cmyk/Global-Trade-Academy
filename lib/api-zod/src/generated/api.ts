@@ -460,11 +460,14 @@ export const DeleteEnrollmentParams = zod.object({
  */
 export const ListLiveClassesQueryParams = zod.object({
   "upcoming": zod.coerce.boolean().optional(),
-  "instructorId": zod.coerce.string().optional()
+  "instructorId": zod.coerce.string().optional(),
+  "courseId": zod.coerce.number().optional()
 })
 
 export const ListLiveClassesResponseItem = zod.object({
   "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
   "title": zod.string(),
   "description": zod.string().nullish(),
   "instructorId": zod.string(),
@@ -472,6 +475,7 @@ export const ListLiveClassesResponseItem = zod.object({
   "scheduledAt": zod.string(),
   "duration": zod.number().nullish(),
   "status": zod.string(),
+  "roomName": zod.string().nullish(),
   "meetingUrl": zod.string().nullish(),
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
@@ -494,6 +498,7 @@ export const CreateLiveClassBody = zod.object({
   "description": zod.string().optional(),
   "scheduledAt": zod.string(),
   "duration": zod.number().optional(),
+  "courseId": zod.number().optional(),
   "meetingUrl": zod.string().optional(),
   "category": zod.string().optional(),
   "maxAttendees": zod.number().optional(),
@@ -510,6 +515,8 @@ export const GetLiveClassParams = zod.object({
 
 export const GetLiveClassResponse = zod.object({
   "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
   "title": zod.string(),
   "description": zod.string().nullish(),
   "instructorId": zod.string(),
@@ -517,6 +524,7 @@ export const GetLiveClassResponse = zod.object({
   "scheduledAt": zod.string(),
   "duration": zod.number().nullish(),
   "status": zod.string(),
+  "roomName": zod.string().nullish(),
   "meetingUrl": zod.string().nullish(),
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
@@ -540,6 +548,7 @@ export const UpdateLiveClassBody = zod.object({
   "scheduledAt": zod.string().optional(),
   "duration": zod.number().optional(),
   "status": zod.string().optional(),
+  "courseId": zod.number().optional(),
   "meetingUrl": zod.string().optional(),
   "replayUrl": zod.string().optional(),
   "category": zod.string().optional(),
@@ -548,6 +557,8 @@ export const UpdateLiveClassBody = zod.object({
 
 export const UpdateLiveClassResponse = zod.object({
   "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
   "title": zod.string(),
   "description": zod.string().nullish(),
   "instructorId": zod.string(),
@@ -555,6 +566,7 @@ export const UpdateLiveClassResponse = zod.object({
   "scheduledAt": zod.string(),
   "duration": zod.number().nullish(),
   "status": zod.string(),
+  "roomName": zod.string().nullish(),
   "meetingUrl": zod.string().nullish(),
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
@@ -578,6 +590,64 @@ export const DeleteLiveClassParams = zod.object({
  */
 export const RegisterLiveClassParams = zod.object({
   "classId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Start a live class (instructor only)
+ */
+export const StartLiveClassParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+export const StartLiveClassResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "instructorId": zod.string(),
+  "instructorName": zod.string().nullish(),
+  "scheduledAt": zod.string(),
+  "duration": zod.number().nullish(),
+  "status": zod.string(),
+  "roomName": zod.string().nullish(),
+  "meetingUrl": zod.string().nullish(),
+  "replayUrl": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "maxAttendees": zod.number().nullish(),
+  "registrationCount": zod.number().optional(),
+  "thumbnailUrl": zod.string().nullish(),
+  "createdAt": zod.string().optional()
+})
+
+
+/**
+ * @summary End a live class (instructor only)
+ */
+export const EndLiveClassParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+export const EndLiveClassResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "instructorId": zod.string(),
+  "instructorName": zod.string().nullish(),
+  "scheduledAt": zod.string(),
+  "duration": zod.number().nullish(),
+  "status": zod.string(),
+  "roomName": zod.string().nullish(),
+  "meetingUrl": zod.string().nullish(),
+  "replayUrl": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "maxAttendees": zod.number().nullish(),
+  "registrationCount": zod.number().optional(),
+  "thumbnailUrl": zod.string().nullish(),
+  "createdAt": zod.string().optional()
 })
 
 

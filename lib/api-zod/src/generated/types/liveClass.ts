@@ -8,6 +8,10 @@
 
 export interface LiveClass {
   id: number;
+  /** @nullable */
+  courseId?: number | null;
+  /** @nullable */
+  courseName?: string | null;
   title: string;
   /** @nullable */
   description?: string | null;
@@ -18,6 +22,8 @@ export interface LiveClass {
   /** @nullable */
   duration?: number | null;
   status: string;
+  /** @nullable */
+  roomName?: string | null;
   /** @nullable */
   meetingUrl?: string | null;
   /** @nullable */

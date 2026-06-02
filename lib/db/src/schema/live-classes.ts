@@ -4,12 +4,14 @@ import { z } from "zod/v4";
 
 export const liveClassesTable = pgTable("live_classes", {
   id: serial("id").primaryKey(),
+  courseId: integer("course_id"),                      // optional link to a course
   title: text("title").notNull(),
   description: text("description"),
   instructorId: text("instructor_id").notNull(),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
   duration: integer("duration"), // minutes
   status: text("status").notNull().default("scheduled"), // scheduled | live | completed | cancelled
+  roomName: text("room_name"),                         // Jitsi room identifier (auto-generated)
   meetingUrl: text("meeting_url"),
   replayUrl: text("replay_url"),
   category: text("category"),

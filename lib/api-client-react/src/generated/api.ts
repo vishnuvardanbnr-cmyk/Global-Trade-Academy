@@ -2046,6 +2046,146 @@ export const useRegisterLiveClass = <TError = ErrorType<unknown>,
       return useMutation(getRegisterLiveClassMutationOptions(options));
     }
 
+export const getStartLiveClassUrl = (classId: number,) => {
+
+
+
+
+  return `/api/live-classes/${classId}/start`
+}
+
+/**
+ * @summary Start a live class (instructor only)
+ */
+export const startLiveClass = async (classId: number, options?: RequestInit): Promise<LiveClass> => {
+
+  return customFetch<LiveClass>(getStartLiveClassUrl(classId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStartLiveClassMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startLiveClass>>, TError,{classId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startLiveClass>>, TError,{classId: number}, TContext> => {
+
+const mutationKey = ['startLiveClass'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startLiveClass>>, {classId: number}> = (props) => {
+          const {classId} = props ?? {};
+
+          return  startLiveClass(classId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartLiveClassMutationResult = NonNullable<Awaited<ReturnType<typeof startLiveClass>>>
+
+    export type StartLiveClassMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a live class (instructor only)
+ */
+export const useStartLiveClass = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startLiveClass>>, TError,{classId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startLiveClass>>,
+        TError,
+        {classId: number},
+        TContext
+      > => {
+      return useMutation(getStartLiveClassMutationOptions(options));
+    }
+
+export const getEndLiveClassUrl = (classId: number,) => {
+
+
+
+
+  return `/api/live-classes/${classId}/end`
+}
+
+/**
+ * @summary End a live class (instructor only)
+ */
+export const endLiveClass = async (classId: number, options?: RequestInit): Promise<LiveClass> => {
+
+  return customFetch<LiveClass>(getEndLiveClassUrl(classId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getEndLiveClassMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endLiveClass>>, TError,{classId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof endLiveClass>>, TError,{classId: number}, TContext> => {
+
+const mutationKey = ['endLiveClass'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof endLiveClass>>, {classId: number}> = (props) => {
+          const {classId} = props ?? {};
+
+          return  endLiveClass(classId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EndLiveClassMutationResult = NonNullable<Awaited<ReturnType<typeof endLiveClass>>>
+
+    export type EndLiveClassMutationError = ErrorType<unknown>
+
+    /**
+ * @summary End a live class (instructor only)
+ */
+export const useEndLiveClass = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endLiveClass>>, TError,{classId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof endLiveClass>>,
+        TError,
+        {classId: number},
+        TContext
+      > => {
+      return useMutation(getEndLiveClassMutationOptions(options));
+    }
+
 export const getListAttendanceUrl = (params?: ListAttendanceParams,) => {
   const normalizedParams = new URLSearchParams();
 

@@ -12,6 +12,7 @@ export interface LiveClassInput {
   description?: string;
   scheduledAt: string;
   duration?: number;
+  courseId?: number;
   meetingUrl?: string;
   category?: string;
   maxAttendees?: number;

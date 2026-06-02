@@ -18,6 +18,7 @@ import TradingChat from "@/pages/trading-chat";
 import CopyTrading from "@/pages/copy-trading";
 import Community from "@/pages/community";
 import LiveClasses from "@/pages/live-classes";
+import LiveRoom from "@/pages/live-room";
 import InstructorPanel from "@/pages/instructor";
 import AdminPanel from "@/pages/admin";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -95,6 +96,15 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   );
 }
 
+function ProtectedRouteFullScreen({ component: Component }: { component: React.ComponentType }) {
+  return (
+    <>
+      <Show when="signed-in"><Component /></Show>
+      <Show when="signed-out"><Redirect to="/" /></Show>
+    </>
+  );
+}
+
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
@@ -142,6 +152,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/trading-chat"><ProtectedRoute component={TradingChat} /></Route>
             <Route path="/copy-trading"><ProtectedRoute component={CopyTrading} /></Route>
             <Route path="/community"><ProtectedRoute component={Community} /></Route>
+            <Route path="/live/:classId/room"><ProtectedRouteFullScreen component={LiveRoom} /></Route>
             <Route path="/live"><ProtectedRoute component={LiveClasses} /></Route>
             <Route path="/instructor"><ProtectedRoute component={InstructorPanel} /></Route>
             <Route path="/admin"><ProtectedRoute component={AdminPanel} /></Route>

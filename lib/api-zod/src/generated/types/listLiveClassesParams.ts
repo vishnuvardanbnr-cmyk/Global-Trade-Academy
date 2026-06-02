@@ -9,4 +9,5 @@
 export type ListLiveClassesParams = {
 upcoming?: boolean;
 instructorId?: string;
+courseId?: number;
 };

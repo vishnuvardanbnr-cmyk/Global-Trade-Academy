@@ -215,6 +215,10 @@ export interface EnrollmentInput {
 
 export interface LiveClass {
   id: number;
+  /** @nullable */
+  courseId?: number | null;
+  /** @nullable */
+  courseName?: string | null;
   title: string;
   /** @nullable */
   description?: string | null;
@@ -225,6 +229,8 @@ export interface LiveClass {
   /** @nullable */
   duration?: number | null;
   status: string;
+  /** @nullable */
+  roomName?: string | null;
   /** @nullable */
   meetingUrl?: string | null;
   /** @nullable */
@@ -245,6 +251,7 @@ export interface LiveClassInput {
   description?: string;
   scheduledAt: string;
   duration?: number;
+  courseId?: number;
   meetingUrl?: string;
   category?: string;
   maxAttendees?: number;
@@ -257,6 +264,7 @@ export interface LiveClassUpdate {
   scheduledAt?: string;
   duration?: number;
   status?: string;
+  courseId?: number;
   meetingUrl?: string;
   replayUrl?: string;
   category?: string;
@@ -808,6 +816,7 @@ instructorId?: string;
 export type ListLiveClassesParams = {
 upcoming?: boolean;
 instructorId?: string;
+courseId?: number;
 };
 
 export type ListAttendanceParams = {
