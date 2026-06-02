@@ -2,7 +2,6 @@ import { Switch, Route, Redirect, useLocation, Router as WouterRouter } from "wo
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ClerkProvider, SignIn, SignUp, Show, useClerk } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
-import { dark } from '@clerk/themes';
 import { useEffect, useRef } from "react";
 import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
@@ -39,21 +38,21 @@ if (!clerkPubKey) {
 }
 
 const clerkAppearance = {
-  baseTheme: dark,
   cssLayerName: "clerk",
   variables: {
-    colorPrimary: "hsl(217 91% 60%)",
-    colorBackground: "hsl(222 47% 8%)",
-    colorInput: "hsl(215 28% 17%)",
-    colorInputForeground: "hsl(210 40% 98%)",
-    colorText: "hsl(210 40% 98%)",
+    colorPrimary: "hsl(221 83% 53%)",
+    colorBackground: "hsl(0 0% 100%)",
+    colorInput: "hsl(214 32% 91%)",
+    colorInputForeground: "hsl(222 47% 11%)",
+    colorText: "hsl(222 47% 11%)",
     fontFamily: "Inter, sans-serif",
+    borderRadius: "0.625rem",
   },
   elements: {
     rootBox: "w-full flex justify-center",
-    cardBox: "bg-card rounded-2xl w-[440px] max-w-full overflow-hidden border border-border",
-    card: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
+    cardBox: "w-[440px] max-w-full overflow-hidden rounded-2xl border border-border shadow-lg",
+    card: "!shadow-none !border-0 !rounded-none",
+    footer: "!shadow-none !border-0 !rounded-none",
   },
 };
 
@@ -142,7 +141,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/" component={HomeRedirect} />
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
-            
+
             <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
             <Route path="/courses"><ProtectedRoute component={Courses} /></Route>
             <Route path="/trading"><ProtectedRoute component={Trading} /></Route>
@@ -151,7 +150,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/live"><ProtectedRoute component={LiveClasses} /></Route>
             <Route path="/instructor"><ProtectedRoute component={InstructorPanel} /></Route>
             <Route path="/admin"><ProtectedRoute component={AdminPanel} /></Route>
-            
+
             <Route component={NotFound} />
           </Switch>
           <Toaster />
