@@ -13,4 +13,8 @@ export interface LessonProgress {
   /** @nullable */
   watchedSeconds?: number | null;
   updatedAt?: string;
+  xpAwarded?: number;
+  courseCompleted?: boolean;
+  /** @nullable */
+  certificateSerial?: string | null;
 }

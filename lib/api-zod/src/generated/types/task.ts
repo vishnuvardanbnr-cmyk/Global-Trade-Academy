@@ -6,21 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Lesson {
+export interface Task {
   id: number;
   courseId: number;
   title: string;
   /** @nullable */
   description?: string | null;
-  type: string;
-  /** @nullable */
-  videoUrl?: string | null;
-  /** @nullable */
-  content?: string | null;
-  /** @nullable */
-  duration?: number | null;
+  xpReward: number;
   order: number;
-  isFree?: boolean;
-  dripDays?: number;
-  createdAt?: string;
+  completed?: boolean;
+  /** @nullable */
+  submission?: string | null;
 }

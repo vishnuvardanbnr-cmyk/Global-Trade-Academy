@@ -15,4 +15,5 @@ export interface LessonUpdate {
   duration?: number;
   order?: number;
   isFree?: boolean;
+  dripDays?: number;
 }

@@ -13,6 +13,7 @@ export const lessonsTable = pgTable("lessons", {
   duration: integer("duration"), // minutes
   order: integer("order").notNull().default(0),
   isFree: boolean("is_free").notNull().default(false),
+  dripDays: integer("drip_days").notNull().default(0), // release N days after enrollment (0 = immediate)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -30,6 +30,18 @@ tags:
     description: Watchlist management
   - name: dashboard
     description: Dashboard summaries and analytics
+  - name: quizzes
+    description: Quiz and assessment engine
+  - name: tasks
+    description: Practical tasks and assignments
+  - name: certificates
+    description: Course completion certificates
+  - name: reviews
+    description: Course reviews and ratings
+  - name: notes
+    description: Lesson notes
+  - name: bookmarks
+    description: Lesson bookmarks
 
 paths:
   /healthz:
@@ -964,6 +976,359 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminStats"
 
+  # ── LMS: PROGRESS ────────────────────────────────────────────────
+  /courses/{courseId}/progress:
+    get:
+      operationId: getCourseProgress
+      tags: [lessons]
+      summary: Get current user progress for a course
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Course progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseProgress"
+
+  # ── LMS: QUIZZES ─────────────────────────────────────────────────
+  /courses/{courseId}/quizzes:
+    get:
+      operationId: listQuizzes
+      tags: [quizzes]
+      summary: List quizzes for a course (no answers)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Quizzes list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Quiz" }
+    post:
+      operationId: createQuiz
+      tags: [quizzes]
+      summary: Create a quiz with questions (instructor)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuizInput" }
+      responses:
+        "201":
+          description: Created quiz
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quiz" }
+
+  /quizzes/{quizId}:
+    get:
+      operationId: getQuiz
+      tags: [quizzes]
+      summary: Get a quiz with questions (no answers)
+      parameters:
+        - { name: quizId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Quiz detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quiz" }
+    delete:
+      operationId: deleteQuiz
+      tags: [quizzes]
+      summary: Delete a quiz (instructor)
+      parameters:
+        - { name: quizId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
+  /quizzes/{quizId}/attempts:
+    get:
+      operationId: listQuizAttempts
+      tags: [quizzes]
+      summary: List current user attempts for a quiz
+      parameters:
+        - { name: quizId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Attempts list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/QuizAttempt" }
+    post:
+      operationId: submitQuizAttempt
+      tags: [quizzes]
+      summary: Submit a quiz attempt (graded server-side)
+      parameters:
+        - { name: quizId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuizAttemptInput" }
+      responses:
+        "200":
+          description: Graded result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuizAttemptResult" }
+
+  # ── LMS: TASKS ───────────────────────────────────────────────────
+  /courses/{courseId}/tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List tasks for a course (with completion state)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Task" }
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task (instructor)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskInput" }
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /tasks/{taskId}:
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete a task (instructor)
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
+  /tasks/{taskId}/complete:
+    post:
+      operationId: completeTask
+      tags: [tasks]
+      summary: Mark a task complete with optional submission
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCompleteInput" }
+      responses:
+        "200":
+          description: Completion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskCompletion" }
+
+  # ── LMS: CERTIFICATES ────────────────────────────────────────────
+  /certificates:
+    get:
+      operationId: listCertificates
+      tags: [certificates]
+      summary: List current user certificates
+      responses:
+        "200":
+          description: Certificates list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Certificate" }
+
+  /certificates/{serial}:
+    get:
+      operationId: getCertificate
+      tags: [certificates]
+      summary: Verify a certificate by serial (public)
+      parameters:
+        - { name: serial, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Certificate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Certificate" }
+
+  # ── LMS: REVIEWS ─────────────────────────────────────────────────
+  /courses/{courseId}/reviews:
+    get:
+      operationId: listReviews
+      tags: [reviews]
+      summary: List reviews and rating summary for a course
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Reviews summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewSummary" }
+    post:
+      operationId: upsertReview
+      tags: [reviews]
+      summary: Create or update the current user review (enrolled only)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "200":
+          description: Saved review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+
+  # ── LMS: NOTES ───────────────────────────────────────────────────
+  /lessons/{lessonId}/notes:
+    get:
+      operationId: listNotes
+      tags: [notes]
+      summary: List current user notes for a lesson
+      parameters:
+        - { name: lessonId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Notes list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Note" }
+    post:
+      operationId: createNote
+      tags: [notes]
+      summary: Create a note on a lesson
+      parameters:
+        - { name: lessonId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteInput" }
+      responses:
+        "201":
+          description: Created note
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+
+  /notes/{noteId}:
+    patch:
+      operationId: updateNote
+      tags: [notes]
+      summary: Update a note
+      parameters:
+        - { name: noteId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteUpdate" }
+      responses:
+        "200":
+          description: Updated note
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+    delete:
+      operationId: deleteNote
+      tags: [notes]
+      summary: Delete a note
+      parameters:
+        - { name: noteId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+
+  # ── LMS: BOOKMARKS ───────────────────────────────────────────────
+  /courses/{courseId}/bookmarks:
+    get:
+      operationId: listBookmarks
+      tags: [bookmarks]
+      summary: List current user bookmarks for a course
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Bookmarks list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Bookmark" }
+
+  /lessons/{lessonId}/bookmark:
+    post:
+      operationId: toggleBookmark
+      tags: [bookmarks]
+      summary: Toggle a bookmark on a lesson
+      parameters:
+        - { name: lessonId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Toggle result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookmarkToggleResult" }
+
+  # ── LMS: PREREQUISITES ───────────────────────────────────────────
+  /courses/{courseId}/prerequisites:
+    get:
+      operationId: listPrerequisites
+      tags: [courses]
+      summary: List prerequisites for a course (with met state)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Prerequisites
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PrerequisiteCourse" }
+
+  # ── LMS: INSTRUCTOR ANALYTICS ────────────────────────────────────
+  /courses/{courseId}/analytics:
+    get:
+      operationId: getCourseAnalytics
+      tags: [courses]
+      summary: Get analytics for a course (instructor)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Course analytics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseAnalytics" }
+
 components:
   schemas:
     HealthStatus:
@@ -1058,6 +1423,7 @@ components:
         duration: { type: ["integer", "null"] }
         order: { type: integer }
         isFree: { type: boolean }
+        dripDays: { type: integer }
         createdAt: { type: string }
 
     LessonInput:
@@ -1072,6 +1438,7 @@ components:
         duration: { type: integer }
         order: { type: integer }
         isFree: { type: boolean }
+        dripDays: { type: integer }
 
     LessonUpdate:
       type: object
@@ -1084,6 +1451,7 @@ components:
         duration: { type: integer }
         order: { type: integer }
         isFree: { type: boolean }
+        dripDays: { type: integer }
 
     LessonProgressUpdate:
       type: object
@@ -1101,6 +1469,9 @@ components:
         completed: { type: boolean }
         watchedSeconds: { type: ["integer", "null"] }
         updatedAt: { type: string }
+        xpAwarded: { type: integer }
+        courseCompleted: { type: boolean }
+        certificateSerial: { type: ["string", "null"] }
 
     Enrollment:
       type: object
@@ -1380,3 +1751,291 @@ components:
         newUsersToday: { type: integer }
         pendingInstructors: { type: integer }
         upcomingClasses: { type: integer }
+
+    # ── LMS: PROGRESS ──────────────────────────────────────────────
+    CourseProgress:
+      type: object
+      required: [courseId, totalLessons, completedLessons, percent, courseCompleted]
+      properties:
+        courseId: { type: integer }
+        totalLessons: { type: integer }
+        completedLessons: { type: integer }
+        percent: { type: integer }
+        courseCompleted: { type: boolean }
+        completedAt: { type: ["string", "null"] }
+        certificateSerial: { type: ["string", "null"] }
+        lessons:
+          type: array
+          items: { $ref: "#/components/schemas/LessonProgress" }
+        unlockedLessonIds:
+          type: array
+          items: { type: integer }
+
+    # ── LMS: QUIZZES ───────────────────────────────────────────────
+    QuizQuestion:
+      type: object
+      required: [id, question, options, order]
+      properties:
+        id: { type: integer }
+        question: { type: string }
+        options: { type: array, items: { type: string } }
+        order: { type: integer }
+
+    Quiz:
+      type: object
+      required: [id, courseId, title, passingScore, xpReward]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        lessonId: { type: ["integer", "null"] }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        passingScore: { type: integer }
+        xpReward: { type: integer }
+        order: { type: integer }
+        questionCount: { type: integer }
+        bestScore: { type: ["integer", "null"] }
+        passed: { type: boolean }
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/QuizQuestion" }
+
+    QuizQuestionInput:
+      type: object
+      required: [question, options, correctIndex]
+      properties:
+        question: { type: string, minLength: 1 }
+        options: { type: array, items: { type: string } }
+        correctIndex: { type: integer }
+        explanation: { type: string }
+        order: { type: integer }
+
+    QuizInput:
+      type: object
+      required: [title, questions]
+      properties:
+        lessonId: { type: integer }
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        passingScore: { type: integer }
+        xpReward: { type: integer }
+        order: { type: integer }
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/QuizQuestionInput" }
+
+    QuizAttemptInput:
+      type: object
+      required: [answers]
+      properties:
+        answers: { type: array, items: { type: integer } }
+
+    QuizQuestionResult:
+      type: object
+      required: [questionId, correct, correctIndex]
+      properties:
+        questionId: { type: integer }
+        correct: { type: boolean }
+        correctIndex: { type: integer }
+        explanation: { type: ["string", "null"] }
+
+    QuizAttemptResult:
+      type: object
+      required: [score, passed, correctCount, total, xpAwarded]
+      properties:
+        score: { type: integer }
+        passed: { type: boolean }
+        correctCount: { type: integer }
+        total: { type: integer }
+        xpAwarded: { type: integer }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/QuizQuestionResult" }
+
+    QuizAttempt:
+      type: object
+      required: [id, quizId, userId, score, passed, createdAt]
+      properties:
+        id: { type: integer }
+        quizId: { type: integer }
+        userId: { type: string }
+        score: { type: integer }
+        passed: { type: boolean }
+        createdAt: { type: string }
+
+    # ── LMS: TASKS ─────────────────────────────────────────────────
+    Task:
+      type: object
+      required: [id, courseId, title, xpReward, order]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        xpReward: { type: integer }
+        order: { type: integer }
+        completed: { type: boolean }
+        submission: { type: ["string", "null"] }
+
+    TaskInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        xpReward: { type: integer }
+        order: { type: integer }
+
+    TaskCompleteInput:
+      type: object
+      properties:
+        submission: { type: string }
+
+    TaskCompletion:
+      type: object
+      required: [taskId, userId, completedAt]
+      properties:
+        taskId: { type: integer }
+        userId: { type: string }
+        submission: { type: ["string", "null"] }
+        completedAt: { type: string }
+        xpAwarded: { type: integer }
+
+    # ── LMS: CERTIFICATES ──────────────────────────────────────────
+    Certificate:
+      type: object
+      required: [serial, courseId, userId, issuedAt]
+      properties:
+        serial: { type: string }
+        courseId: { type: integer }
+        userId: { type: string }
+        issuedAt: { type: string }
+        courseTitle: { type: ["string", "null"] }
+        userName: { type: ["string", "null"] }
+        instructorName: { type: ["string", "null"] }
+
+    # ── LMS: REVIEWS ───────────────────────────────────────────────
+    Review:
+      type: object
+      required: [id, courseId, userId, rating, createdAt]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        userId: { type: string }
+        userName: { type: ["string", "null"] }
+        rating: { type: integer }
+        comment: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    ReviewInput:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+
+    ReviewSummary:
+      type: object
+      required: [average, count]
+      properties:
+        average: { type: number }
+        count: { type: integer }
+        distribution:
+          type: array
+          items: { type: integer }
+        myReview: { $ref: "#/components/schemas/Review" }
+        reviews:
+          type: array
+          items: { $ref: "#/components/schemas/Review" }
+
+    # ── LMS: NOTES & BOOKMARKS ─────────────────────────────────────
+    Note:
+      type: object
+      required: [id, lessonId, courseId, userId, content, createdAt]
+      properties:
+        id: { type: integer }
+        lessonId: { type: integer }
+        courseId: { type: integer }
+        userId: { type: string }
+        content: { type: string }
+        timestampSeconds: { type: ["integer", "null"] }
+        createdAt: { type: string }
+
+    NoteInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+        timestampSeconds: { type: integer }
+
+    NoteUpdate:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+
+    Bookmark:
+      type: object
+      required: [lessonId, courseId, userId]
+      properties:
+        id: { type: integer }
+        lessonId: { type: integer }
+        courseId: { type: integer }
+        userId: { type: string }
+        createdAt: { type: string }
+        lessonTitle: { type: ["string", "null"] }
+
+    BookmarkToggleResult:
+      type: object
+      required: [lessonId, bookmarked]
+      properties:
+        lessonId: { type: integer }
+        bookmarked: { type: boolean }
+
+    # ── LMS: PREREQUISITES ─────────────────────────────────────────
+    PrerequisiteCourse:
+      type: object
+      required: [courseId, requiredCourseId, title, met]
+      properties:
+        courseId: { type: integer }
+        requiredCourseId: { type: integer }
+        title: { type: string }
+        met: { type: boolean }
+
+    # ── LMS: INSTRUCTOR ANALYTICS ──────────────────────────────────
+    LessonDropoff:
+      type: object
+      required: [lessonId, title, completions]
+      properties:
+        lessonId: { type: integer }
+        title: { type: string }
+        completions: { type: integer }
+        completionRate: { type: number }
+
+    QuizStat:
+      type: object
+      required: [quizId, title, attempts, passRate]
+      properties:
+        quizId: { type: integer }
+        title: { type: string }
+        attempts: { type: integer }
+        passRate: { type: number }
+        averageScore: { type: number }
+
+    CourseAnalytics:
+      type: object
+      required: [courseId, enrollments, completions, completionRate]
+      properties:
+        courseId: { type: integer }
+        enrollments: { type: integer }
+        completions: { type: integer }
+        completionRate: { type: number }
+        averageRating: { type: ["number", "null"] }
+        reviewCount: { type: integer }
+        revenue: { type: number }
+        lessonDropoff:
+          type: array
+          items: { $ref: "#/components/schemas/LessonDropoff" }
+        quizStats:
+          type: array
+          items: { $ref: "#/components/schemas/QuizStat" }

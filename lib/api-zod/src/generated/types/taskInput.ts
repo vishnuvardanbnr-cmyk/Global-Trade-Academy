@@ -6,15 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LessonInput {
+export interface TaskInput {
   /** @minLength 1 */
   title: string;
   description?: string;
-  type: string;
-  videoUrl?: string;
-  content?: string;
-  duration?: number;
-  order: number;
-  isFree?: boolean;
-  dripDays?: number;
+  xpReward?: number;
+  order?: number;
 }

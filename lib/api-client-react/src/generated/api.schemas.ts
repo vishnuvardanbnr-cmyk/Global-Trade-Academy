@@ -98,6 +98,7 @@ export interface Lesson {
   duration?: number | null;
   order: number;
   isFree?: boolean;
+  dripDays?: number;
   createdAt?: string;
 }
 
@@ -111,6 +112,7 @@ export interface LessonInput {
   duration?: number;
   order: number;
   isFree?: boolean;
+  dripDays?: number;
 }
 
 export interface LessonUpdate {
@@ -122,6 +124,7 @@ export interface LessonUpdate {
   duration?: number;
   order?: number;
   isFree?: boolean;
+  dripDays?: number;
 }
 
 export interface LessonProgressUpdate {
@@ -136,6 +139,10 @@ export interface LessonProgress {
   /** @nullable */
   watchedSeconds?: number | null;
   updatedAt?: string;
+  xpAwarded?: number;
+  courseCompleted?: boolean;
+  /** @nullable */
+  certificateSerial?: string | null;
 }
 
 export interface Enrollment {
@@ -412,6 +419,243 @@ export interface AdminStats {
   newUsersToday?: number;
   pendingInstructors?: number;
   upcomingClasses?: number;
+}
+
+export interface CourseProgress {
+  courseId: number;
+  totalLessons: number;
+  completedLessons: number;
+  percent: number;
+  courseCompleted: boolean;
+  /** @nullable */
+  completedAt?: string | null;
+  /** @nullable */
+  certificateSerial?: string | null;
+  lessons?: LessonProgress[];
+  unlockedLessonIds?: number[];
+}
+
+export interface QuizQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  order: number;
+}
+
+export interface Quiz {
+  id: number;
+  courseId: number;
+  /** @nullable */
+  lessonId?: number | null;
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  passingScore: number;
+  xpReward: number;
+  order?: number;
+  questionCount?: number;
+  /** @nullable */
+  bestScore?: number | null;
+  passed?: boolean;
+  questions?: QuizQuestion[];
+}
+
+export interface QuizQuestionInput {
+  /** @minLength 1 */
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation?: string;
+  order?: number;
+}
+
+export interface QuizInput {
+  lessonId?: number;
+  /** @minLength 1 */
+  title: string;
+  description?: string;
+  passingScore?: number;
+  xpReward?: number;
+  order?: number;
+  questions: QuizQuestionInput[];
+}
+
+export interface QuizAttemptInput {
+  answers: number[];
+}
+
+export interface QuizQuestionResult {
+  questionId: number;
+  correct: boolean;
+  correctIndex: number;
+  /** @nullable */
+  explanation?: string | null;
+}
+
+export interface QuizAttemptResult {
+  score: number;
+  passed: boolean;
+  correctCount: number;
+  total: number;
+  xpAwarded: number;
+  results?: QuizQuestionResult[];
+}
+
+export interface QuizAttempt {
+  id: number;
+  quizId: number;
+  userId: string;
+  score: number;
+  passed: boolean;
+  createdAt: string;
+}
+
+export interface Task {
+  id: number;
+  courseId: number;
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  xpReward: number;
+  order: number;
+  completed?: boolean;
+  /** @nullable */
+  submission?: string | null;
+}
+
+export interface TaskInput {
+  /** @minLength 1 */
+  title: string;
+  description?: string;
+  xpReward?: number;
+  order?: number;
+}
+
+export interface TaskCompleteInput {
+  submission?: string;
+}
+
+export interface TaskCompletion {
+  taskId: number;
+  userId: string;
+  /** @nullable */
+  submission?: string | null;
+  completedAt: string;
+  xpAwarded?: number;
+}
+
+export interface Certificate {
+  serial: string;
+  courseId: number;
+  userId: string;
+  issuedAt: string;
+  /** @nullable */
+  courseTitle?: string | null;
+  /** @nullable */
+  userName?: string | null;
+  /** @nullable */
+  instructorName?: string | null;
+}
+
+export interface Review {
+  id: number;
+  courseId: number;
+  userId: string;
+  /** @nullable */
+  userName?: string | null;
+  rating: number;
+  /** @nullable */
+  comment?: string | null;
+  createdAt: string;
+}
+
+export interface ReviewInput {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment?: string;
+}
+
+export interface ReviewSummary {
+  average: number;
+  count: number;
+  distribution?: number[];
+  myReview?: Review;
+  reviews?: Review[];
+}
+
+export interface Note {
+  id: number;
+  lessonId: number;
+  courseId: number;
+  userId: string;
+  content: string;
+  /** @nullable */
+  timestampSeconds?: number | null;
+  createdAt: string;
+}
+
+export interface NoteInput {
+  /** @minLength 1 */
+  content: string;
+  timestampSeconds?: number;
+}
+
+export interface NoteUpdate {
+  /** @minLength 1 */
+  content: string;
+}
+
+export interface Bookmark {
+  id?: number;
+  lessonId: number;
+  courseId: number;
+  userId: string;
+  createdAt?: string;
+  /** @nullable */
+  lessonTitle?: string | null;
+}
+
+export interface BookmarkToggleResult {
+  lessonId: number;
+  bookmarked: boolean;
+}
+
+export interface PrerequisiteCourse {
+  courseId: number;
+  requiredCourseId: number;
+  title: string;
+  met: boolean;
+}
+
+export interface LessonDropoff {
+  lessonId: number;
+  title: string;
+  completions: number;
+  completionRate?: number;
+}
+
+export interface QuizStat {
+  quizId: number;
+  title: string;
+  attempts: number;
+  passRate: number;
+  averageScore?: number;
+}
+
+export interface CourseAnalytics {
+  courseId: number;
+  enrollments: number;
+  completions: number;
+  completionRate: number;
+  /** @nullable */
+  averageRating?: number | null;
+  reviewCount?: number;
+  revenue?: number;
+  lessonDropoff?: LessonDropoff[];
+  quizStats?: QuizStat[];
 }
 
 export type ListUsersParams = {

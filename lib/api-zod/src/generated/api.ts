@@ -272,6 +272,7 @@ export const ListLessonsResponseItem = zod.object({
   "duration": zod.number().nullish(),
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
+  "dripDays": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 export const ListLessonsResponse = zod.array(ListLessonsResponseItem)
@@ -295,7 +296,8 @@ export const CreateLessonBody = zod.object({
   "content": zod.string().optional(),
   "duration": zod.number().optional(),
   "order": zod.number(),
-  "isFree": zod.boolean().optional()
+  "isFree": zod.boolean().optional(),
+  "dripDays": zod.number().optional()
 })
 
 
@@ -317,6 +319,7 @@ export const GetLessonResponse = zod.object({
   "duration": zod.number().nullish(),
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
+  "dripDays": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -336,7 +339,8 @@ export const UpdateLessonBody = zod.object({
   "content": zod.string().optional(),
   "duration": zod.number().optional(),
   "order": zod.number().optional(),
-  "isFree": zod.boolean().optional()
+  "isFree": zod.boolean().optional(),
+  "dripDays": zod.number().optional()
 })
 
 export const UpdateLessonResponse = zod.object({
@@ -350,6 +354,7 @@ export const UpdateLessonResponse = zod.object({
   "duration": zod.number().nullish(),
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
+  "dripDays": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -379,7 +384,10 @@ export const UpdateLessonProgressResponse = zod.object({
   "userId": zod.string(),
   "completed": zod.boolean(),
   "watchedSeconds": zod.number().nullish(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "xpAwarded": zod.number().optional(),
+  "courseCompleted": zod.boolean().optional(),
+  "certificateSerial": zod.string().nullish()
 })
 
 
@@ -988,6 +996,476 @@ export const GetAdminStatsResponse = zod.object({
   "newUsersToday": zod.number().optional(),
   "pendingInstructors": zod.number().optional(),
   "upcomingClasses": zod.number().optional()
+})
+
+
+/**
+ * @summary Get current user progress for a course
+ */
+export const GetCourseProgressParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const GetCourseProgressResponse = zod.object({
+  "courseId": zod.number(),
+  "totalLessons": zod.number(),
+  "completedLessons": zod.number(),
+  "percent": zod.number(),
+  "courseCompleted": zod.boolean(),
+  "completedAt": zod.string().nullish(),
+  "certificateSerial": zod.string().nullish(),
+  "lessons": zod.array(zod.object({
+  "lessonId": zod.number(),
+  "userId": zod.string(),
+  "completed": zod.boolean(),
+  "watchedSeconds": zod.number().nullish(),
+  "updatedAt": zod.string().optional(),
+  "xpAwarded": zod.number().optional(),
+  "courseCompleted": zod.boolean().optional(),
+  "certificateSerial": zod.string().nullish()
+})).optional(),
+  "unlockedLessonIds": zod.array(zod.number()).optional()
+})
+
+
+/**
+ * @summary List quizzes for a course (no answers)
+ */
+export const ListQuizzesParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListQuizzesResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "lessonId": zod.number().nullish(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "passingScore": zod.number(),
+  "xpReward": zod.number(),
+  "order": zod.number().optional(),
+  "questionCount": zod.number().optional(),
+  "bestScore": zod.number().nullish(),
+  "passed": zod.boolean().optional(),
+  "questions": zod.array(zod.object({
+  "id": zod.number(),
+  "question": zod.string(),
+  "options": zod.array(zod.string()),
+  "order": zod.number()
+})).optional()
+})
+export const ListQuizzesResponse = zod.array(ListQuizzesResponseItem)
+
+
+/**
+ * @summary Create a quiz with questions (instructor)
+ */
+export const CreateQuizParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+
+
+
+
+export const CreateQuizBody = zod.object({
+  "lessonId": zod.number().optional(),
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "passingScore": zod.number().optional(),
+  "xpReward": zod.number().optional(),
+  "order": zod.number().optional(),
+  "questions": zod.array(zod.object({
+  "question": zod.string().min(1),
+  "options": zod.array(zod.string()),
+  "correctIndex": zod.number(),
+  "explanation": zod.string().optional(),
+  "order": zod.number().optional()
+}))
+})
+
+
+/**
+ * @summary Get a quiz with questions (no answers)
+ */
+export const GetQuizParams = zod.object({
+  "quizId": zod.coerce.number()
+})
+
+export const GetQuizResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "lessonId": zod.number().nullish(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "passingScore": zod.number(),
+  "xpReward": zod.number(),
+  "order": zod.number().optional(),
+  "questionCount": zod.number().optional(),
+  "bestScore": zod.number().nullish(),
+  "passed": zod.boolean().optional(),
+  "questions": zod.array(zod.object({
+  "id": zod.number(),
+  "question": zod.string(),
+  "options": zod.array(zod.string()),
+  "order": zod.number()
+})).optional()
+})
+
+
+/**
+ * @summary Delete a quiz (instructor)
+ */
+export const DeleteQuizParams = zod.object({
+  "quizId": zod.coerce.number()
+})
+
+
+/**
+ * @summary List current user attempts for a quiz
+ */
+export const ListQuizAttemptsParams = zod.object({
+  "quizId": zod.coerce.number()
+})
+
+export const ListQuizAttemptsResponseItem = zod.object({
+  "id": zod.number(),
+  "quizId": zod.number(),
+  "userId": zod.string(),
+  "score": zod.number(),
+  "passed": zod.boolean(),
+  "createdAt": zod.string()
+})
+export const ListQuizAttemptsResponse = zod.array(ListQuizAttemptsResponseItem)
+
+
+/**
+ * @summary Submit a quiz attempt (graded server-side)
+ */
+export const SubmitQuizAttemptParams = zod.object({
+  "quizId": zod.coerce.number()
+})
+
+export const SubmitQuizAttemptBody = zod.object({
+  "answers": zod.array(zod.number())
+})
+
+export const SubmitQuizAttemptResponse = zod.object({
+  "score": zod.number(),
+  "passed": zod.boolean(),
+  "correctCount": zod.number(),
+  "total": zod.number(),
+  "xpAwarded": zod.number(),
+  "results": zod.array(zod.object({
+  "questionId": zod.number(),
+  "correct": zod.boolean(),
+  "correctIndex": zod.number(),
+  "explanation": zod.string().nullish()
+})).optional()
+})
+
+
+/**
+ * @summary List tasks for a course (with completion state)
+ */
+export const ListTasksParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListTasksResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "xpReward": zod.number(),
+  "order": zod.number(),
+  "completed": zod.boolean().optional(),
+  "submission": zod.string().nullish()
+})
+export const ListTasksResponse = zod.array(ListTasksResponseItem)
+
+
+/**
+ * @summary Create a task (instructor)
+ */
+export const CreateTaskParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+
+
+
+export const CreateTaskBody = zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "xpReward": zod.number().optional(),
+  "order": zod.number().optional()
+})
+
+
+/**
+ * @summary Delete a task (instructor)
+ */
+export const DeleteTaskParams = zod.object({
+  "taskId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Mark a task complete with optional submission
+ */
+export const CompleteTaskParams = zod.object({
+  "taskId": zod.coerce.number()
+})
+
+export const CompleteTaskBody = zod.object({
+  "submission": zod.string().optional()
+})
+
+export const CompleteTaskResponse = zod.object({
+  "taskId": zod.number(),
+  "userId": zod.string(),
+  "submission": zod.string().nullish(),
+  "completedAt": zod.string(),
+  "xpAwarded": zod.number().optional()
+})
+
+
+/**
+ * @summary List current user certificates
+ */
+export const ListCertificatesResponseItem = zod.object({
+  "serial": zod.string(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "issuedAt": zod.string(),
+  "courseTitle": zod.string().nullish(),
+  "userName": zod.string().nullish(),
+  "instructorName": zod.string().nullish()
+})
+export const ListCertificatesResponse = zod.array(ListCertificatesResponseItem)
+
+
+/**
+ * @summary Verify a certificate by serial (public)
+ */
+export const GetCertificateParams = zod.object({
+  "serial": zod.coerce.string()
+})
+
+export const GetCertificateResponse = zod.object({
+  "serial": zod.string(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "issuedAt": zod.string(),
+  "courseTitle": zod.string().nullish(),
+  "userName": zod.string().nullish(),
+  "instructorName": zod.string().nullish()
+})
+
+
+/**
+ * @summary List reviews and rating summary for a course
+ */
+export const ListReviewsParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListReviewsResponse = zod.object({
+  "average": zod.number(),
+  "count": zod.number(),
+  "distribution": zod.array(zod.number()).optional(),
+  "myReview": zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "rating": zod.number(),
+  "comment": zod.string().nullish(),
+  "createdAt": zod.string()
+}).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "rating": zod.number(),
+  "comment": zod.string().nullish(),
+  "createdAt": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Create or update the current user review (enrolled only)
+ */
+export const UpsertReviewParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const upsertReviewBodyRatingMax = 5;
+
+
+
+export const UpsertReviewBody = zod.object({
+  "rating": zod.number().min(1).max(upsertReviewBodyRatingMax),
+  "comment": zod.string().optional()
+})
+
+export const UpsertReviewResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "rating": zod.number(),
+  "comment": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary List current user notes for a lesson
+ */
+export const ListNotesParams = zod.object({
+  "lessonId": zod.coerce.number()
+})
+
+export const ListNotesResponseItem = zod.object({
+  "id": zod.number(),
+  "lessonId": zod.number(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "content": zod.string(),
+  "timestampSeconds": zod.number().nullish(),
+  "createdAt": zod.string()
+})
+export const ListNotesResponse = zod.array(ListNotesResponseItem)
+
+
+/**
+ * @summary Create a note on a lesson
+ */
+export const CreateNoteParams = zod.object({
+  "lessonId": zod.coerce.number()
+})
+
+
+
+
+export const CreateNoteBody = zod.object({
+  "content": zod.string().min(1),
+  "timestampSeconds": zod.number().optional()
+})
+
+
+/**
+ * @summary Update a note
+ */
+export const UpdateNoteParams = zod.object({
+  "noteId": zod.coerce.number()
+})
+
+
+
+
+export const UpdateNoteBody = zod.object({
+  "content": zod.string().min(1)
+})
+
+export const UpdateNoteResponse = zod.object({
+  "id": zod.number(),
+  "lessonId": zod.number(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "content": zod.string(),
+  "timestampSeconds": zod.number().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a note
+ */
+export const DeleteNoteParams = zod.object({
+  "noteId": zod.coerce.number()
+})
+
+
+/**
+ * @summary List current user bookmarks for a course
+ */
+export const ListBookmarksParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListBookmarksResponseItem = zod.object({
+  "id": zod.number().optional(),
+  "lessonId": zod.number(),
+  "courseId": zod.number(),
+  "userId": zod.string(),
+  "createdAt": zod.string().optional(),
+  "lessonTitle": zod.string().nullish()
+})
+export const ListBookmarksResponse = zod.array(ListBookmarksResponseItem)
+
+
+/**
+ * @summary Toggle a bookmark on a lesson
+ */
+export const ToggleBookmarkParams = zod.object({
+  "lessonId": zod.coerce.number()
+})
+
+export const ToggleBookmarkResponse = zod.object({
+  "lessonId": zod.number(),
+  "bookmarked": zod.boolean()
+})
+
+
+/**
+ * @summary List prerequisites for a course (with met state)
+ */
+export const ListPrerequisitesParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListPrerequisitesResponseItem = zod.object({
+  "courseId": zod.number(),
+  "requiredCourseId": zod.number(),
+  "title": zod.string(),
+  "met": zod.boolean()
+})
+export const ListPrerequisitesResponse = zod.array(ListPrerequisitesResponseItem)
+
+
+/**
+ * @summary Get analytics for a course (instructor)
+ */
+export const GetCourseAnalyticsParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const GetCourseAnalyticsResponse = zod.object({
+  "courseId": zod.number(),
+  "enrollments": zod.number(),
+  "completions": zod.number(),
+  "completionRate": zod.number(),
+  "averageRating": zod.number().nullish(),
+  "reviewCount": zod.number().optional(),
+  "revenue": zod.number().optional(),
+  "lessonDropoff": zod.array(zod.object({
+  "lessonId": zod.number(),
+  "title": zod.string(),
+  "completions": zod.number(),
+  "completionRate": zod.number().optional()
+})).optional(),
+  "quizStats": zod.array(zod.object({
+  "quizId": zod.number(),
+  "title": zod.string(),
+  "attempts": zod.number(),
+  "passRate": zod.number(),
+  "averageScore": zod.number().optional()
+})).optional()
 })
 
 

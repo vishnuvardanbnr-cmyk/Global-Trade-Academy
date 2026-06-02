@@ -6,3 +6,6 @@ export * from "./live-classes";
 export * from "./attendance";
 export * from "./community";
 export * from "./trading";
+export * from "./assessments";
+export * from "./engagement";
+export * from "./gamification";
