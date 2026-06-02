@@ -3,20 +3,40 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: EDU Trading Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User management
+  - name: courses
+    description: Course management
+  - name: lessons
+    description: Lesson management
+  - name: enrollments
+    description: Enrollment management
+  - name: liveClasses
+    description: Live class management
+  - name: attendance
+    description: Attendance tracking
+  - name: community
+    description: Community posts and comments
+  - name: copyTrading
+    description: Copy trading management
+  - name: watchlist
+    description: Watchlist management
+  - name: dashboard
+    description: Dashboard summaries and analytics
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +44,926 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── USERS ──────────────────────────────────────────────────────────────────
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update current user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin)
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserProfile"
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  # ── COURSES ────────────────────────────────────────────────────────────────
+  /courses:
+    get:
+      operationId: listCourses
+      tags: [courses]
+      summary: List all courses
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: level
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: instructorId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Courses list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Course"
+    post:
+      operationId: createCourse
+      tags: [courses]
+      summary: Create a new course (instructor/admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseInput"
+      responses:
+        "201":
+          description: Created course
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Course"
+
+  /courses/{courseId}:
+    get:
+      operationId: getCourse
+      tags: [courses]
+      summary: Get course by ID
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Course detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Course"
+    patch:
+      operationId: updateCourse
+      tags: [courses]
+      summary: Update course
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseUpdate"
+      responses:
+        "200":
+          description: Updated course
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Course"
+    delete:
+      operationId: deleteCourse
+      tags: [courses]
+      summary: Delete course
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /courses/featured:
+    get:
+      operationId: listFeaturedCourses
+      tags: [courses]
+      summary: Get featured/trending courses
+      responses:
+        "200":
+          description: Featured courses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Course"
+
+  # ── LESSONS ────────────────────────────────────────────────────────────────
+  /courses/{courseId}/lessons:
+    get:
+      operationId: listLessons
+      tags: [lessons]
+      summary: List lessons for a course
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lessons list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Lesson"
+    post:
+      operationId: createLesson
+      tags: [lessons]
+      summary: Create lesson
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonInput"
+      responses:
+        "201":
+          description: Created lesson
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lesson"
+
+  /lessons/{lessonId}:
+    get:
+      operationId: getLesson
+      tags: [lessons]
+      summary: Get lesson by ID
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lesson detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lesson"
+    patch:
+      operationId: updateLesson
+      tags: [lessons]
+      summary: Update lesson
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonUpdate"
+      responses:
+        "200":
+          description: Updated lesson
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lesson"
+    delete:
+      operationId: deleteLesson
+      tags: [lessons]
+      summary: Delete lesson
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /lessons/{lessonId}/progress:
+    patch:
+      operationId: updateLessonProgress
+      tags: [lessons]
+      summary: Update user lesson progress
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonProgressUpdate"
+      responses:
+        "200":
+          description: Progress updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonProgress"
+
+  # ── ENROLLMENTS ────────────────────────────────────────────────────────────
+  /enrollments:
+    get:
+      operationId: listEnrollments
+      tags: [enrollments]
+      summary: List current user enrollments
+      responses:
+        "200":
+          description: Enrollments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Enrollment"
+    post:
+      operationId: createEnrollment
+      tags: [enrollments]
+      summary: Enroll in a course
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnrollmentInput"
+      responses:
+        "201":
+          description: Enrollment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Enrollment"
+
+  /enrollments/{enrollmentId}:
+    delete:
+      operationId: deleteEnrollment
+      tags: [enrollments]
+      summary: Cancel enrollment
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── LIVE CLASSES ───────────────────────────────────────────────────────────
+  /live-classes:
+    get:
+      operationId: listLiveClasses
+      tags: [liveClasses]
+      summary: List live classes
+      parameters:
+        - name: upcoming
+          in: query
+          schema:
+            type: boolean
+        - name: instructorId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Live classes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LiveClass"
+    post:
+      operationId: createLiveClass
+      tags: [liveClasses]
+      summary: Create live class (instructor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassInput"
+      responses:
+        "201":
+          description: Created live class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClass"
+
+  /live-classes/{classId}:
+    get:
+      operationId: getLiveClass
+      tags: [liveClasses]
+      summary: Get live class by ID
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Live class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClass"
+    patch:
+      operationId: updateLiveClass
+      tags: [liveClasses]
+      summary: Update live class
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassUpdate"
+      responses:
+        "200":
+          description: Updated live class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClass"
+    delete:
+      operationId: deleteLiveClass
+      tags: [liveClasses]
+      summary: Delete live class
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /live-classes/{classId}/register:
+    post:
+      operationId: registerLiveClass
+      tags: [liveClasses]
+      summary: Register for a live class
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassRegistration"
+
+  # ── ATTENDANCE ─────────────────────────────────────────────────────────────
+  /attendance:
+    get:
+      operationId: listAttendance
+      tags: [attendance]
+      summary: List attendance records (admin/instructor)
+      parameters:
+        - name: classId
+          in: query
+          schema:
+            type: integer
+        - name: userId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attendance"
+    post:
+      operationId: markAttendance
+      tags: [attendance]
+      summary: Mark attendance for a live class
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceInput"
+      responses:
+        "201":
+          description: Attendance marked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attendance"
+
+  /attendance/my:
+    get:
+      operationId: getMyAttendance
+      tags: [attendance]
+      summary: Get current user attendance history
+      responses:
+        "200":
+          description: Attendance history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attendance"
+
+  # ── COMMUNITY ──────────────────────────────────────────────────────────────
+  /posts:
+    get:
+      operationId: listPosts
+      tags: [community]
+      summary: List community posts
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: authorId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Posts list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+    post:
+      operationId: createPost
+      tags: [community]
+      summary: Create a community post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostInput"
+      responses:
+        "201":
+          description: Created post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+
+  /posts/{postId}:
+    get:
+      operationId: getPost
+      tags: [community]
+      summary: Get post by ID
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Post detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+    patch:
+      operationId: updatePost
+      tags: [community]
+      summary: Update post
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostUpdate"
+      responses:
+        "200":
+          description: Updated post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+    delete:
+      operationId: deletePost
+      tags: [community]
+      summary: Delete post
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /posts/{postId}/like:
+    post:
+      operationId: likePost
+      tags: [community]
+      summary: Like a post
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Like toggled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+
+  /posts/{postId}/comments:
+    get:
+      operationId: listComments
+      tags: [community]
+      summary: List comments on a post
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Comments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+    post:
+      operationId: createComment
+      tags: [community]
+      summary: Comment on a post
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentInput"
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+
+  # ── COPY TRADING ───────────────────────────────────────────────────────────
+  /traders:
+    get:
+      operationId: listTraders
+      tags: [copyTrading]
+      summary: List strategy providers/traders
+      parameters:
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+        - name: verified
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Traders list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trader"
+
+  /traders/{traderId}:
+    get:
+      operationId: getTrader
+      tags: [copyTrading]
+      summary: Get trader profile
+      parameters:
+        - name: traderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Trader profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trader"
+
+  /copy-subscriptions:
+    get:
+      operationId: listCopySubscriptions
+      tags: [copyTrading]
+      summary: List my copy subscriptions
+      responses:
+        "200":
+          description: Copy subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CopySubscription"
+    post:
+      operationId: createCopySubscription
+      tags: [copyTrading]
+      summary: Subscribe to copy a trader
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopySubscriptionInput"
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopySubscription"
+
+  /copy-subscriptions/{subscriptionId}:
+    patch:
+      operationId: updateCopySubscription
+      tags: [copyTrading]
+      summary: Update copy subscription settings
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopySubscriptionUpdate"
+      responses:
+        "200":
+          description: Updated subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopySubscription"
+    delete:
+      operationId: deleteCopySubscription
+      tags: [copyTrading]
+      summary: Unsubscribe from trader
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Unsubscribed
+
+  # ── WATCHLIST ──────────────────────────────────────────────────────────────
+  /watchlist:
+    get:
+      operationId: getWatchlist
+      tags: [watchlist]
+      summary: Get user watchlist
+      responses:
+        "200":
+          description: Watchlist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WatchlistItem"
+    post:
+      operationId: addToWatchlist
+      tags: [watchlist]
+      summary: Add symbol to watchlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchlistInput"
+      responses:
+        "201":
+          description: Added to watchlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchlistItem"
+
+  /watchlist/{itemId}:
+    delete:
+      operationId: removeFromWatchlist
+      tags: [watchlist]
+      summary: Remove from watchlist
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Removed
+
+  # ── DASHBOARD ──────────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get user dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [dashboard]
+      summary: Get platform leaderboard
+      responses:
+        "200":
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  /dashboard/activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent platform activity feed
+      responses:
+        "200":
+          description: Activity items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/admin:
+    get:
+      operationId: getAdminStats
+      tags: [dashboard]
+      summary: Get admin platform analytics
+      responses:
+        "200":
+          description: Admin analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +974,409 @@ components:
       required:
         - status
 
+    UserProfile:
+      type: object
+      required: [id, clerkId, email, role]
+      properties:
+        id: { type: string }
+        clerkId: { type: string }
+        email: { type: string }
+        displayName: { type: ["string", "null"] }
+        avatarUrl: { type: ["string", "null"] }
+        bio: { type: ["string", "null"] }
+        role: { type: string }
+        xp: { type: integer }
+        badges: { type: array, items: { type: string } }
+        marketFocus: { type: ["string", "null"] }
+        skillLevel: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    UserProfileUpdate:
+      type: object
+      properties:
+        displayName: { type: string }
+        bio: { type: string }
+        marketFocus: { type: string }
+        skillLevel: { type: string }
+
+    Course:
+      type: object
+      required: [id, title, instructorId, category, level, status]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        instructorId: { type: string }
+        instructorName: { type: ["string", "null"] }
+        category: { type: string }
+        level: { type: string }
+        status: { type: string }
+        thumbnailUrl: { type: ["string", "null"] }
+        price: { type: ["number", "null"] }
+        duration: { type: ["integer", "null"] }
+        lessonCount: { type: integer }
+        enrollmentCount: { type: integer }
+        rating: { type: ["number", "null"] }
+        isFeatured: { type: boolean }
+        createdAt: { type: string }
+
+    CourseInput:
+      type: object
+      required: [title, category, level]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        category: { type: string }
+        level: { type: string }
+        thumbnailUrl: { type: string }
+        price: { type: number }
+        duration: { type: integer }
+
+    CourseUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        level: { type: string }
+        status: { type: string }
+        thumbnailUrl: { type: string }
+        price: { type: number }
+        isFeatured: { type: boolean }
+
+    Lesson:
+      type: object
+      required: [id, courseId, title, type, order]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        type: { type: string }
+        videoUrl: { type: ["string", "null"] }
+        content: { type: ["string", "null"] }
+        duration: { type: ["integer", "null"] }
+        order: { type: integer }
+        isFree: { type: boolean }
+        createdAt: { type: string }
+
+    LessonInput:
+      type: object
+      required: [title, type, order]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        type: { type: string }
+        videoUrl: { type: string }
+        content: { type: string }
+        duration: { type: integer }
+        order: { type: integer }
+        isFree: { type: boolean }
+
+    LessonUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        type: { type: string }
+        videoUrl: { type: string }
+        content: { type: string }
+        duration: { type: integer }
+        order: { type: integer }
+        isFree: { type: boolean }
+
+    LessonProgressUpdate:
+      type: object
+      required: [completed]
+      properties:
+        completed: { type: boolean }
+        watchedSeconds: { type: integer }
+
+    LessonProgress:
+      type: object
+      required: [lessonId, userId, completed]
+      properties:
+        lessonId: { type: integer }
+        userId: { type: string }
+        completed: { type: boolean }
+        watchedSeconds: { type: ["integer", "null"] }
+        updatedAt: { type: string }
+
+    Enrollment:
+      type: object
+      required: [id, courseId, userId, status]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        userId: { type: string }
+        status: { type: string }
+        progress: { type: integer }
+        completedLessons: { type: integer }
+        totalLessons: { type: integer }
+        enrolledAt: { type: string }
+        completedAt: { type: ["string", "null"] }
+        course: { $ref: "#/components/schemas/Course" }
+
+    EnrollmentInput:
+      type: object
+      required: [courseId]
+      properties:
+        courseId: { type: integer }
+
+    LiveClass:
+      type: object
+      required: [id, title, instructorId, scheduledAt, status]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        instructorId: { type: string }
+        instructorName: { type: ["string", "null"] }
+        scheduledAt: { type: string }
+        duration: { type: ["integer", "null"] }
+        status: { type: string }
+        meetingUrl: { type: ["string", "null"] }
+        replayUrl: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        maxAttendees: { type: ["integer", "null"] }
+        registrationCount: { type: integer }
+        thumbnailUrl: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    LiveClassInput:
+      type: object
+      required: [title, scheduledAt]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        scheduledAt: { type: string }
+        duration: { type: integer }
+        meetingUrl: { type: string }
+        category: { type: string }
+        maxAttendees: { type: integer }
+        thumbnailUrl: { type: string }
+
+    LiveClassUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        scheduledAt: { type: string }
+        duration: { type: integer }
+        status: { type: string }
+        meetingUrl: { type: string }
+        replayUrl: { type: string }
+        category: { type: string }
+        maxAttendees: { type: integer }
+
+    LiveClassRegistration:
+      type: object
+      required: [classId, userId]
+      properties:
+        classId: { type: integer }
+        userId: { type: string }
+        registeredAt: { type: string }
+
+    Attendance:
+      type: object
+      required: [id, classId, userId, status]
+      properties:
+        id: { type: integer }
+        classId: { type: integer }
+        userId: { type: string }
+        userName: { type: ["string", "null"] }
+        status: { type: string }
+        joinedAt: { type: ["string", "null"] }
+        leftAt: { type: ["string", "null"] }
+        durationMinutes: { type: ["integer", "null"] }
+        createdAt: { type: string }
+
+    AttendanceInput:
+      type: object
+      required: [classId, userId, status]
+      properties:
+        classId: { type: integer }
+        userId: { type: string }
+        status: { type: string }
+        joinedAt: { type: string }
+        leftAt: { type: string }
+        durationMinutes: { type: integer }
+
+    Post:
+      type: object
+      required: [id, authorId, title, category]
+      properties:
+        id: { type: integer }
+        authorId: { type: string }
+        authorName: { type: ["string", "null"] }
+        authorAvatar: { type: ["string", "null"] }
+        title: { type: string }
+        content: { type: ["string", "null"] }
+        category: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        likes: { type: integer }
+        commentCount: { type: integer }
+        isPinned: { type: boolean }
+        createdAt: { type: string }
+
+    PostInput:
+      type: object
+      required: [title, category]
+      properties:
+        title: { type: string, minLength: 1 }
+        content: { type: string }
+        category: { type: string }
+        imageUrl: { type: string }
+
+    PostUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        content: { type: string }
+        category: { type: string }
+        imageUrl: { type: string }
+        isPinned: { type: boolean }
+
+    Comment:
+      type: object
+      required: [id, postId, authorId, content]
+      properties:
+        id: { type: integer }
+        postId: { type: integer }
+        authorId: { type: string }
+        authorName: { type: ["string", "null"] }
+        authorAvatar: { type: ["string", "null"] }
+        content: { type: string }
+        likes: { type: integer }
+        createdAt: { type: string }
+
+    CommentInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+
+    Trader:
+      type: object
+      required: [id, userId, displayName, roi, winRate, status]
+      properties:
+        id: { type: integer }
+        userId: { type: string }
+        displayName: { type: string }
+        avatarUrl: { type: ["string", "null"] }
+        bio: { type: ["string", "null"] }
+        roi: { type: number }
+        winRate: { type: number }
+        maxDrawdown: { type: number }
+        totalTrades: { type: integer }
+        followers: { type: integer }
+        status: { type: string }
+        verified: { type: boolean }
+        markets: { type: array, items: { type: string } }
+        strategy: { type: ["string", "null"] }
+        monthlyReturn: { type: ["number", "null"] }
+        riskScore: { type: ["integer", "null"] }
+        createdAt: { type: string }
+
+    CopySubscription:
+      type: object
+      required: [id, userId, traderId, status]
+      properties:
+        id: { type: integer }
+        userId: { type: string }
+        traderId: { type: integer }
+        traderName: { type: ["string", "null"] }
+        status: { type: string }
+        maxAmount: { type: ["number", "null"] }
+        stopLoss: { type: ["number", "null"] }
+        allocatedAmount: { type: ["number", "null"] }
+        currentPnl: { type: ["number", "null"] }
+        createdAt: { type: string }
+
+    CopySubscriptionInput:
+      type: object
+      required: [traderId]
+      properties:
+        traderId: { type: integer }
+        maxAmount: { type: number }
+        stopLoss: { type: number }
+        allocatedAmount: { type: number }
+
+    CopySubscriptionUpdate:
+      type: object
+      properties:
+        status: { type: string }
+        maxAmount: { type: number }
+        stopLoss: { type: number }
+        allocatedAmount: { type: number }
+
+    WatchlistItem:
+      type: object
+      required: [id, userId, symbol, market]
+      properties:
+        id: { type: integer }
+        userId: { type: string }
+        symbol: { type: string }
+        market: { type: string }
+        displayName: { type: ["string", "null"] }
+        alertPrice: { type: ["number", "null"] }
+        createdAt: { type: string }
+
+    WatchlistInput:
+      type: object
+      required: [symbol, market]
+      properties:
+        symbol: { type: string, minLength: 1 }
+        market: { type: string }
+        displayName: { type: string }
+        alertPrice: { type: number }
+
+    DashboardSummary:
+      type: object
+      required: [enrolledCourses, completedCourses, totalXp, upcomingClasses, copySubscriptions, watchlistCount]
+      properties:
+        enrolledCourses: { type: integer }
+        completedCourses: { type: integer }
+        totalXp: { type: integer }
+        upcomingClasses: { type: integer }
+        copySubscriptions: { type: integer }
+        watchlistCount: { type: integer }
+        totalPnl: { type: ["number", "null"] }
+        learningStreak: { type: integer }
+
+    LeaderboardEntry:
+      type: object
+      required: [rank, userId, displayName, xp, completedCourses]
+      properties:
+        rank: { type: integer }
+        userId: { type: string }
+        displayName: { type: string }
+        avatarUrl: { type: ["string", "null"] }
+        xp: { type: integer }
+        completedCourses: { type: integer }
+        badges: { type: array, items: { type: string } }
+
+    ActivityItem:
+      type: object
+      required: [id, type, description, createdAt]
+      properties:
+        id: { type: integer }
+        type: { type: string }
+        userId: { type: ["string", "null"] }
+        userName: { type: ["string", "null"] }
+        description: { type: string }
+        metadata: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    AdminStats:
+      type: object
+      required: [totalUsers, totalCourses, totalEnrollments, activeUsers, revenue]
+      properties:
+        totalUsers: { type: integer }
+        totalCourses: { type: integer }
+        totalEnrollments: { type: integer }
+        activeUsers: { type: integer }
+        revenue: { type: number }
+        newUsersToday: { type: integer }
+        pendingInstructors: { type: integer }
+        upcomingClasses: { type: integer }
