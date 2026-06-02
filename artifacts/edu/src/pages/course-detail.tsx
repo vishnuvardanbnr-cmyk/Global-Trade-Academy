@@ -180,14 +180,47 @@ function VimeoPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => vo
 }
 
 /* ─── Master smart VideoPlayer ─────────────────────────────────── */
-function VideoPlayer({ url, title, onEnded }: { url?: string | null; title?: string; onEnded?: () => void }) {
+function VideoPlayer({
+  url, title, lessonType, duration, onEnded,
+}: {
+  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void;
+}) {
   if (!url) {
+    const isArticle = lessonType === "article";
     return (
-      <div className="w-full aspect-video bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center gap-4">
-        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-          <MonitorPlay className="h-7 w-7 text-white/20" />
+      <div className="w-full aspect-video relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 flex flex-col items-center justify-center">
+        {/* decorative blobs */}
+        <div className="absolute -top-16 -right-16 w-72 h-72 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-10 w-56 h-56 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        {/* subtle grid */}
+        <div className="absolute inset-0 opacity-[0.025] pointer-events-none"
+          style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.6) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.6) 1px,transparent 1px)", backgroundSize: "48px 48px" }} />
+
+        <div className="relative z-10 flex flex-col items-center text-center px-8 gap-5 max-w-lg">
+          {/* icon badge */}
+          <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-sm flex items-center justify-center shadow-xl">
+            {isArticle
+              ? <FileText className="h-7 w-7 text-blue-300" />
+              : <BookOpen className="h-7 w-7 text-blue-300" />}
+          </div>
+
+          {/* lesson title */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-400/70">
+              {isArticle ? "Reading Lesson" : "Lesson"}
+            </p>
+            <h2 className="text-white font-bold text-[22px] leading-snug">{title}</h2>
+            {duration && (
+              <p className="text-white/35 text-[12px]">{duration} min read</p>
+            )}
+          </div>
+
+          {/* CTA pill */}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 border border-white/12 text-white/45 text-[11.5px] font-medium">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            Scroll down to read the lesson content
+          </div>
         </div>
-        <p className="text-white/30 text-[13px]">{title ?? "No video for this lesson"}</p>
       </div>
     );
   }
@@ -377,16 +410,24 @@ export default function CourseDetail() {
         <div className="flex flex-col min-w-0 border-r border-slate-100">
 
           {/* Video player — completes lesson + auto-advances on end */}
-          <div className="bg-black w-full">
-            <VideoPlayer url={cur?.videoUrl} title={cur?.title} onEnded={isEnrolled ? onVideoEnded : undefined} />
+          <div className="w-full">
+            <VideoPlayer
+              url={cur?.videoUrl}
+              title={cur?.title}
+              lessonType={cur?.type}
+              duration={cur?.duration}
+              onEnded={isEnrolled ? onVideoEnded : undefined}
+            />
           </div>
-          {/* Watch-to-complete hint */}
-          {isEnrolled && cur?.videoUrl && (
+          {/* Status bar below video */}
+          {isEnrolled && (
             <div className={cn(
               "px-5 py-2 text-[11.5px] font-medium flex items-center gap-2 transition-colors",
               curDone
                 ? "bg-emerald-600 text-white"
-                : "bg-slate-800 text-white/50",
+                : cur?.videoUrl
+                  ? "bg-slate-800 text-white/50"
+                  : "bg-slate-800/60 text-white/30 hidden",
             )}>
               {curDone
                 ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Lesson completed</>
@@ -396,41 +437,58 @@ export default function CourseDetail() {
 
           {/* Lesson header */}
           <div className="bg-white px-6 py-4 border-b border-slate-100">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  {curChapter && (
-                    <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                      {curChapter.title}
-                    </span>
-                  )}
-                  <span className="text-[11px] text-slate-400">Lesson {activeIdx + 1} of {totalL}</span>
-                  {cur?.type && cur.type !== "video" && (
-                    <span className={cn("text-[10.5px] font-semibold px-2 py-0.5 rounded-full",
-                      cur.type === "article" ? "bg-violet-50 text-violet-600" : "bg-slate-100 text-slate-500")}>
-                      {cur.type === "article" ? "Article" : cur.type}
-                    </span>
-                  )}
-                  {curDone && (
-                    <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> Complete
-                    </span>
-                  )}
-                </div>
-                <h1 className="text-[18px] font-bold text-slate-900 leading-snug truncate">
-                  {cur?.title ?? course.title}
-                </h1>
-              </div>
-
-              {/* Quick actions */}
-              <div className="flex items-center gap-2 shrink-0">
-                {isEnrolled && cur && (
-                  <BookmarkButton courseId={courseId} lessonId={cur.id} />
+            {/* breadcrumb row */}
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                {curChapter && (
+                  <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full shrink-0">
+                    {curChapter.title}
+                  </span>
                 )}
+                <span className="text-[11px] text-slate-400 shrink-0">Lesson {activeIdx + 1} of {totalL}</span>
+                {cur?.type && cur.type !== "video" && (
+                  <span className={cn("text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full shrink-0",
+                    cur.type === "article" ? "bg-violet-50 text-violet-600" : "bg-slate-100 text-slate-500")}>
+                    {cur.type === "article" ? "Article" : cur.type}
+                  </span>
+                )}
+                {curDone && (
+                  <span className="text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="h-3 w-3" /> Complete
+                  </span>
+                )}
+              </div>
+              {isEnrolled && cur && (
+                <BookmarkButton courseId={courseId} lessonId={cur.id} />
+              )}
+            </div>
+
+            {/* title + nav row */}
+            <div className="flex items-center justify-between gap-3">
+              <h1 className="text-[20px] font-bold text-slate-900 leading-snug">
+                {cur?.title ?? course.title}
+              </h1>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  disabled={activeIdx === 0}
+                  onClick={() => { setActiveIdx((p) => p - 1); setTab("overview"); }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Previous lesson"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <button
+                  disabled={activeIdx >= totalL - 1}
+                  onClick={() => { setActiveIdx((p) => p + 1); setTab("overview"); }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Next lesson"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
             </div>
 
-            {/* Gate banner — shown right below lesson title when relevant */}
+            {/* Gate banner */}
             {isEnrolled && curDone && gate && (
               <div className="mt-3">
                 <LessonGateBanner gate={gate} onGoToQuiz={() => setTab("quiz")} />
