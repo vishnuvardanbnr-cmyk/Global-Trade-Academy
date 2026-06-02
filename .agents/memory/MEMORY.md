@@ -2,3 +2,4 @@
 - [Course sections architecture](course-sections-arch.md) — sections are optional; course-detail.tsx falls back to flat single-group when no sections exist.
 - [Clerk name vs DB displayName](clerk-name-display.md) — greeting/sidebar must source name from useUser() not DB email; DB stores real name after CompleteProfileDialog.
 - [Quiz gate flow](quiz-gate-flow.md) — quiz submit → advanceGateOnPass → pending_review → instructor approves/rejects → next lesson unlocked; rejection creates per-student replacement quiz.
+- [Deriv App ID vs Token](deriv-appid.md) — DERIV_APP_ID env var holds an alphanumeric API token, not a numeric app_id; always validate and fall back to "1089" for market data.

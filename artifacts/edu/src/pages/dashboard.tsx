@@ -1,12 +1,13 @@
-import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses } from "@workspace/api-client-react";
+import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses, useListLiveClasses } from "@workspace/api-client-react";
+import type { LiveClass } from "@workspace/api-client-react";
 import { useUser } from "@clerk/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  BookOpen, Trophy, TrendingUp, Video, ArrowUpRight, ArrowDownRight,
+  BookOpen, Trophy, TrendingUp, Video, ArrowUpRight,
   Star, Clock, CheckCircle2, Target, Zap, BarChart3, Activity,
-  Users, GraduationCap,
+  Users, GraduationCap, Radio, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
   const { data: enrollments } = useListEnrollments();
   const { data: allCourses } = useListCourses({});
+  const { data: liveClasses, isLoading: liveLoading } = useListLiveClasses({});
 
   const isLoading = userLoading || summaryLoading;
 
@@ -196,38 +198,94 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Market Watchlist placeholder + Activity */}
+      {/* Live Sessions + Activity */}
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Watchlist — prices from external feed, show symbols only */}
-        <Card className="shadow-xs border-border">
+        {/* Live Sessions */}
+        <Card className="shadow-xs border-border flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Market Watchlist</CardTitle>
-            <Link href="/trading-chat">
-              <button className="text-xs font-medium text-primary hover:underline">Open Chart</button>
+            <CardTitle className="text-base font-semibold">Live Sessions</CardTitle>
+            <Link href="/live">
+              <button className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5">
+                See all <ArrowUpRight className="h-3 w-3" />
+              </button>
             </Link>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border">
-              {[
-                { symbol: "BTC/USD", market: "crypto" },
-                { symbol: "ETH/USD", market: "crypto" },
-                { symbol: "EUR/USD", market: "forex" },
-                { symbol: "XAU/USD", market: "commodity" },
-                { symbol: "SPX500",  market: "index" },
-              ].map((item) => (
-                <div key={item.symbol} className="flex items-center justify-between px-6 py-3 hover:bg-secondary/50 transition-colors">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{item.symbol}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{item.market}</p>
+          <CardContent className="flex-1 p-0">
+            {liveLoading ? (
+              <div className="space-y-3 px-6 py-3">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : (() => {
+              const live     = (liveClasses ?? []).filter((c: LiveClass) => c.status === "live");
+              const upcoming = (liveClasses ?? []).filter((c: LiveClass) => c.status === "scheduled");
+              const shown    = [...live, ...upcoming].slice(0, 4);
+
+              if (shown.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[180px] px-6 py-8 text-center">
+                    <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center mb-3">
+                      <Calendar className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground">No sessions scheduled</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                      Live trading sessions will appear here when instructors go live or post upcoming classes.
+                    </p>
+                    <Link href="/live">
+                      <button className="mt-3 text-xs text-primary hover:underline font-medium">Browse schedule</button>
+                    </Link>
                   </div>
-                  <Link href="/trading-chat">
-                    <button className="text-xs text-primary hover:underline flex items-center gap-0.5">
-                      View <ArrowUpRight className="h-3 w-3" />
-                    </button>
-                  </Link>
+                );
+              }
+
+              return (
+                <div className="divide-y divide-border">
+                  {shown.map((session: LiveClass) => {
+                    const isLive = session.status === "live";
+                    const diff   = new Date(session.scheduledAt).getTime() - Date.now();
+                    const h      = Math.floor(diff / 3_600_000);
+                    const m      = Math.floor((diff % 3_600_000) / 60_000);
+                    const when   = diff <= 0 ? "Starting now" : h >= 24 ? `In ${Math.floor(h / 24)}d` : `In ${h}h ${m}m`;
+
+                    return (
+                      <div key={session.id} className="flex items-start gap-3 px-5 py-3 hover:bg-secondary/40 transition-colors">
+                        <div className={cn(
+                          "mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                          isLive ? "bg-red-50" : "bg-blue-50",
+                        )}>
+                          <Radio className={cn("h-4 w-4", isLive ? "text-red-500" : "text-blue-400")} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground leading-tight truncate">{session.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                            {session.instructorName ?? "Instructor"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {isLive ? (
+                              <Badge className="text-[10px] px-1.5 py-0 bg-red-500 hover:bg-red-500 text-white border-0 gap-1">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                LIVE
+                              </Badge>
+                            ) : (
+                              <span className="text-[11px] font-medium text-yellow-600">{when}</span>
+                            )}
+                            {session.meetingUrl && isLive && (
+                              <a
+                                href={session.meetingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5"
+                              >
+                                Join <ArrowUpRight className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
