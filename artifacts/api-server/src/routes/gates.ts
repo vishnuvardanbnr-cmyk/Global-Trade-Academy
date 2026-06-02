@@ -10,7 +10,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { eq, and, inArray, desc } from "drizzle-orm";
-import { ownsCourse } from "../lib/lms";
+import { ownsCourse, syncCourseCompletion } from "../lib/lms";
 
 const router = Router();
 
@@ -30,7 +30,8 @@ router.get("/lessons/:lessonId/gate", async (req, res): Promise<void> => {
       .limit(1)
       .then((r) => r[0]);
 
-    if (!gate) { res.status(404).json({ error: "No gate found" }); return; }
+    // Return null body (200) when no gate exists — aligns with OpenAPI spec.
+    if (!gate) { res.json(null); return; }
 
     res.json({
       id: gate.id,
@@ -311,6 +312,10 @@ router.post("/instructor/reviews/:gateId/approve", async (req, res): Promise<voi
       .returning()
       .then((r) => r[0]);
 
+    // Trigger completion check — the student may have finished all lessons and
+    // this approval is the last gate needed to earn their certificate.
+    const completion = await syncCourseCompletion(gate.userId, gate.courseId);
+
     res.json({
       id: updated.id,
       userId: updated.userId,
@@ -325,6 +330,8 @@ router.post("/instructor/reviews/:gateId/approve", async (req, res): Promise<voi
       submittedAt: updated.submittedAt,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
+      courseCompleted: completion.completed,
+      certificateSerial: completion.certificateSerial,
     });
   } catch (err) {
     req.log.error({ err }, "Error approving gate");
