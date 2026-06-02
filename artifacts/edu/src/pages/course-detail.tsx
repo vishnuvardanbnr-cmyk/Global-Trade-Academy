@@ -70,6 +70,19 @@ function buildFlatGroups(dbLessons: DbLesson[]): ChapterGroup[] {
   return dbLessons.length === 0 ? [] : [{ id: 1, title: "Course Content", dur: durStr(totalMin), lessons: dbLessons }];
 }
 
+/* ─── URL type helpers ─────────────────────────────────────────── */
+function extractYtId(url: string): string | null {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?/\s]+)/);
+  return m?.[1] ?? null;
+}
+function extractVimeoId(url: string): string | null {
+  const m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  return m?.[1] ?? null;
+}
+function isDirectVideo(url: string): boolean {
+  return /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(url);
+}
+
 /* ─── YouTube IFrame API loader (module-level singleton) ───────── */
 let _ytReady = false;
 const _ytCallbacks: Array<() => void> = [];
@@ -93,32 +106,18 @@ function loadYTApi(onReady: () => void) {
   }
 }
 
-function extractYtId(url: string): string | null {
-  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?/\s]+)/);
-  return m?.[1] ?? null;
-}
-
-/* ─── YouTube Player component ─────────────────────────────────── */
-function YouTubePlayer({
-  url, title, onEnded,
-}: {
-  url?: string | null;
-  title?: string;
-  onEnded?: () => void;
-}) {
+/* ─── YouTube sub-player (IFrame API → accurate ended event) ───── */
+function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
 
-  const videoId = url ? extractYtId(url) : null;
-
   useEffect(() => {
-    if (!videoId || !divRef.current) return;
+    if (!divRef.current) return;
     const container = divRef.current;
     let destroyed = false;
-
     loadYTApi(() => {
       if (destroyed || !container) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -127,12 +126,11 @@ function YouTubePlayer({
         playerVars: { rel: 0, modestbranding: 1, autoplay: 0 },
         events: {
           onStateChange: (e: { data: number }) => {
-            if (e.data === 0) onEndedRef.current?.(); // 0 = YT.PlayerState.ENDED
+            if (e.data === 0) onEndedRef.current?.(); // 0 = ENDED
           },
         },
       });
     });
-
     return () => {
       destroyed = true;
       playerRef.current?.destroy();
@@ -140,7 +138,50 @@ function YouTubePlayer({
     };
   }, [videoId]);
 
-  if (!videoId) {
+  return <div className="w-full aspect-video bg-black"><div ref={divRef} className="w-full h-full" /></div>;
+}
+
+/* ─── Vimeo sub-player (postMessage → finish event) ────────────── */
+function VimeoPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+
+  useEffect(() => {
+    const handle = (e: MessageEvent) => {
+      if (!String(e.origin).includes("vimeo.com")) return;
+      try {
+        const d = (typeof e.data === "string" ? JSON.parse(e.data) : e.data) as Record<string, unknown>;
+        if (d.event === "finish") onEndedRef.current?.();
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("message", handle);
+    return () => window.removeEventListener("message", handle);
+  }, []);
+
+  const onLoad = () => {
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ method: "addEventListener", value: "finish" }),
+      "https://player.vimeo.com",
+    );
+  };
+
+  return (
+    <div className="w-full aspect-video bg-black">
+      <iframe
+        ref={iframeRef}
+        src={`https://player.vimeo.com/video/${videoId}?api=1&responsive=1&color=3b82f6&title=0&byline=0&portrait=0`}
+        className="w-full h-full"
+        allowFullScreen
+        onLoad={onLoad}
+      />
+    </div>
+  );
+}
+
+/* ─── Master smart VideoPlayer ─────────────────────────────────── */
+function VideoPlayer({ url, title, onEnded }: { url?: string | null; title?: string; onEnded?: () => void }) {
+  if (!url) {
     return (
       <div className="w-full aspect-video bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center gap-4">
         <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
@@ -151,9 +192,26 @@ function YouTubePlayer({
     );
   }
 
+  const ytId = extractYtId(url);
+  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} />;
+
+  const vimeoId = extractVimeoId(url);
+  if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
+
+  if (isDirectVideo(url)) {
+    return (
+      <div className="w-full aspect-video bg-black">
+        <video src={url} controls className="w-full h-full" onEnded={onEnded}>
+          <source src={url} />
+        </video>
+      </div>
+    );
+  }
+
+  // Generic embed — no end-detection possible, show inside the same frame
   return (
     <div className="w-full aspect-video bg-black">
-      <div ref={divRef} className="w-full h-full" />
+      <iframe src={url} className="w-full h-full" allowFullScreen title={title} />
     </div>
   );
 }
@@ -320,10 +378,10 @@ export default function CourseDetail() {
 
           {/* Video player — completes lesson + auto-advances on end */}
           <div className="bg-black w-full">
-            <YouTubePlayer url={cur?.videoUrl} title={cur?.title} onEnded={isEnrolled ? onVideoEnded : undefined} />
+            <VideoPlayer url={cur?.videoUrl} title={cur?.title} onEnded={isEnrolled ? onVideoEnded : undefined} />
           </div>
           {/* Watch-to-complete hint */}
-          {isEnrolled && cur?.videoUrl && extractYtId(cur.videoUrl) && (
+          {isEnrolled && cur?.videoUrl && (
             <div className={cn(
               "px-5 py-2 text-[11.5px] font-medium flex items-center gap-2 transition-colors",
               curDone
