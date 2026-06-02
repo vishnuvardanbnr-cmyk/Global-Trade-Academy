@@ -11,7 +11,9 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Courses from "@/pages/courses";
+import CourseDetail from "@/pages/course-detail";
 import Trading from "@/pages/trading";
+import TradingChat from "@/pages/trading-chat";
 import CopyTrading from "@/pages/copy-trading";
 import Community from "@/pages/community";
 import LiveClasses from "@/pages/live-classes";
@@ -75,12 +77,8 @@ function SignUpPage() {
 function HomeRedirect() {
   return (
     <>
-      <Show when="signed-in">
-        <Redirect to="/dashboard" />
-      </Show>
-      <Show when="signed-out">
-        <Home />
-      </Show>
+      <Show when="signed-in"><Redirect to="/dashboard" /></Show>
+      <Show when="signed-out"><Home /></Show>
     </>
   );
 }
@@ -89,13 +87,9 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return (
     <>
       <Show when="signed-in">
-        <DashboardLayout>
-          <Component />
-        </DashboardLayout>
+        <DashboardLayout><Component /></DashboardLayout>
       </Show>
-      <Show when="signed-out">
-        <Redirect to="/" />
-      </Show>
+      <Show when="signed-out"><Redirect to="/" /></Show>
     </>
   );
 }
@@ -107,10 +101,7 @@ function ClerkQueryClientCacheInvalidator() {
   useEffect(() => {
     const unsubscribe = addListener(({ user }) => {
       const userId = user?.id ?? null;
-      if (
-        prevUserIdRef.current !== undefined &&
-        prevUserIdRef.current !== userId
-      ) {
+      if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
         queryClient.clear();
       }
       prevUserIdRef.current = userId;
@@ -143,8 +134,10 @@ function ClerkProviderWithRoutes() {
             <Route path="/sign-up/*?" component={SignUpPage} />
 
             <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
+            <Route path="/courses/:id"><ProtectedRoute component={CourseDetail} /></Route>
             <Route path="/courses"><ProtectedRoute component={Courses} /></Route>
             <Route path="/trading"><ProtectedRoute component={Trading} /></Route>
+            <Route path="/trading-chat"><ProtectedRoute component={TradingChat} /></Route>
             <Route path="/copy-trading"><ProtectedRoute component={CopyTrading} /></Route>
             <Route path="/community"><ProtectedRoute component={Community} /></Route>
             <Route path="/live"><ProtectedRoute component={LiveClasses} /></Route>
