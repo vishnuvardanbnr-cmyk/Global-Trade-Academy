@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useGetCourse, useListLessons, useListCourseSections, getListCourseSectionsQueryKey,
@@ -70,11 +70,79 @@ function buildFlatGroups(dbLessons: DbLesson[]): ChapterGroup[] {
   return dbLessons.length === 0 ? [] : [{ id: 1, title: "Course Content", dur: durStr(totalMin), lessons: dbLessons }];
 }
 
-/* ─── Smart Video Player ───────────────────────────────────────── */
-function VideoPlayer({ url, title }: { url?: string | null; title?: string }) {
-  if (!url) {
+/* ─── YouTube IFrame API loader (module-level singleton) ───────── */
+let _ytReady = false;
+const _ytCallbacks: Array<() => void> = [];
+
+function loadYTApi(onReady: () => void) {
+  if (_ytReady) { onReady(); return; }
+  _ytCallbacks.push(onReady);
+  if (!document.getElementById("yt-api-script")) {
+    const w = window as unknown as Record<string, unknown>;
+    const prev = w.onYouTubeIframeAPIReady as (() => void) | undefined;
+    w.onYouTubeIframeAPIReady = () => {
+      if (prev) prev();
+      _ytReady = true;
+      _ytCallbacks.forEach((fn) => fn());
+      _ytCallbacks.length = 0;
+    };
+    const s = document.createElement("script");
+    s.id = "yt-api-script";
+    s.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(s);
+  }
+}
+
+function extractYtId(url: string): string | null {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?/\s]+)/);
+  return m?.[1] ?? null;
+}
+
+/* ─── YouTube Player component ─────────────────────────────────── */
+function YouTubePlayer({
+  url, title, onEnded,
+}: {
+  url?: string | null;
+  title?: string;
+  onEnded?: () => void;
+}) {
+  const divRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const playerRef = useRef<any>(null);
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+
+  const videoId = url ? extractYtId(url) : null;
+
+  useEffect(() => {
+    if (!videoId || !divRef.current) return;
+    const container = divRef.current;
+    let destroyed = false;
+
+    loadYTApi(() => {
+      if (destroyed || !container) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      playerRef.current = new (window as any).YT.Player(container, {
+        videoId,
+        playerVars: { rel: 0, modestbranding: 1, autoplay: 0 },
+        events: {
+          onStateChange: (e: { data: number }) => {
+            if (e.data === 0) onEndedRef.current?.(); // 0 = YT.PlayerState.ENDED
+          },
+        },
+      });
+    });
+
+    return () => {
+      destroyed = true;
+      playerRef.current?.destroy();
+      playerRef.current = null;
+    };
+  }, [videoId]);
+
+  if (!videoId) {
     return (
-      <div className="w-full aspect-video bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center gap-3">
+      <div className="w-full aspect-video bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center gap-4">
         <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
           <MonitorPlay className="h-7 w-7 text-white/20" />
         </div>
@@ -83,48 +151,9 @@ function VideoPlayer({ url, title }: { url?: string | null; title?: string }) {
     );
   }
 
-  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?/\n]+)/);
-  if (ytMatch) {
-    return (
-      <div className="w-full aspect-video bg-black">
-        <iframe
-          src={`https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`}
-          className="w-full h-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-          title={title}
-        />
-      </div>
-    );
-  }
-
-  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-  if (vimeoMatch) {
-    return (
-      <div className="w-full aspect-video bg-black">
-        <iframe
-          src={`https://player.vimeo.com/video/${vimeoMatch[1]}?color=3b82f6&title=0&byline=0&portrait=0`}
-          className="w-full h-full"
-          allowFullScreen
-          title={title}
-        />
-      </div>
-    );
-  }
-
-  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
-    return (
-      <div className="w-full aspect-video bg-black">
-        <video src={url} controls className="w-full h-full" title={title}>
-          <source src={url} />
-        </video>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full aspect-video bg-black">
-      <iframe src={url} className="w-full h-full" allowFullScreen title={title} />
+      <div ref={divRef} className="w-full h-full" />
     </div>
   );
 }
@@ -208,23 +237,33 @@ export default function CourseDetail() {
     } catch { toast({ title: "Enrollment failed", variant: "destructive" }); }
   };
 
-  /* ─── Mark lesson complete ─── */
-  const { mutateAsync: updateProgress, isPending: marking } = useUpdateLessonProgress();
-  const markDone = async () => {
-    if (!cur || curDone) {
-      if (activeIdx < totalL - 1) setActiveIdx((p) => p + 1);
-      return;
-    }
+  /* ─── Video-driven lesson completion ─── */
+  const { mutateAsync: updateProgress } = useUpdateLessonProgress();
+
+  const onVideoEnded = useCallback(async () => {
+    if (!isEnrolled) return;
+    if (!cur) return;
     try {
-      const res = await updateProgress({ lessonId: cur.id, data: { completed: true } });
-      await invalidateProgress();
-      if (res.courseCompleted) {
-        toast({ title: "Course complete! 🎓", description: `+${res.xpAwarded} XP · Certificate issued.` });
-      } else {
-        toast({ title: "Lesson complete", description: `+${res.xpAwarded} XP earned` });
+      if (!curDone) {
+        const res = await updateProgress({ lessonId: cur.id, data: { completed: true } });
+        await qc.invalidateQueries({ queryKey: getGetCourseProgressQueryKey(courseId) });
+        await qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+        await qc.invalidateQueries({ queryKey: getGetLessonGateQueryKey(cur.id) });
+        if (res.courseCompleted) {
+          toast({ title: "Course complete! 🎓", description: `+${res.xpAwarded} XP earned · Certificate issued.` });
+          return;
+        }
+        toast({ title: "Lesson complete ✓", description: `+${res.xpAwarded} XP earned` });
       }
-    } catch { toast({ title: "Could not save progress", variant: "destructive" }); }
-  };
+      // Auto-advance to next lesson after a brief pause
+      if (activeIdx < totalL - 1) {
+        setTimeout(() => setActiveIdx((p) => p + 1), 1400);
+      }
+    } catch {
+      toast({ title: "Could not save progress", variant: "destructive" });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur?.id, curDone, isEnrolled, activeIdx, totalL, courseId]);
 
   if (isLoading) return (
     <div className="space-y-0 -mx-4 -mt-4 md:-mx-6 md:-mt-6 lg:-mx-8 lg:-mt-8">
@@ -271,13 +310,6 @@ export default function CourseDetail() {
             <span className="text-[11px] text-white/50 font-medium">{completedCount}/{totalL} done</span>
           </div>
         )}
-
-        {isEnrolled && activeIdx < totalL - 1 && (
-          <button onClick={() => setActiveIdx((p) => p + 1)}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white rounded-lg text-[11.5px] font-semibold transition-colors shrink-0">
-            <SkipForward className="h-3.5 w-3.5" /> Next
-          </button>
-        )}
       </div>
 
       {/* ── Two-column main area ──────────────────────────── */}
@@ -286,10 +318,23 @@ export default function CourseDetail() {
         {/* LEFT: player + lesson content */}
         <div className="flex flex-col min-w-0 border-r border-slate-100">
 
-          {/* Video player */}
+          {/* Video player — completes lesson + auto-advances on end */}
           <div className="bg-black w-full">
-            <VideoPlayer url={cur?.videoUrl} title={cur?.title} />
+            <YouTubePlayer url={cur?.videoUrl} title={cur?.title} onEnded={isEnrolled ? onVideoEnded : undefined} />
           </div>
+          {/* Watch-to-complete hint */}
+          {isEnrolled && cur?.videoUrl && extractYtId(cur.videoUrl) && (
+            <div className={cn(
+              "px-5 py-2 text-[11.5px] font-medium flex items-center gap-2 transition-colors",
+              curDone
+                ? "bg-emerald-600 text-white"
+                : "bg-slate-800 text-white/50",
+            )}>
+              {curDone
+                ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Lesson completed</>
+                : <><Play className="h-3 w-3 shrink-0" /> Watch the full video to complete this lesson</>}
+            </div>
+          )}
 
           {/* Lesson header */}
           <div className="bg-white px-6 py-4 border-b border-slate-100">
@@ -323,19 +368,6 @@ export default function CourseDetail() {
               <div className="flex items-center gap-2 shrink-0">
                 {isEnrolled && cur && (
                   <BookmarkButton courseId={courseId} lessonId={cur.id} />
-                )}
-                {isEnrolled && !curDone && cur && (
-                  <button onClick={markDone} disabled={marking}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-semibold transition-colors disabled:opacity-60">
-                    {marking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                    Mark Done
-                  </button>
-                )}
-                {isEnrolled && curDone && !gate && (
-                  <button onClick={markDone} disabled={marking}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[12.5px] font-semibold transition-colors">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Done
-                  </button>
                 )}
               </div>
             </div>
@@ -378,9 +410,8 @@ export default function CourseDetail() {
             {tab === "overview" && (
               <OverviewTab
                 cur={cur} chIdx={chIdx}
-                isEnrolled={isEnrolled} curDone={curDone} marking={marking}
-                markDone={markDone} doEnroll={doEnroll} enrolling={enrolling}
-                hasNext={activeIdx < totalL - 1} onNext={() => setActiveIdx((p) => p + 1)}
+                isEnrolled={isEnrolled} curDone={curDone}
+                doEnroll={doEnroll} enrolling={enrolling}
                 gate={gate} onGoToQuiz={() => setTab("quiz")}
               />
             )}
@@ -650,12 +681,11 @@ function LessonGateBanner({ gate, onGoToQuiz }: { gate: LessonGate; onGoToQuiz: 
 
 /* ════════════════════ Overview Tab ════════════════════ */
 function OverviewTab({
-  cur, chIdx, isEnrolled, curDone, marking, markDone, doEnroll, enrolling, hasNext, onNext, gate, onGoToQuiz,
+  cur, chIdx, isEnrolled, curDone, doEnroll, enrolling, gate, onGoToQuiz,
 }: {
   cur: DbLesson | undefined; chIdx: number;
-  isEnrolled: boolean; curDone: boolean; marking: boolean;
-  markDone: () => void; doEnroll: () => void; enrolling: boolean;
-  hasNext: boolean; onNext: () => void;
+  isEnrolled: boolean; curDone: boolean;
+  doEnroll: () => void; enrolling: boolean;
   gate?: LessonGate; onGoToQuiz: () => void;
 }) {
   if (!cur) return (
@@ -695,27 +725,8 @@ function OverviewTab({
         </div>
       )}
 
-      {/* Action row */}
-      {isEnrolled ? (
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button onClick={markDone} disabled={marking}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-60",
-              curDone
-                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                : "bg-blue-600 hover:bg-blue-700 text-white",
-            )}>
-            {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {curDone ? "Completed ✓" : "Mark as Complete"}
-          </button>
-          {hasNext && !gateBlocksNext && (
-            <button onClick={onNext}
-              className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-[13px] font-semibold transition-colors">
-              Next Lesson <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      ) : (
+      {/* Enroll CTA for non-enrolled visitors */}
+      {!isEnrolled && (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
           <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
             <Lock className="h-4 w-4 text-amber-600" />
