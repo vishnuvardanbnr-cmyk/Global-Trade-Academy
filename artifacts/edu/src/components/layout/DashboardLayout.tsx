@@ -30,7 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: me } = useGetMe();
 
-  const role = user?.publicMetadata?.role as string | undefined;
+  const role = me?.role;
   const isInstructor = role === "instructor";
   const initials = (user?.firstName?.charAt(0) ?? "") + (user?.lastName?.charAt(0) ?? "");
 
