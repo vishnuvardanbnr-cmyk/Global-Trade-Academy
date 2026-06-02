@@ -12,6 +12,7 @@ import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Courses from "@/pages/courses";
 import CourseDetail from "@/pages/course-detail";
+import Certificates from "@/pages/certificates";
 import Trading from "@/pages/trading";
 import TradingChat from "@/pages/trading-chat";
 import CopyTrading from "@/pages/copy-trading";
@@ -136,6 +137,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
             <Route path="/courses/:id"><ProtectedRoute component={CourseDetail} /></Route>
             <Route path="/courses"><ProtectedRoute component={Courses} /></Route>
+            <Route path="/certificates"><ProtectedRoute component={Certificates} /></Route>
             <Route path="/trading"><ProtectedRoute component={Trading} /></Route>
             <Route path="/trading-chat"><ProtectedRoute component={TradingChat} /></Route>
             <Route path="/copy-trading"><ProtectedRoute component={CopyTrading} /></Route>

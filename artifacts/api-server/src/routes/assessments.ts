@@ -9,7 +9,7 @@ import {
   taskCompletionsTable,
 } from "@workspace/db";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
-import { awardXp, ownsCourse, recordLearningDay } from "../lib/lms";
+import { awardXp, ownsCourse, recordLearningDay, isEnrolled } from "../lib/lms";
 
 const router = Router();
 
@@ -240,6 +240,8 @@ router.post("/quizzes/:quizId/attempts", async (req, res): Promise<void> => {
     const quiz = await db.select().from(quizzesTable).where(eq(quizzesTable.id, quizId)).limit(1).then((r) => r[0]);
     if (!quiz) { res.status(404).json({ error: "Quiz not found" }); return; }
 
+    if (!(await isEnrolled(clerkId, quiz.courseId))) { res.status(403).json({ error: "Not enrolled" }); return; }
+
     const questions = await db
       .select()
       .from(quizQuestionsTable)
@@ -403,6 +405,8 @@ router.post("/tasks/:taskId/complete", async (req, res): Promise<void> => {
 
     const task = await db.select().from(tasksTable).where(eq(tasksTable.id, taskId)).limit(1).then((r) => r[0]);
     if (!task) { res.status(404).json({ error: "Task not found" }); return; }
+
+    if (!(await isEnrolled(clerkId, task.courseId))) { res.status(403).json({ error: "Not enrolled" }); return; }
 
     const completion = await db.insert(taskCompletionsTable).values({
       taskId,

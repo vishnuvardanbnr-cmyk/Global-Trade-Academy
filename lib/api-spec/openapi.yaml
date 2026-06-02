@@ -1382,6 +1382,7 @@ components:
         lessonCount: { type: integer }
         enrollmentCount: { type: integer }
         rating: { type: ["number", "null"] }
+        reviewCount: { type: integer }
         isFeatured: { type: boolean }
         createdAt: { type: string }
 
@@ -1424,6 +1425,7 @@ components:
         order: { type: integer }
         isFree: { type: boolean }
         dripDays: { type: integer }
+        locked: { type: boolean }
         createdAt: { type: string }
 
     LessonInput:

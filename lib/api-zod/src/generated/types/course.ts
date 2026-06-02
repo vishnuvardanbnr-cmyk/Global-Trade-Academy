@@ -27,6 +27,7 @@ export interface Course {
   enrollmentCount?: number;
   /** @nullable */
   rating?: number | null;
+  reviewCount?: number;
   isFeatured?: boolean;
   createdAt?: string;
 }

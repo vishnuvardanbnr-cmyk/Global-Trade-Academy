@@ -6,6 +6,9 @@ import {
   postsTable,
   tradersTable,
   activityTable,
+  quizzesTable,
+  quizQuestionsTable,
+  tasksTable,
 } from "@workspace/db";
 
 async function seed() {
@@ -114,22 +117,47 @@ async function seed() {
   console.log(`Inserted ${courses.length} courses`);
 
   await db.insert(lessonsTable).values([
-    { courseId: courses[0].id, title: "What is Forex?", description: "Introduction to the foreign exchange market", type: "video", duration: 12, order: 1, isFree: true },
-    { courseId: courses[0].id, title: "Major Currency Pairs", description: "EUR/USD, GBP/USD, USD/JPY and more", type: "video", duration: 18, order: 2, isFree: true },
-    { courseId: courses[0].id, title: "Reading Forex Charts", description: "Candlestick patterns and chart types", type: "video", duration: 25, order: 3, isFree: false },
-    { courseId: courses[0].id, title: "Pips, Lots, and Leverage", description: "Understanding forex market mechanics", type: "video", duration: 20, order: 4, isFree: false },
-    { courseId: courses[0].id, title: "Your First Demo Trade", description: "Practice with a demo account", type: "video", duration: 30, order: 5, isFree: false },
-    { courseId: courses[1].id, title: "What is Price Action?", description: "Pure price movement analysis", type: "video", duration: 22, order: 1, isFree: true },
-    { courseId: courses[1].id, title: "Support & Resistance Mastery", description: "Identifying key levels that matter", type: "video", duration: 35, order: 2, isFree: false },
-    { courseId: courses[1].id, title: "Candlestick Patterns Encyclopedia", description: "Every pattern you need to know", type: "video", duration: 45, order: 3, isFree: false },
-    { courseId: courses[1].id, title: "Market Structure: Trends & Ranges", description: "Reading the macro picture", type: "video", duration: 40, order: 4, isFree: false },
-    { courseId: courses[1].id, title: "High Probability Entry Setups", description: "Where and when to pull the trigger", type: "video", duration: 55, order: 5, isFree: false },
-    { courseId: courses[2].id, title: "Blockchain Fundamentals", description: "How blockchain technology works", type: "video", duration: 20, order: 1, isFree: true },
-    { courseId: courses[2].id, title: "Bitcoin Deep Dive", description: "BTC supply, demand, and market cycles", type: "video", duration: 35, order: 2, isFree: false },
-    { courseId: courses[2].id, title: "DeFi Protocols Overview", description: "DEXes, lending, yield farming", type: "video", duration: 45, order: 3, isFree: false },
+    { courseId: courses[0].id, title: "What is Forex?", description: "Introduction to the foreign exchange market", type: "video", duration: 12, order: 1, isFree: true, dripDays: 0 },
+    { courseId: courses[0].id, title: "Major Currency Pairs", description: "EUR/USD, GBP/USD, USD/JPY and more", type: "video", duration: 18, order: 2, isFree: true, dripDays: 0 },
+    { courseId: courses[0].id, title: "Reading Forex Charts", description: "Candlestick patterns and chart types", type: "video", duration: 25, order: 3, isFree: false, dripDays: 0 },
+    { courseId: courses[0].id, title: "Pips, Lots, and Leverage", description: "Understanding forex market mechanics", type: "article", content: "## Pips, Lots, and Leverage\n\nA **pip** is the smallest price move in a currency pair. A standard **lot** is 100,000 units. **Leverage** lets you control a large position with a small margin — but it magnifies both gains and losses. Always size positions so a single loss never exceeds 1-2% of your account.", duration: 20, order: 4, isFree: false, dripDays: 1 },
+    { courseId: courses[0].id, title: "Your First Demo Trade", description: "Practice with a demo account", type: "exercise", content: "Open a demo account, place one EUR/USD trade with a defined stop-loss and take-profit, and journal the result.", duration: 30, order: 5, isFree: false, dripDays: 3 },
+    { courseId: courses[1].id, title: "What is Price Action?", description: "Pure price movement analysis", type: "video", duration: 22, order: 1, isFree: true, dripDays: 0 },
+    { courseId: courses[1].id, title: "Support & Resistance Mastery", description: "Identifying key levels that matter", type: "video", duration: 35, order: 2, isFree: false, dripDays: 0 },
+    { courseId: courses[1].id, title: "Candlestick Patterns Encyclopedia", description: "Every pattern you need to know", type: "video", duration: 45, order: 3, isFree: false, dripDays: 2 },
+    { courseId: courses[1].id, title: "Market Structure: Trends & Ranges", description: "Reading the macro picture", type: "video", duration: 40, order: 4, isFree: false, dripDays: 4 },
+    { courseId: courses[1].id, title: "High Probability Entry Setups", description: "Where and when to pull the trigger", type: "video", duration: 55, order: 5, isFree: false, dripDays: 7 },
+    { courseId: courses[2].id, title: "Blockchain Fundamentals", description: "How blockchain technology works", type: "video", duration: 20, order: 1, isFree: true, dripDays: 0 },
+    { courseId: courses[2].id, title: "Bitcoin Deep Dive", description: "BTC supply, demand, and market cycles", type: "video", duration: 35, order: 2, isFree: false, dripDays: 0 },
+    { courseId: courses[2].id, title: "DeFi Protocols Overview", description: "DEXes, lending, yield farming", type: "video", duration: 45, order: 3, isFree: false, dripDays: 2 },
   ]);
 
   console.log("Inserted lessons");
+
+  // Quizzes + questions (Tier 2)
+  const quizzes = await db.insert(quizzesTable).values([
+    { courseId: courses[0].id, title: "Forex Basics Knowledge Check", description: "Test your understanding of forex fundamentals.", passingScore: 70, xpReward: 100, order: 1 },
+    { courseId: courses[1].id, title: "Price Action Quiz", description: "Confirm your grasp of price action concepts.", passingScore: 70, xpReward: 150, order: 1 },
+  ]).returning();
+
+  await db.insert(quizQuestionsTable).values([
+    { quizId: quizzes[0].id, question: "What is a 'pip' in forex trading?", options: ["A type of currency", "The smallest standard price increment of a pair", "A broker fee", "A trading platform"], correctIndex: 1, explanation: "A pip is the smallest standard price move a currency pair can make.", order: 1 },
+    { quizId: quizzes[0].id, question: "Which is considered a 'major' currency pair?", options: ["EUR/TRY", "EUR/USD", "ZAR/MXN", "THB/SEK"], correctIndex: 1, explanation: "EUR/USD is the most traded major pair; majors always include the USD.", order: 2 },
+    { quizId: quizzes[0].id, question: "What does leverage do?", options: ["Eliminates risk", "Guarantees profit", "Magnifies both gains and losses", "Lowers spreads"], correctIndex: 2, explanation: "Leverage amplifies position size, increasing both potential gains and losses.", order: 3 },
+    { quizId: quizzes[1].id, question: "Support is best described as a level where...", options: ["Price tends to stop falling and may bounce", "Price always reverses permanently", "Volume disappears", "The market closes"], correctIndex: 0, explanation: "Support is a price area where buying interest tends to halt declines.", order: 1 },
+    { quizId: quizzes[1].id, question: "A series of higher highs and higher lows indicates...", options: ["A downtrend", "A range", "An uptrend", "No trend"], correctIndex: 2, explanation: "Higher highs and higher lows define an uptrend.", order: 2 },
+  ]);
+
+  console.log("Inserted quizzes & questions");
+
+  // Practical tasks (Tier 2)
+  await db.insert(tasksTable).values([
+    { courseId: courses[0].id, title: "Journal 3 demo trades", description: "Place three demo trades on EUR/USD with defined stop-loss and take-profit, then submit a short reflection on each.", xpReward: 50, order: 1 },
+    { courseId: courses[0].id, title: "Identify 5 currency pairs", description: "List 5 major currency pairs and note their typical trading sessions.", xpReward: 25, order: 2 },
+    { courseId: courses[1].id, title: "Mark up a chart", description: "Take a screenshot of any chart and mark support, resistance, and the current trend. Submit your analysis.", xpReward: 75, order: 1 },
+  ]);
+
+  console.log("Inserted tasks");
 
   const now = new Date();
   await db.insert(liveClassesTable).values([

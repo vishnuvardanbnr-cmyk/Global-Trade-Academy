@@ -142,9 +142,9 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="flex-1 bg-secondary rounded-full h-2 overflow-hidden">
-                          <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: "0%" }} />
+                          <div className={cn("h-full rounded-full transition-all", enrollment.status === "completed" ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${enrollment.progress ?? 0}%` }} />
                         </div>
-                        <span className="text-xs font-semibold text-muted-foreground w-9 text-right">0%</span>
+                        <span className="text-xs font-semibold text-muted-foreground w-9 text-right">{enrollment.progress ?? 0}%</span>
                       </div>
                     </div>
                   </Link>

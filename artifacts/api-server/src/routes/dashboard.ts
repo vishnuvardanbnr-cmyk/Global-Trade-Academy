@@ -12,7 +12,8 @@ import {
   coursesTable,
   lessonProgressTable,
 } from "@workspace/db";
-import { eq, and, gte, desc, sql } from "drizzle-orm";
+import { eq, and, gte, desc, sql, inArray } from "drizzle-orm";
+import { computeStreak } from "../lib/lms";
 
 const router = Router();
 
@@ -32,6 +33,8 @@ router.get("/dashboard/summary", async (req, res): Promise<void> => {
       db.select({ xp: usersTable.xp }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1),
     ]);
 
+    const learningStreak = await computeStreak(clerkId);
+
     res.json({
       enrolledCourses: enrolled[0]?.count ?? 0,
       completedCourses: completed[0]?.count ?? 0,
@@ -40,7 +43,7 @@ router.get("/dashboard/summary", async (req, res): Promise<void> => {
       copySubscriptions: copySubs[0]?.count ?? 0,
       watchlistCount: watchlist[0]?.count ?? 0,
       totalPnl: null,
-      learningStreak: 0,
+      learningStreak,
     });
   } catch (err) {
     req.log.error({ err }, "Error getting dashboard summary");
@@ -57,6 +60,16 @@ router.get("/dashboard/leaderboard", async (req, res): Promise<void> => {
       .orderBy(desc(usersTable.xp))
       .limit(20);
 
+    const userIds = users.map((u) => u.id);
+    const completedRows = userIds.length
+      ? await db
+          .select({ userId: enrollmentsTable.userId, count: sql<number>`count(*)::int` })
+          .from(enrollmentsTable)
+          .where(and(eq(enrollmentsTable.status, "completed"), inArray(enrollmentsTable.userId, userIds)))
+          .groupBy(enrollmentsTable.userId)
+      : [];
+    const completedMap = new Map(completedRows.map((r) => [r.userId, r.count]));
+
     res.json(
       users.map((u, idx) => ({
         rank: idx + 1,
@@ -64,7 +77,7 @@ router.get("/dashboard/leaderboard", async (req, res): Promise<void> => {
         displayName: u.displayName ?? u.email,
         avatarUrl: u.avatarUrl,
         xp: u.xp,
-        completedCourses: 0,
+        completedCourses: completedMap.get(u.id) ?? 0,
         badges: u.badges,
       }))
     );
@@ -114,12 +127,18 @@ router.get("/dashboard/admin", async (req, res): Promise<void> => {
     today.setHours(0, 0, 0, 0);
     const newToday = await db.select({ count: sql<number>`count(*)::int` }).from(usersTable).where(gte(usersTable.createdAt, today));
 
+    // Revenue = sum of course price across all enrollments.
+    const revenueResult = await db
+      .select({ total: sql<number>`coalesce(sum(${coursesTable.price}), 0)::float` })
+      .from(enrollmentsTable)
+      .innerJoin(coursesTable, eq(coursesTable.id, enrollmentsTable.courseId));
+
     res.json({
       totalUsers: totalUsers[0]?.count ?? 0,
       totalCourses: totalCourses[0]?.count ?? 0,
       totalEnrollments: totalEnrollments[0]?.count ?? 0,
       activeUsers: totalUsers[0]?.count ?? 0,
-      revenue: 0,
+      revenue: revenueResult[0]?.total ?? 0,
       newUsersToday: newToday[0]?.count ?? 0,
       pendingInstructors: 0,
       upcomingClasses: upcomingClasses[0]?.count ?? 0,

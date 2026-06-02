@@ -134,6 +134,7 @@ export const ListCoursesResponseItem = zod.object({
   "lessonCount": zod.number().optional(),
   "enrollmentCount": zod.number().optional(),
   "rating": zod.number().nullish(),
+  "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
@@ -179,6 +180,7 @@ export const GetCourseResponse = zod.object({
   "lessonCount": zod.number().optional(),
   "enrollmentCount": zod.number().optional(),
   "rating": zod.number().nullish(),
+  "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
@@ -217,6 +219,7 @@ export const UpdateCourseResponse = zod.object({
   "lessonCount": zod.number().optional(),
   "enrollmentCount": zod.number().optional(),
   "rating": zod.number().nullish(),
+  "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
@@ -248,6 +251,7 @@ export const ListFeaturedCoursesResponseItem = zod.object({
   "lessonCount": zod.number().optional(),
   "enrollmentCount": zod.number().optional(),
   "rating": zod.number().nullish(),
+  "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
@@ -273,6 +277,7 @@ export const ListLessonsResponseItem = zod.object({
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
   "dripDays": zod.number().optional(),
+  "locked": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
 export const ListLessonsResponse = zod.array(ListLessonsResponseItem)
@@ -320,6 +325,7 @@ export const GetLessonResponse = zod.object({
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
   "dripDays": zod.number().optional(),
+  "locked": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -355,6 +361,7 @@ export const UpdateLessonResponse = zod.object({
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
   "dripDays": zod.number().optional(),
+  "locked": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -419,6 +426,7 @@ export const ListEnrollmentsResponseItem = zod.object({
   "lessonCount": zod.number().optional(),
   "enrollmentCount": zod.number().optional(),
   "rating": zod.number().nullish(),
+  "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
   "createdAt": zod.string().optional()
 }).optional()

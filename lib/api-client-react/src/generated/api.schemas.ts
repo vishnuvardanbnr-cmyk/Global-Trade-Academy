@@ -57,6 +57,7 @@ export interface Course {
   enrollmentCount?: number;
   /** @nullable */
   rating?: number | null;
+  reviewCount?: number;
   isFeatured?: boolean;
   createdAt?: string;
 }
@@ -99,6 +100,7 @@ export interface Lesson {
   order: number;
   isFree?: boolean;
   dripDays?: number;
+  locked?: boolean;
   createdAt?: string;
 }
 

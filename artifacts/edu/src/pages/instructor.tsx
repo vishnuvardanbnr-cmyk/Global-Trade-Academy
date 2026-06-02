@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
-import { Plus, BookOpen, Video, Users, Trash2 } from "lucide-react";
+import { Plus, BookOpen, Video, Users, Trash2, Settings2 } from "lucide-react";
+import CourseContentManager from "@/pages/instructor/CourseContentManager";
 
 function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
@@ -172,6 +173,17 @@ export default function InstructorPanel() {
                     <p>{course.lessonCount} lessons</p>
                   </div>
                   <div className="flex gap-2 shrink-0">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline" data-testid={`button-manage-course-${course.id}`}>
+                          <Settings2 className="h-4 w-4 mr-1.5" /> Manage Content
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader><DialogTitle>{course.title} — Content</DialogTitle></DialogHeader>
+                        <CourseContentManager courseId={course.id} />
+                      </DialogContent>
+                    </Dialog>
                     <Button
                       size="sm"
                       variant="outline"

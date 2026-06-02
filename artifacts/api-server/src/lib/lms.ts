@@ -102,6 +102,11 @@ export type CompletionState = {
  * If not all lessons are done (e.g. instructor added a lesson), re-open it.
  */
 export async function syncCourseCompletion(userId: string, courseId: number): Promise<CompletionState> {
+  // Course completion (XP + certificate) is only granted to enrolled learners.
+  if (!(await isEnrolled(userId, courseId))) {
+    return { completed: false, certificateSerial: null, xpAwarded: 0 };
+  }
+
   const lessons = await db
     .select({ id: lessonsTable.id })
     .from(lessonsTable)

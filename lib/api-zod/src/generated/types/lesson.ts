@@ -22,5 +22,6 @@ export interface Lesson {
   order: number;
   isFree?: boolean;
   dripDays?: number;
+  locked?: boolean;
   createdAt?: string;
 }

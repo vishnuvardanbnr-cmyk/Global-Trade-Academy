@@ -9,24 +9,28 @@ import {
   syncCourseCompletion,
   getUnlockedLessonIds,
   ensureCertificate,
+  ownsCourse,
+  isEnrolled,
   XP,
 } from "../lib/lms";
 
 const router = Router();
 
-function buildLessonResponse(l: typeof lessonsTable.$inferSelect) {
+function buildLessonResponse(l: typeof lessonsTable.$inferSelect, locked = false) {
   return {
     id: l.id,
     courseId: l.courseId,
     title: l.title,
     description: l.description,
     type: l.type,
-    videoUrl: l.videoUrl,
-    content: l.content,
+    // Paid content is withheld until the lesson is unlocked for this viewer.
+    videoUrl: locked ? null : l.videoUrl,
+    content: locked ? null : l.content,
     duration: l.duration,
     order: l.order,
     isFree: l.isFree,
     dripDays: l.dripDays,
+    locked,
     createdAt: l.createdAt,
   };
 }
@@ -34,6 +38,7 @@ function buildLessonResponse(l: typeof lessonsTable.$inferSelect) {
 // GET /api/courses/:courseId/lessons
 router.get("/courses/:courseId/lessons", async (req, res): Promise<void> => {
   try {
+    const { userId: clerkId } = getAuth(req);
     const courseId = parseInt(req.params.courseId);
     if (isNaN(courseId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -43,7 +48,22 @@ router.get("/courses/:courseId/lessons", async (req, res): Promise<void> => {
       .where(eq(lessonsTable.courseId, courseId))
       .orderBy(asc(lessonsTable.order));
 
-    res.json(lessons.map(buildLessonResponse));
+    // The course owner sees everything; everyone else only gets unlocked content.
+    const isOwner = clerkId ? await ownsCourse(clerkId, courseId) : false;
+    let unlockedIds = new Set<number>();
+    if (!isOwner && clerkId) {
+      const ids = await getUnlockedLessonIds(
+        clerkId,
+        courseId,
+        lessons.map((l) => ({ id: l.id, isFree: l.isFree, dripDays: l.dripDays })),
+      );
+      unlockedIds = new Set(ids);
+    }
+
+    res.json(lessons.map((l) => {
+      const locked = isOwner ? false : !(l.isFree || unlockedIds.has(l.id));
+      return buildLessonResponse(l, locked);
+    }));
   } catch (err) {
     req.log.error({ err }, "Error listing lessons");
     res.status(500).json({ error: "Internal server error" });
@@ -87,13 +107,28 @@ router.post("/courses/:courseId/lessons", async (req, res): Promise<void> => {
 // GET /api/lessons/:lessonId
 router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
   try {
+    const { userId: clerkId } = getAuth(req);
     const id = parseInt(req.params.lessonId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
     const lesson = await db.select().from(lessonsTable).where(eq(lessonsTable.id, id)).limit(1).then((r) => r[0]);
     if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
 
-    res.json(buildLessonResponse(lesson));
+    // The course owner sees everything; everyone else only gets unlocked content.
+    const isOwner = clerkId ? await ownsCourse(clerkId, lesson.courseId) : false;
+    let locked = false;
+    if (!isOwner && !lesson.isFree) {
+      if (!clerkId) {
+        locked = true;
+      } else {
+        const unlocked = await getUnlockedLessonIds(clerkId, lesson.courseId, [
+          { id: lesson.id, isFree: lesson.isFree, dripDays: lesson.dripDays },
+        ]);
+        locked = !unlocked.includes(lesson.id);
+      }
+    }
+
+    res.json(buildLessonResponse(lesson, locked));
   } catch (err) {
     req.log.error({ err }, "Error getting lesson");
     res.status(500).json({ error: "Internal server error" });
@@ -175,6 +210,15 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
 
     const lesson = await db.select().from(lessonsTable).where(eq(lessonsTable.id, lessonId)).limit(1).then((r) => r[0]);
     if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
+
+    // Must be enrolled in the course (free lessons aside) and the lesson must be unlocked.
+    const enrolled = await isEnrolled(clerkId, lesson.courseId);
+    if (!enrolled && !lesson.isFree) { res.status(403).json({ error: "Not enrolled" }); return; }
+
+    const unlocked = await getUnlockedLessonIds(clerkId, lesson.courseId, [
+      { id: lesson.id, isFree: lesson.isFree, dripDays: lesson.dripDays },
+    ]);
+    if (!unlocked.includes(lesson.id)) { res.status(403).json({ error: "Lesson locked" }); return; }
 
     const wasCompleted = existing?.completed ?? false;
 

@@ -152,10 +152,16 @@ export default function Courses() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 mt-2">
-                  {[1,2,3,4,5].map((s) => (
-                    <Star key={s} className={cn("h-3 w-3", s <= 4 ? "fill-amber-400 text-amber-400" : "fill-amber-200 text-amber-200")} />
-                  ))}
-                  <span className="text-xs text-muted-foreground ml-1">4.8 (120)</span>
+                  {(course.reviewCount ?? 0) > 0 ? (
+                    <>
+                      {[1,2,3,4,5].map((s) => (
+                        <Star key={s} className={cn("h-3 w-3", s <= Math.round(course.rating ?? 0) ? "fill-amber-400 text-amber-400" : "fill-amber-200 text-amber-200")} />
+                      ))}
+                      <span className="text-xs text-muted-foreground ml-1">{(course.rating ?? 0).toFixed(1)} ({course.reviewCount})</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No reviews yet</span>
+                  )}
                 </div>
               </CardContent>
 

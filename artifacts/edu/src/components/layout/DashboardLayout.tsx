@@ -3,30 +3,40 @@ import { useUser, useClerk } from "@clerk/react";
 import {
   LayoutDashboard, BookOpen, LineChart, Users, Video, MessageSquare,
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
-  ChevronRight, MessageCircle, GraduationCap, Zap,
+  ChevronRight, MessageCircle, GraduationCap, Zap, Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useGetMe } from "@workspace/api-client-react";
 
 const mainNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trading", label: "Markets", icon: LineChart },
   { href: "/trading-chat", label: "Trading Chat", icon: MessageCircle },
   { href: "/courses", label: "Academy", icon: BookOpen },
+  { href: "/certificates", label: "Certificates", icon: Award },
   { href: "/live", label: "Live Sessions", icon: Video },
   { href: "/copy-trading", label: "Copy Trading", icon: TrendingUp },
   { href: "/community", label: "Community", icon: MessageSquare },
 ];
+
+const XP_PER_LEVEL = 500;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useUser();
   const { signOut } = useClerk();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: me } = useGetMe();
 
   const role = user?.publicMetadata?.role as string | undefined;
   const initials = (user?.firstName?.charAt(0) ?? "") + (user?.lastName?.charAt(0) ?? "");
+
+  const xp = me?.xp ?? 0;
+  const level = Math.floor(xp / XP_PER_LEVEL) + 1;
+  const xpIntoLevel = xp % XP_PER_LEVEL;
+  const xpToNext = XP_PER_LEVEL;
 
   /* Trading chat uses full-bleed layout with no padding */
   const isFullBleed = location.startsWith("/trading-chat");
@@ -104,12 +114,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="mt-4 mx-1 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100">
           <div className="flex items-center gap-2 mb-2">
             <Zap className="h-4 w-4 text-amber-500" />
-            <span className="text-xs font-bold text-amber-800">Level 12 Trader</span>
+            <span className="text-xs font-bold text-amber-800">Level {level} Trader</span>
           </div>
           <div className="w-full bg-amber-100 rounded-full h-1.5 mb-1">
-            <div className="bg-amber-400 h-1.5 rounded-full w-3/5" />
+            <div className="bg-amber-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.round((xpIntoLevel / xpToNext) * 100)}%` }} />
           </div>
-          <p className="text-[10px] text-amber-600">1,240 / 2,000 XP to Level 13</p>
+          <p className="text-[10px] text-amber-600">{xpIntoLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP to Level {level + 1}</p>
         </div>
       </nav>
 

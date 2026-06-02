@@ -1,19 +1,27 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useGetCourse, useListLessons, useListEnrollments, useCreateEnrollment,
   getListEnrollmentsQueryKey,
+  useGetCourseProgress, getGetCourseProgressQueryKey,
+  useUpdateLessonProgress,
+  useListQuizzes, useGetQuiz, useSubmitQuizAttempt, getListQuizzesQueryKey,
+  useListTasks, useCompleteTask, getListTasksQueryKey,
+  useListReviews, useUpsertReview, getListReviewsQueryKey,
+  useListNotes, useCreateNote, useDeleteNote, getListNotesQueryKey,
+  useListBookmarks, useToggleBookmark, getListBookmarksQueryKey,
+  getGetDashboardSummaryQueryKey,
+  type QuizAttemptResult,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   BookOpen, Clock, Users, Star, Play, CheckCircle2, Lock, ChevronRight,
-  Award, Target, ArrowLeft, ChevronDown, ChevronUp, FileQuestion, ListTodo,
-  MessageSquare, Trophy, Zap, BarChart2, PlayCircle, CheckCheck,
+  Award, ArrowLeft, ChevronDown, ChevronUp, FileQuestion, ListTodo,
+  StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
+  Trash2, Loader2,
 } from "lucide-react";
 
 /* ─── Chapter builder (from DB lessons) ─────────────────────────── */
@@ -45,58 +53,57 @@ function buildChapters(dbLessons: DbLesson[], category: string) {
   return groups;
 }
 
-/* ─── Quiz ─────────────────────────────────────────────────────── */
-const QUIZ: { q: string; opts: string[]; ans: number }[] = [
-  { q: "Which candlestick pattern signals a strong bullish reversal after a downtrend?",
-    opts: ["Shooting Star","Hammer","Doji","Hanging Man"], ans: 1 },
-  { q: "RSI above 70 typically indicates:",
-    opts: ["Oversold condition","Overbought condition","Neutral momentum","Strong downtrend"], ans: 1 },
-  { q: "A 'head and shoulders' pattern signals:",
-    opts: ["Trend continuation","Trend reversal","Consolidation","Breakout"], ans: 1 },
-  { q: "Recommended risk-reward ratio for professional traders:",
-    opts: ["1:1","1:2 or better","2:1","3:1 only"], ans: 1 },
-  { q: "Support levels represent zones where:",
-    opts: ["Price always reverses","Buying pressure tends to exceed selling pressure","Random price points","MA intersections only"], ans: 1 },
-];
-
-/* ─── Tasks ────────────────────────────────────────────────────── */
-const TASKS = [
-  { id: 1, t: "Identify 3 Support & Resistance Levels", d: "On a 4H BTC/USD chart, mark at least 3 clear S/R levels and explain your reasoning.", xp: 50 },
-  { id: 2, t: "Document a Complete Trade Setup",        d: "Find a valid setup using the techniques learned. Include entry, SL, TP, and R:R ratio.", xp: 75 },
-  { id: 3, t: "Analyze a Historical Price Action",      d: "Pick any major market move from the past 3 months and write a 200-word technical analysis.", xp: 60 },
-  { id: 4, t: "Create Your Trading Plan",               d: "One-page plan covering: trading hours, instruments, strategy rules, risk per trade, max daily loss.", xp: 100 },
-];
-
-type QuizState = "idle" | "taking" | "done";
+type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews";
 
 export default function CourseDetail() {
   const [, params] = useRoute<{ id: string }>("/courses/:id");
   const courseId = params?.id ? parseInt(params.id) : 0;
+  const validId = courseId > 0 ? courseId : -1;
 
-  const { data: course, isLoading } = useGetCourse(courseId > 0 ? courseId : -1);
-  const { data: lessons } = useListLessons(courseId > 0 ? courseId : -1);
+  const { data: course, isLoading } = useGetCourse(validId);
+  const { data: lessons } = useListLessons(validId);
   const { data: enrollments } = useListEnrollments();
   const { mutateAsync: enroll, isPending: enrolling } = useCreateEnrollment();
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const [tab,          setTab]          = useState<"overview"|"quiz"|"tasks"|"discuss">("overview");
-  const [activeIdx,    setActiveIdx]    = useState(0);
-  const [expanded,     setExpanded]     = useState<number>(1);
-  const [done,         setDone]         = useState<Set<string>>(new Set());
-  const [quizState,    setQuizState]    = useState<QuizState>("idle");
-  const [answers,      setAnswers]      = useState<Record<number,number>>({});
-  const [score,        setScore]        = useState(0);
-  const [doneTasks,    setDoneTasks]    = useState<Set<number>>(new Set());
+  const isEnrolled = enrollments?.some((e) => e.courseId === courseId) ?? false;
 
-  const isEnrolled    = enrollments?.some(e => e.courseId === courseId) ?? false;
-  const dbLessons     = (lessons ?? []) as DbLesson[];
-  const chapterGroups = buildChapters(dbLessons, course?.category ?? "forex");
-  const totalL        = dbLessons.length;
-  const pct           = totalL ? Math.round((done.size / totalL) * 100) : 0;
-  const cur           = dbLessons[activeIdx];
-  const curChapter    = chapterGroups.find(ch => ch.lessons.some(l => l.id === cur?.id));
-  const chIdx         = curChapter ? chapterGroups.indexOf(curChapter) : 0;
+  const { data: progress } = useGetCourseProgress(validId, {
+    query: { enabled: courseId > 0 && isEnrolled, queryKey: getGetCourseProgressQueryKey(validId) },
+  });
+
+  const [tab, setTab] = useState<Tab>("overview");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [expanded, setExpanded] = useState<number>(1);
+
+  const dbLessons = (lessons ?? []) as DbLesson[];
+  const chapterGroups = useMemo(() => buildChapters(dbLessons, course?.category ?? "forex"), [dbLessons, course?.category]);
+  const totalL = dbLessons.length;
+
+  const completedSet = useMemo(
+    () => new Set((progress?.lessons ?? []).filter((p) => p.completed).map((p) => p.lessonId)),
+    [progress],
+  );
+  const unlockedSet = useMemo(() => new Set(progress?.unlockedLessonIds ?? []), [progress]);
+  const pct = progress?.percent ?? 0;
+  const completedCount = progress?.completedLessons ?? completedSet.size;
+
+  const cur = dbLessons[activeIdx];
+  const curChapter = chapterGroups.find((ch) => ch.lessons.some((l) => l.id === cur?.id));
+  const chIdx = curChapter ? chapterGroups.indexOf(curChapter) : 0;
+  const curDone = cur ? completedSet.has(cur.id) : false;
+
+  function lessonLocked(l: DbLesson): boolean {
+    if (!isEnrolled) return !l.isFree;
+    if (progress?.unlockedLessonIds) return !unlockedSet.has(l.id);
+    return false;
+  }
+
+  const invalidateProgress = async () => {
+    await qc.invalidateQueries({ queryKey: getGetCourseProgressQueryKey(courseId) });
+    await qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+  };
 
   const doEnroll = async () => {
     try {
@@ -106,26 +113,23 @@ export default function CourseDetail() {
     } catch { toast({ title: "Enrollment failed", variant: "destructive" }); }
   };
 
-  const markDone = () => {
-    setDone(p => new Set([...p, String(activeIdx)]));
-    if (activeIdx < totalL - 1) setActiveIdx(p => p + 1);
-  };
-
-  const submitQuiz = () => {
-    const s = QUIZ.reduce((a,q,i) => a + (answers[i]===q.ans ? 1 : 0), 0);
-    setScore(s); setQuizState("done");
-  };
-
-  /* display fallback if no DB course yet */
-  const C = course ?? {
-    title: "Complete Forex & Technical Analysis Masterclass",
-    description: "From price action foundations to advanced multi-timeframe setups — a professional curriculum for serious traders.",
-    instructorName: "Alex Morgan",
-    category: "Forex",
-    level: "Intermediate",
-    enrollmentCount: 4820,
-    duration: 24,
-    price: null,
+  /* ─── Mark lesson complete ─── */
+  const { mutateAsync: updateProgress, isPending: marking } = useUpdateLessonProgress();
+  const markDone = async () => {
+    if (!cur || curDone) {
+      if (activeIdx < totalL - 1) setActiveIdx((p) => p + 1);
+      return;
+    }
+    try {
+      const res = await updateProgress({ lessonId: cur.id, data: { completed: true } });
+      await invalidateProgress();
+      if (res.courseCompleted) {
+        toast({ title: "Course complete! 🎓", description: `+${res.xpAwarded} XP · Certificate issued.` });
+      } else {
+        toast({ title: "Lesson complete", description: `+${res.xpAwarded} XP earned` });
+      }
+      if (activeIdx < totalL - 1) setActiveIdx((p) => p + 1);
+    } catch { toast({ title: "Could not save progress", variant: "destructive" }); }
   };
 
   if (isLoading) return (
@@ -137,6 +141,13 @@ export default function CourseDetail() {
     </div>
   );
 
+  if (!course) return (
+    <div className="text-center py-20">
+      <p className="text-slate-500 text-sm">Course not found.</p>
+      <Link href="/courses" className="text-blue-600 text-sm font-medium mt-2 inline-block">← Back to Academy</Link>
+    </div>
+  );
+
   return (
     <div className="space-y-4 pb-6">
       {/* breadcrumb */}
@@ -145,38 +156,37 @@ export default function CourseDetail() {
           <ArrowLeft className="h-3.5 w-3.5" /> Academy
         </Link>
         <ChevronRight className="h-3 w-3" />
-        <span className="text-slate-700 font-medium truncate max-w-xs">{C.title}</span>
+        <span className="text-slate-700 font-medium truncate max-w-xs">{course.title}</span>
       </div>
 
       {/* ─── Course Banner ─── */}
       <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white border border-slate-800">
         <div className="grid lg:grid-cols-[1fr,300px]">
-          {/* left info */}
           <div className="p-6 lg:p-8">
             <div className="flex flex-wrap gap-1.5 mb-3">
-              <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[11px] font-semibold">{(C as any).category}</span>
-              <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/20 text-[11px] font-semibold">{(C as any).level}</span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[11px] font-semibold">{course.category}</span>
+              <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/20 text-[11px] font-semibold">{course.level}</span>
             </div>
-            <h1 className="text-xl lg:text-2xl font-extrabold leading-tight mb-2.5">{C.title}</h1>
-            <p className="text-[13px] text-white/60 mb-4 max-w-lg leading-relaxed">{C.description}</p>
+            <h1 className="text-xl lg:text-2xl font-extrabold leading-tight mb-2.5">{course.title}</h1>
+            <p className="text-[13px] text-white/60 mb-4 max-w-lg leading-relaxed">{course.description}</p>
 
             <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] text-white/70 mb-5">
-              <div className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 opacity-70" />{((C as any).enrollmentCount ?? 0).toLocaleString()} students</div>
+              <div className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 opacity-70" />{(course.enrollmentCount ?? 0).toLocaleString()} students</div>
               <div className="flex items-center gap-1.5"><BookOpen className="h-3.5 w-3.5 opacity-70" />{totalL} lessons</div>
-              <div className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 opacity-70" />{(C as any).duration ?? 24}h total</div>
+              <div className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 opacity-70" />{course.duration ?? 0}h total</div>
               <div className="flex items-center gap-1.5">
-                {[1,2,3,4,5].map(s => <Star key={s} className="h-3 w-3 fill-amber-400 text-amber-400" />)}
-                <span>4.9 (382 reviews)</span>
+                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                <span>{course.rating ? course.rating.toFixed(1) : "New"}{course.reviewCount ? ` (${course.reviewCount} reviews)` : ""}</span>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-[12px] font-bold text-white">
-                {(C.instructorName ?? "I").charAt(0)}
+                {(course.instructorName ?? "I").charAt(0)}
               </div>
               <div>
-                <p className="text-[13px] font-semibold">{C.instructorName ?? "Instructor"}</p>
-                <p className="text-[11px] text-white/50">Senior Market Analyst · 12y experience</p>
+                <p className="text-[13px] font-semibold">{course.instructorName ?? "Instructor"}</p>
+                <p className="text-[11px] text-white/50">Senior Market Analyst</p>
               </div>
             </div>
           </div>
@@ -191,34 +201,35 @@ export default function CourseDetail() {
                     <span className="font-bold text-white">{pct}%</span>
                   </div>
                   <div className="w-full bg-white/15 rounded-full h-1.5">
-                    <div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{ width:`${pct}%` }} />
+                    <div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
-                  <p className="text-[11px] text-white/50 mt-1">{done.size}/{totalL} lessons done</p>
+                  <p className="text-[11px] text-white/50 mt-1">{completedCount}/{totalL} lessons done</p>
                 </div>
                 <button onClick={() => setTab("overview")}
                   className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold text-[13px] transition-colors flex items-center justify-center gap-2">
                   <PlayCircle className="h-4 w-4" /> Continue Learning
                 </button>
-                {pct === 100 && (
-                  <div className="flex items-center gap-1.5 text-amber-300 text-[12px] font-medium justify-center">
-                    <Award className="h-4 w-4" /> Claim your certificate
-                  </div>
+                {progress?.courseCompleted && progress.certificateSerial && (
+                  <Link href="/dashboard"
+                    className="flex items-center gap-1.5 text-amber-300 text-[12px] font-medium justify-center hover:text-amber-200">
+                    <Award className="h-4 w-4" /> Certificate #{progress.certificateSerial}
+                  </Link>
                 )}
               </div>
             ) : (
               <div className="space-y-3 text-center">
                 <div>
                   <p className="text-[32px] font-extrabold text-white leading-none">
-                    {(C as any).price ? `$${(C as any).price}` : "Free"}
+                    {course.price ? `$${course.price}` : "Free"}
                   </p>
                   <p className="text-[11px] text-white/50 mt-0.5">Full lifetime access</p>
                 </div>
                 <button onClick={doEnroll} disabled={enrolling}
                   className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors disabled:opacity-60">
-                  {enrolling ? "Enrolling…" : "Enroll Now — Free"}
+                  {enrolling ? "Enrolling…" : course.price ? "Enroll Now" : "Enroll Now — Free"}
                 </button>
                 <ul className="text-[11px] text-white/60 space-y-1.5 text-left">
-                  {[`${totalL} interactive lessons`, "5 practice quizzes", "4 real-world tasks", "Certificate of completion", "Lifetime access"].map(f => (
+                  {[`${totalL} interactive lessons`, "Practice quizzes", "Real-world tasks", "Certificate of completion", "Lifetime access"].map((f) => (
                     <li key={f} className="flex items-center gap-1.5">
                       <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />{f}
                     </li>
@@ -241,12 +252,11 @@ export default function CourseDetail() {
           </div>
           <div className="overflow-y-auto max-h-[560px] divide-y divide-slate-100">
             {chapterGroups.length === 0 && (
-              <p className="px-4 py-6 text-[12px] text-slate-400 text-center">Curriculum loading…</p>
+              <p className="px-4 py-6 text-[12px] text-slate-400 text-center">Curriculum coming soon…</p>
             )}
             {chapterGroups.map((ch, ci) => {
-              const startIdx = chapterGroups.slice(0, ci).reduce((a, c) => a + c.lessons.length, 0);
               const open = expanded === ch.id;
-              const chDone = ch.lessons.every((_, li) => done.has(String(startIdx + li)));
+              const chDone = ch.lessons.every((l) => completedSet.has(l.id));
               return (
                 <div key={ch.id}>
                   <button onClick={() => setExpanded(open ? -1 : ch.id)}
@@ -264,11 +274,11 @@ export default function CourseDetail() {
 
                   {open && (
                     <div className="bg-slate-50/60">
-                      {ch.lessons.map((l, li) => {
-                        const idx = startIdx + li;
-                        const isDone   = done.has(String(idx));
-                        const isActive = activeIdx === idx;
-                        const locked   = !isEnrolled && !l.isFree && idx > 1;
+                      {ch.lessons.map((l) => {
+                        const idx = dbLessons.findIndex((dl) => dl.id === l.id);
+                        const isDone = completedSet.has(l.id);
+                        const isActive = cur?.id === l.id;
+                        const locked = lessonLocked(l);
                         return (
                           <button key={l.id} disabled={locked}
                             onClick={() => { setActiveIdx(idx); setTab("overview"); }}
@@ -276,13 +286,13 @@ export default function CourseDetail() {
                               isActive ? "bg-blue-50 border-l-[3px] border-blue-600" : "border-l-[3px] border-transparent hover:bg-slate-100",
                               locked && "opacity-40 cursor-not-allowed")}>
                             <div className="shrink-0 w-3.5">
-                              {locked  ? <Lock className="h-3 w-3 text-slate-400" />
-                             : isDone  ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                              {locked ? <Lock className="h-3 w-3 text-slate-400" />
+                             : isDone ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
                              : <PlayCircle className="h-3.5 w-3.5 text-slate-400" />}
                             </div>
                             <span className={cn("flex-1 text-[12px] truncate",
                               isActive ? "text-blue-700 font-semibold"
-                            : isDone  ? "text-slate-400 line-through" : "text-slate-600")}>
+                            : isDone ? "text-slate-400 line-through" : "text-slate-600")}>
                               {l.title}
                             </span>
                             <span className="text-[10.5px] text-slate-400 shrink-0">
@@ -302,7 +312,7 @@ export default function CourseDetail() {
         {/* Content area */}
         <div className="space-y-3 min-w-0">
           {/* Video player */}
-          {(tab === "overview" || tab === "discuss") && (
+          {tab === "overview" && (
             <div className="rounded-xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center relative">
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
               <button className="relative w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur flex items-center justify-center transition-all hover:scale-105">
@@ -313,7 +323,7 @@ export default function CourseDetail() {
                 <p className="text-white/60 text-[11px]">{curChapter?.title ?? ""} · {cur?.duration ? `${cur.duration}m` : "—"}</p>
               </div>
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/20">
-                <div className="h-full bg-blue-500 w-1/3" />
+                <div className="h-full bg-blue-500" style={{ width: curDone ? "100%" : "33%" }} />
               </div>
             </div>
           )}
@@ -322,271 +332,550 @@ export default function CourseDetail() {
           <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
             <div className="flex border-b border-slate-100 overflow-x-auto">
               {[
-                { k: "overview", label: "Overview",   Icon: BookOpen },
-                { k: "quiz",     label: "Quiz",        Icon: FileQuestion },
-                { k: "tasks",    label: "Tasks",       Icon: ListTodo },
-                { k: "discuss",  label: "Discussion",  Icon: MessageSquare },
+                { k: "overview", label: "Lesson", Icon: BookOpen },
+                { k: "quiz", label: "Quizzes", Icon: FileQuestion },
+                { k: "tasks", label: "Tasks", Icon: ListTodo },
+                { k: "notes", label: "Notes", Icon: StickyNote },
+                { k: "reviews", label: "Reviews", Icon: Star },
               ].map(({ k, label, Icon }) => (
-                <button key={k} onClick={() => setTab(k as any)}
+                <button key={k} onClick={() => setTab(k as Tab)}
                   className={cn("flex items-center gap-1.5 px-5 py-3 text-[12.5px] font-semibold transition-colors whitespace-nowrap",
-                    tab===k ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600")}>
+                    tab === k ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600")}>
                   <Icon className="h-3.5 w-3.5" />{label}
                 </button>
               ))}
             </div>
 
             <div className="p-5">
-              {/* ── Overview ── */}
               {tab === "overview" && (
-                <div className="space-y-4">
-                  <div>
-                    <h2 className="text-[17px] font-bold text-slate-800 mb-0.5">{cur?.title}</h2>
-                    <p className="text-[12px] text-slate-400">{curChapter?.title ?? ""}</p>
-                  </div>
-                  <p className="text-[13px] text-slate-500 leading-relaxed">
-                    In this lesson you'll explore <em>{cur?.title?.toLowerCase()}</em> in depth. Professional traders use these
-                    techniques to identify high-probability setups with clear entry, stop loss, and take profit levels.
-                    By the end you'll have a practical framework applicable to any market immediately.
-                  </p>
-                  <div className="grid sm:grid-cols-3 gap-2.5">
-                    {[
-                      { Icon: Clock,    l: "Duration", v: cur?.duration ? `${cur.duration}m` : "—" },
-                      { Icon: Zap,      l: "XP Reward", v: "+50 XP" },
-                      { Icon: BarChart2,l: "Chapter", v: `Ch. ${chIdx + 1}` },
-                    ].map(item => (
-                      <div key={item.l} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
-                        <item.Icon className="h-4 w-4 text-blue-600 shrink-0" />
-                        <div>
-                          <p className="text-[10.5px] text-slate-400">{item.l}</p>
-                          <p className="text-[13px] font-semibold text-slate-700">{item.v}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {isEnrolled ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={markDone}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-semibold transition-colors">
-                        <CheckCircle2 className="h-4 w-4" />
-                        {done.has(String(activeIdx)) ? "Completed ✓" : "Mark as Complete"}
-                      </button>
-                      {activeIdx < totalL-1 && (
-                        <button onClick={() => setActiveIdx(p=>p+1)}
-                          className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-[13px] font-semibold transition-colors">
-                          Next Lesson <ChevronRight className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                      <Lock className="h-5 w-5 text-amber-600 shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-[13px] font-semibold text-amber-800">Enroll to unlock all lessons</p>
-                        <p className="text-[11.5px] text-amber-600">First 2 lessons free to preview</p>
-                      </div>
-                      <button onClick={doEnroll} disabled={enrolling}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[12px] font-bold transition-colors shrink-0">
-                        {enrolling ? "…" : "Enroll Free"}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <OverviewTab
+                  cur={cur} curChapter={curChapter?.title ?? ""} chIdx={chIdx}
+                  isEnrolled={isEnrolled} curDone={curDone} marking={marking}
+                  markDone={markDone} doEnroll={doEnroll} enrolling={enrolling}
+                  hasNext={activeIdx < totalL - 1} onNext={() => setActiveIdx((p) => p + 1)}
+                  courseId={courseId}
+                />
               )}
-
-              {/* ── Quiz ── */}
-              {tab === "quiz" && (
-                <div className="space-y-4">
-                  {quizState === "idle" && (
-                    <div className="text-center py-6">
-                      <div className="w-14 h-14 rounded-2xl bg-violet-50 border border-violet-100 flex items-center justify-center mx-auto mb-3">
-                        <FileQuestion className="h-7 w-7 text-violet-600" />
-                      </div>
-                      <h3 className="text-[17px] font-bold text-slate-800 mb-1">Chapter Quiz</h3>
-                      <p className="text-[12.5px] text-slate-400 mb-4">{QUIZ.length} questions · Pass at 80% · Unlimited attempts</p>
-                      <div className="flex justify-center gap-6 text-[12px] text-slate-400 mb-6">
-                        {[{Icon:Clock,l:"10 minutes"},{Icon:Trophy,l:"+150 XP"},{Icon:Zap,l:"Instant results"}].map(i=>(
-                          <div key={i.l} className="flex items-center gap-1.5"><i.Icon className="h-3.5 w-3.5" />{i.l}</div>
-                        ))}
-                      </div>
-                      <button onClick={() => { setQuizState("taking"); setAnswers({}); }}
-                        className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors">
-                        Start Quiz
-                      </button>
-                    </div>
-                  )}
-
-                  {quizState === "taking" && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-[14px] font-bold text-slate-800">Chapter Quiz</h3>
-                        <span className="text-[11.5px] font-medium text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                          {Object.keys(answers).length}/{QUIZ.length} answered
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div className="bg-blue-600 h-1.5 rounded-full transition-all"
-                          style={{ width:`${(Object.keys(answers).length/QUIZ.length)*100}%` }} />
-                      </div>
-                      {QUIZ.map((q, qi) => (
-                        <div key={qi} className="p-4 rounded-xl border border-slate-200">
-                          <p className="text-[13px] font-semibold text-slate-700 mb-3">
-                            <span className="text-blue-600 mr-1.5">Q{qi+1}.</span>{q.q}
-                          </p>
-                          <div className="space-y-1.5">
-                            {q.opts.map((opt, oi) => (
-                              <button key={oi} onClick={() => setAnswers(p => ({...p,[qi]:oi}))}
-                                className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-[12.5px] text-left transition-all",
-                                  answers[qi]===oi ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
-                                                   : "border-slate-200 hover:border-blue-300 hover:bg-slate-50 text-slate-600")}>
-                                <div className={cn("w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                                  answers[qi]===oi ? "border-blue-600 bg-blue-600" : "border-slate-300")}>
-                                  {answers[qi]===oi && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                                </div>
-                                {opt}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between pt-1">
-                        <button onClick={() => setQuizState("idle")}
-                          className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg text-[12.5px] font-medium transition-colors">
-                          Cancel
-                        </button>
-                        <button onClick={submitQuiz}
-                          disabled={Object.keys(answers).length < QUIZ.length}
-                          className="px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-[13px] font-bold transition-colors">
-                          Submit Quiz
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {quizState === "done" && (
-                    <div className="text-center py-4">
-                      <div className={cn("w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3",
-                        score >= 4 ? "bg-emerald-100" : "bg-amber-100")}>
-                        {score >= 4 ? <Trophy className="h-8 w-8 text-emerald-600" /> : <FileQuestion className="h-8 w-8 text-amber-600" />}
-                      </div>
-                      <h3 className="text-[20px] font-extrabold text-slate-800 mb-0.5">{score >= 4 ? "Excellent!" : "Keep Practicing"}</h3>
-                      <p className="text-[12.5px] text-slate-400 mb-1">You scored <strong className="text-slate-700">{score}/{QUIZ.length}</strong></p>
-                      <div className={cn("text-[36px] font-extrabold mb-3", score>=4 ? "text-emerald-600" : "text-amber-500")}>
-                        {Math.round((score/QUIZ.length)*100)}%
-                      </div>
-                      {score>=4 && (
-                        <span className="inline-block px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[11.5px] font-semibold mb-4">+150 XP Earned</span>
-                      )}
-                      <div className="space-y-1.5 text-left mt-3">
-                        {QUIZ.map((q,i) => (
-                          <div key={i} className={cn("flex items-center gap-2 p-2.5 rounded-lg text-[12px]",
-                            answers[i]===q.ans ? "bg-emerald-50 border border-emerald-200" : "bg-red-50 border border-red-200")}>
-                            {answers[i]===q.ans
-                              ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                              : <div className="h-3.5 w-3.5 rounded-full bg-red-400 text-white text-[9px] font-bold flex items-center justify-center shrink-0">✗</div>}
-                            <span className="flex-1 text-slate-600 line-clamp-1">{q.q}</span>
-                            <span className="text-slate-400 shrink-0 text-[11px]">{q.opts[q.ans]}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={() => { setQuizState("idle"); setAnswers({}); }}
-                        className="mt-5 px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors">
-                        Retake Quiz
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Tasks ── */}
-              {tab === "tasks" && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-[15px] font-bold text-slate-800">Practical Tasks</h3>
-                      <p className="text-[12px] text-slate-400">Complete real-world exercises to earn XP</p>
-                    </div>
-                    <span className="text-[12px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{doneTasks.size}/{TASKS.length} done</span>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5">
-                    <div className="bg-emerald-500 h-1.5 rounded-full transition-all"
-                      style={{ width:`${(doneTasks.size/TASKS.length)*100}%` }} />
-                  </div>
-                  {TASKS.map(task => {
-                    const isDone = doneTasks.has(task.id);
-                    return (
-                      <div key={task.id}
-                        className={cn("p-4 rounded-xl border transition-all",
-                          isDone ? "bg-emerald-50/60 border-emerald-200" : "bg-white border-slate-200 hover:border-slate-300")}>
-                        <div className="flex items-start gap-3">
-                          <button onClick={() => setDoneTasks(p => { const n=new Set(p); n.has(task.id)?n.delete(task.id):n.add(task.id); return n; })}
-                            className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all",
-                              isDone ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-blue-500")}>
-                            {isDone && <CheckCircle2 className="h-3 w-3 text-white" />}
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                              <p className={cn("text-[13px] font-semibold", isDone && "line-through text-slate-400")}>{task.t}</p>
-                              <span className="text-[10.5px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">+{task.xp} XP</span>
-                            </div>
-                            <p className="text-[12px] text-slate-400 leading-relaxed">{task.d}</p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {doneTasks.size === TASKS.length && (
-                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
-                      <Trophy className="h-7 w-7 text-emerald-600 mx-auto mb-1" />
-                      <p className="text-[13px] font-bold text-emerald-800">All tasks complete! 🎉</p>
-                      <p className="text-[11.5px] text-emerald-600">+{TASKS.reduce((a,t)=>a+t.xp,0)} XP earned from tasks</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Discussion ── */}
-              {tab === "discuss" && (
-                <div className="space-y-3">
-                  <h3 className="text-[15px] font-bold text-slate-800">Discussion</h3>
-                  {[
-                    { u:"Sarah M.",  av:"SM", bg:"#8b5cf6", ago:"2 days ago",  text:"The S/R section was extremely clear. I've been trading 2 years and this gave me a new perspective.", likes:24 },
-                    { u:"Jake T.",   av:"JT", bg:"#3b82f6", ago:"5 days ago",  text:"Could you add more examples on RSI divergence in trending markets? Otherwise fantastic course!", likes:11 },
-                    { u:"Priya K.",  av:"PK", bg:"#ef4444", ago:"1 week ago",  text:"Completed the first quiz — 5/5! The questions are well-designed and make you think rather than just memorize.", likes:18 },
-                  ].map((p,i) => (
-                    <div key={i} className="flex gap-3 p-3.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
-                        style={{ background: p.bg }}>{p.av}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="text-[12.5px] font-semibold text-slate-700">{p.u}</span>
-                          <span className="text-[11px] text-slate-400">{p.ago}</span>
-                        </div>
-                        <p className="text-[12.5px] text-slate-600 leading-snug">{p.text}</p>
-                        <div className="flex gap-4 mt-1.5 text-[11px] text-slate-400">
-                          <button className="hover:text-rose-500 transition-colors">♥ {p.likes}</button>
-                          <button className="hover:text-blue-600 transition-colors">Reply</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex gap-3 pt-1">
-                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[11px] font-bold shrink-0">Y</div>
-                    <div className="flex-1">
-                      <textarea placeholder="Share your thoughts or ask a question…"
-                        className="w-full p-3 text-[12.5px] rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all resize-none"
-                        rows={2} />
-                      <button className="mt-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-semibold transition-colors">
-                        Post
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {tab === "quiz" && <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} />}
+              {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} />}
+              {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
+              {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ════════════════════ Overview Tab ════════════════════ */
+function OverviewTab({
+  cur, curChapter, chIdx, isEnrolled, curDone, marking, markDone, doEnroll, enrolling, hasNext, onNext, courseId,
+}: {
+  cur: DbLesson | undefined; curChapter: string; chIdx: number;
+  isEnrolled: boolean; curDone: boolean; marking: boolean;
+  markDone: () => void; doEnroll: () => void; enrolling: boolean;
+  hasNext: boolean; onNext: () => void; courseId: number;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: bookmarks } = useListBookmarks(courseId, { query: { enabled: isEnrolled, queryKey: getListBookmarksQueryKey(courseId) } });
+  const { mutateAsync: toggleBookmark, isPending: bookmarking } = useToggleBookmark();
+  const isBookmarked = cur ? (bookmarks ?? []).some((b) => b.lessonId === cur.id) : false;
+
+  const onToggleBookmark = async () => {
+    if (!cur) return;
+    try {
+      await toggleBookmark({ lessonId: cur.id });
+      await qc.invalidateQueries({ queryKey: getListBookmarksQueryKey(courseId) });
+    } catch { toast({ title: "Could not update bookmark", variant: "destructive" }); }
+  };
+
+  if (!cur) return <p className="text-[13px] text-slate-400 text-center py-8">Select a lesson to begin.</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[17px] font-bold text-slate-800 mb-0.5">{cur.title}</h2>
+          <p className="text-[12px] text-slate-400">{curChapter}</p>
+        </div>
+        {isEnrolled && (
+          <button onClick={onToggleBookmark} disabled={bookmarking}
+            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shrink-0 border",
+              isBookmarked ? "bg-amber-50 border-amber-200 text-amber-700" : "border-slate-200 text-slate-500 hover:bg-slate-50")}>
+            <Bookmark className={cn("h-3.5 w-3.5", isBookmarked && "fill-amber-500 text-amber-500")} />
+            {isBookmarked ? "Saved" : "Save"}
+          </button>
+        )}
+      </div>
+      <p className="text-[13px] text-slate-500 leading-relaxed">
+        In this lesson you'll explore <em>{cur.title?.toLowerCase()}</em> in depth. Professional traders use these
+        techniques to identify high-probability setups with clear entry, stop loss, and take profit levels.
+        By the end you'll have a practical framework applicable to any market immediately.
+      </p>
+      <div className="grid sm:grid-cols-3 gap-2.5">
+        {[
+          { Icon: Clock, l: "Duration", v: cur.duration ? `${cur.duration}m` : "—" },
+          { Icon: Zap, l: "XP Reward", v: "+50 XP" },
+          { Icon: BarChart2, l: "Chapter", v: `Ch. ${chIdx + 1}` },
+        ].map((item) => (
+          <div key={item.l} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <item.Icon className="h-4 w-4 text-blue-600 shrink-0" />
+            <div>
+              <p className="text-[10.5px] text-slate-400">{item.l}</p>
+              <p className="text-[13px] font-semibold text-slate-700">{item.v}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {isEnrolled ? (
+        <div className="flex flex-wrap gap-2">
+          <button onClick={markDone} disabled={marking}
+            className={cn("flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-60",
+              curDone ? "bg-emerald-100 text-emerald-700" : "bg-blue-600 hover:bg-blue-700 text-white")}>
+            {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {curDone ? "Completed ✓" : "Mark as Complete"}
+          </button>
+          {hasNext && (
+            <button onClick={onNext}
+              className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-[13px] font-semibold transition-colors">
+              Next Lesson <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
+          <Lock className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <p className="text-[13px] font-semibold text-amber-800">Enroll to unlock all lessons</p>
+            <p className="text-[11.5px] text-amber-600">Free lessons are available to preview</p>
+          </div>
+          <button onClick={doEnroll} disabled={enrolling}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[12px] font-bold transition-colors shrink-0">
+            {enrolling ? "…" : "Enroll"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════ Quiz Tab ════════════════════ */
+function QuizTab({ courseId, isEnrolled, onGraded }: { courseId: number; isEnrolled: boolean; onGraded: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: quizzes, isLoading } = useListQuizzes(courseId, { query: { enabled: courseId > 0, queryKey: getListQuizzesQueryKey(courseId) } });
+  const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
+
+  if (!isEnrolled) return <Gate label="Enroll to take quizzes and earn XP." />;
+  if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
+  if (!quizzes || quizzes.length === 0) return <Empty Icon={FileQuestion} label="No quizzes for this course yet." />;
+
+  if (activeQuizId != null) {
+    return <QuizRunner quizId={activeQuizId} onBack={() => setActiveQuizId(null)}
+      onGraded={async () => {
+        await qc.invalidateQueries({ queryKey: getListQuizzesQueryKey(courseId) });
+        onGraded();
+      }} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-[15px] font-bold text-slate-800">Course Quizzes</h3>
+        <p className="text-[12px] text-slate-400">Pass to earn XP · Unlimited attempts</p>
+      </div>
+      {quizzes.map((q) => (
+        <div key={q.id} className="p-4 rounded-xl border border-slate-200 hover:border-blue-300 transition-colors">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                <p className="text-[13px] font-semibold text-slate-700">{q.title}</p>
+                {q.passed && <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Passed</span>}
+              </div>
+              <p className="text-[12px] text-slate-400">
+                {q.questionCount ?? 0} questions · Pass at {q.passingScore}% · +{q.xpReward} XP
+                {q.bestScore != null && ` · Best: ${q.bestScore}%`}
+              </p>
+            </div>
+            <button onClick={() => setActiveQuizId(q.id)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors shrink-0">
+              {q.passed ? "Retake" : "Start"}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QuizRunner({ quizId, onBack, onGraded }: { quizId: number; onBack: () => void; onGraded: () => void }) {
+  const { toast } = useToast();
+  const { data: quiz, isLoading } = useGetQuiz(quizId);
+  const { mutateAsync: submit, isPending: submitting } = useSubmitQuizAttempt();
+  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [result, setResult] = useState<QuizAttemptResult | null>(null);
+
+  if (isLoading || !quiz) return <Skeleton className="h-60 rounded-xl" />;
+  const questions = quiz.questions ?? [];
+
+  const onSubmit = async () => {
+    const ordered = questions.map((_, i) => answers[i] ?? -1);
+    try {
+      const res = await submit({ quizId, data: { answers: ordered } });
+      setResult(res);
+      if (res.passed && res.xpAwarded > 0) toast({ title: "Quiz passed! 🎉", description: `+${res.xpAwarded} XP` });
+      onGraded();
+    } catch { toast({ title: "Could not submit quiz", variant: "destructive" }); }
+  };
+
+  if (result) {
+    const resultMap = new Map((result.results ?? []).map((r) => [r.questionId, r]));
+    return (
+      <div className="text-center py-4">
+        <div className={cn("w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3",
+          result.passed ? "bg-emerald-100" : "bg-amber-100")}>
+          {result.passed ? <Trophy className="h-8 w-8 text-emerald-600" /> : <FileQuestion className="h-8 w-8 text-amber-600" />}
+        </div>
+        <h3 className="text-[20px] font-extrabold text-slate-800 mb-0.5">{result.passed ? "Passed!" : "Keep Practicing"}</h3>
+        <p className="text-[12.5px] text-slate-400 mb-1">You scored <strong className="text-slate-700">{result.correctCount}/{result.total}</strong></p>
+        <div className={cn("text-[36px] font-extrabold mb-3", result.passed ? "text-emerald-600" : "text-amber-500")}>{result.score}%</div>
+        {result.xpAwarded > 0 && (
+          <span className="inline-block px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[11.5px] font-semibold mb-4">+{result.xpAwarded} XP Earned</span>
+        )}
+        <div className="space-y-1.5 text-left mt-3">
+          {questions.map((q) => {
+            const r = resultMap.get(q.id);
+            const correct = r?.correct ?? false;
+            return (
+              <div key={q.id} className={cn("p-2.5 rounded-lg text-[12px] border",
+                correct ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200")}>
+                <div className="flex items-center gap-2">
+                  {correct
+                    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    : <div className="h-3.5 w-3.5 rounded-full bg-red-400 text-white text-[9px] font-bold flex items-center justify-center shrink-0">✗</div>}
+                  <span className="flex-1 text-slate-600">{q.question}</span>
+                  {r != null && <span className="text-slate-400 shrink-0 text-[11px]">{q.options[r.correctIndex]}</span>}
+                </div>
+                {!correct && r?.explanation && <p className="text-[11px] text-slate-500 mt-1.5 pl-5.5">{r.explanation}</p>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-center gap-2 mt-5">
+          <button onClick={onBack} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">Back to Quizzes</button>
+          <button onClick={() => { setResult(null); setAnswers({}); }} className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors">Retake</button>
+        </div>
+      </div>
+    );
+  }
+
+  const answeredCount = Object.keys(answers).length;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <button onClick={onBack} className="text-[12px] text-slate-400 hover:text-slate-600 flex items-center gap-1 mb-1"><ArrowLeft className="h-3 w-3" /> Quizzes</button>
+          <h3 className="text-[15px] font-bold text-slate-800">{quiz.title}</h3>
+        </div>
+        <span className="text-[11.5px] font-medium text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">{answeredCount}/{questions.length} answered</span>
+      </div>
+      <div className="w-full bg-slate-100 rounded-full h-1.5">
+        <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${questions.length ? (answeredCount / questions.length) * 100 : 0}%` }} />
+      </div>
+      {questions.map((q, qi) => (
+        <div key={q.id} className="p-4 rounded-xl border border-slate-200">
+          <p className="text-[13px] font-semibold text-slate-700 mb-3"><span className="text-blue-600 mr-1.5">Q{qi + 1}.</span>{q.question}</p>
+          <div className="space-y-1.5">
+            {q.options.map((opt, oi) => (
+              <button key={oi} onClick={() => setAnswers((p) => ({ ...p, [qi]: oi }))}
+                className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-[12.5px] text-left transition-all",
+                  answers[qi] === oi ? "border-blue-600 bg-blue-50 text-blue-700 font-medium" : "border-slate-200 hover:border-blue-300 hover:bg-slate-50 text-slate-600")}>
+                <div className={cn("w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                  answers[qi] === oi ? "border-blue-600 bg-blue-600" : "border-slate-300")}>
+                  {answers[qi] === oi && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                </div>
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center justify-between pt-1">
+        <button onClick={onBack} className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg text-[12.5px] font-medium transition-colors">Cancel</button>
+        <button onClick={onSubmit} disabled={answeredCount < questions.length || submitting}
+          className="px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-[13px] font-bold transition-colors flex items-center gap-2">
+          {submitting && <Loader2 className="h-4 w-4 animate-spin" />} Submit Quiz
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════ Tasks Tab ════════════════════ */
+function TasksTab({ courseId, isEnrolled, onDone }: { courseId: number; isEnrolled: boolean; onDone: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: tasks, isLoading } = useListTasks(courseId, { query: { enabled: courseId > 0, queryKey: getListTasksQueryKey(courseId) } });
+  const { mutateAsync: complete, isPending } = useCompleteTask();
+  const [submissions, setSubmissions] = useState<Record<number, string>>({});
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  if (!isEnrolled) return <Gate label="Enroll to complete tasks and earn XP." />;
+  if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
+  if (!tasks || tasks.length === 0) return <Empty Icon={ListTodo} label="No tasks for this course yet." />;
+
+  const doneCount = tasks.filter((t) => t.completed).length;
+
+  const onComplete = async (taskId: number) => {
+    try {
+      const res = await complete({ taskId, data: { submission: submissions[taskId] ?? undefined } });
+      await qc.invalidateQueries({ queryKey: getListTasksQueryKey(courseId) });
+      onDone();
+      if ((res.xpAwarded ?? 0) > 0) toast({ title: "Task complete", description: `+${res.xpAwarded} XP` });
+      setOpenId(null);
+    } catch { toast({ title: "Could not submit task", variant: "destructive" }); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[15px] font-bold text-slate-800">Practical Tasks</h3>
+          <p className="text-[12px] text-slate-400">Complete real-world exercises to earn XP</p>
+        </div>
+        <span className="text-[12px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{doneCount}/{tasks.length} done</span>
+      </div>
+      <div className="w-full bg-slate-100 rounded-full h-1.5">
+        <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${(doneCount / tasks.length) * 100}%` }} />
+      </div>
+      {tasks.map((task) => {
+        const isDone = !!task.completed;
+        const open = openId === task.id;
+        return (
+          <div key={task.id} className={cn("p-4 rounded-xl border transition-all", isDone ? "bg-emerald-50/60 border-emerald-200" : "bg-white border-slate-200")}>
+            <div className="flex items-start gap-3">
+              <div className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5",
+                isDone ? "bg-emerald-500 border-emerald-500" : "border-slate-300")}>
+                {isDone && <CheckCircle2 className="h-3 w-3 text-white" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                  <p className={cn("text-[13px] font-semibold", isDone && "line-through text-slate-400")}>{task.title}</p>
+                  <span className="text-[10.5px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">+{task.xpReward} XP</span>
+                </div>
+                {task.description && <p className="text-[12px] text-slate-400 leading-relaxed">{task.description}</p>}
+                {isDone && task.submission && <p className="text-[11.5px] text-slate-500 mt-2 p-2 rounded-lg bg-white border border-slate-100">{task.submission}</p>}
+                {!isDone && (
+                  open ? (
+                    <div className="mt-2 space-y-2">
+                      <textarea value={submissions[task.id] ?? ""} onChange={(e) => setSubmissions((p) => ({ ...p, [task.id]: e.target.value }))}
+                        placeholder="Describe your work or paste your answer (optional)…" rows={2}
+                        className="w-full p-2.5 text-[12px] rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none resize-none" />
+                      <div className="flex gap-2">
+                        <button onClick={() => onComplete(task.id)} disabled={isPending}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[12px] font-bold transition-colors disabled:opacity-60 flex items-center gap-1.5">
+                          {isPending && <Loader2 className="h-3 w-3 animate-spin" />} Submit & Complete
+                        </button>
+                        <button onClick={() => setOpenId(null)} className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg text-[12px] font-medium transition-colors">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setOpenId(task.id)} className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors">Mark Complete</button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {doneCount === tasks.length && (
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+          <Trophy className="h-7 w-7 text-emerald-600 mx-auto mb-1" />
+          <p className="text-[13px] font-bold text-emerald-800">All tasks complete! 🎉</p>
+          <p className="text-[11.5px] text-emerald-600">+{tasks.reduce((a, t) => a + t.xpReward, 0)} XP available from tasks</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════ Notes Tab ════════════════════ */
+function NotesTab({ lesson, isEnrolled }: { lesson: DbLesson | undefined; isEnrolled: boolean }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const lessonId = lesson?.id ?? -1;
+  const { data: notes, isLoading } = useListNotes(lessonId, { query: { enabled: isEnrolled && lessonId > 0, queryKey: getListNotesQueryKey(lessonId) } });
+  const { mutateAsync: createNote, isPending: creating } = useCreateNote();
+  const { mutateAsync: deleteNote } = useDeleteNote();
+  const [content, setContent] = useState("");
+
+  if (!isEnrolled) return <Gate label="Enroll to take lesson notes." />;
+  if (!lesson) return <Empty Icon={StickyNote} label="Select a lesson to take notes." />;
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListNotesQueryKey(lessonId) });
+
+  const onAdd = async () => {
+    if (!content.trim()) return;
+    try {
+      await createNote({ lessonId, data: { content: content.trim() } });
+      setContent("");
+      await invalidate();
+    } catch { toast({ title: "Could not save note", variant: "destructive" }); }
+  };
+  const onDelete = async (noteId: number) => {
+    try { await deleteNote({ noteId }); await invalidate(); }
+    catch { toast({ title: "Could not delete note", variant: "destructive" }); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-[15px] font-bold text-slate-800">My Notes</h3>
+        <p className="text-[12px] text-slate-400">For: {lesson.title}</p>
+      </div>
+      <div className="flex gap-2">
+        <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={2}
+          placeholder="Write a note for this lesson…"
+          className="flex-1 p-2.5 text-[12.5px] rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none resize-none" />
+        <button onClick={onAdd} disabled={creating || !content.trim()}
+          className="px-4 self-start py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-semibold transition-colors disabled:opacity-50">
+          {creating ? "…" : "Add"}
+        </button>
+      </div>
+      {isLoading ? <Skeleton className="h-16 rounded-lg" /> : (
+        (notes ?? []).length === 0
+          ? <p className="text-[12px] text-slate-400 text-center py-6">No notes yet for this lesson.</p>
+          : <div className="space-y-2">
+              {(notes ?? []).map((n) => (
+                <div key={n.id} className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-100 group">
+                  <StickyNote className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="flex-1 text-[12.5px] text-slate-600 whitespace-pre-wrap">{n.content}</p>
+                  <button onClick={() => onDelete(n.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all shrink-0">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════ Reviews Tab ════════════════════ */
+function ReviewsTab({ courseId, isEnrolled }: { courseId: number; isEnrolled: boolean }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: summary, isLoading } = useListReviews(courseId, { query: { enabled: courseId > 0, queryKey: getListReviewsQueryKey(courseId) } });
+  const { mutateAsync: upsert, isPending } = useUpsertReview();
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    if (summary?.myReview) { setRating(summary.myReview.rating); setComment(summary.myReview.comment ?? ""); }
+  }, [summary?.myReview]);
+
+  if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
+
+  const onSubmit = async () => {
+    if (rating < 1) { toast({ title: "Pick a star rating", variant: "destructive" }); return; }
+    try {
+      await upsert({ courseId, data: { rating, comment: comment.trim() || undefined } });
+      await qc.invalidateQueries({ queryKey: getListReviewsQueryKey(courseId) });
+      toast({ title: "Review saved", description: "Thanks for your feedback!" });
+    } catch { toast({ title: "Could not save review", description: "You must be enrolled to review.", variant: "destructive" }); }
+  };
+
+  const avg = summary?.average ?? 0;
+  const count = summary?.count ?? 0;
+  const dist = summary?.distribution ?? [0, 0, 0, 0, 0];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid sm:grid-cols-[160px,1fr] gap-4">
+        <div className="text-center p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div className="text-[36px] font-extrabold text-slate-800 leading-none">{avg.toFixed(1)}</div>
+          <div className="flex justify-center gap-0.5 my-1.5">
+            {[1, 2, 3, 4, 5].map((s) => <Star key={s} className={cn("h-3.5 w-3.5", s <= Math.round(avg) ? "fill-amber-400 text-amber-400" : "text-slate-300")} />)}
+          </div>
+          <p className="text-[11.5px] text-slate-400">{count} review{count === 1 ? "" : "s"}</p>
+        </div>
+        <div className="space-y-1 self-center">
+          {[5, 4, 3, 2, 1].map((star) => {
+            const n = dist[star - 1] ?? 0;
+            const pctBar = count ? (n / count) * 100 : 0;
+            return (
+              <div key={star} className="flex items-center gap-2 text-[11px] text-slate-400">
+                <span className="w-3">{star}</span>
+                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                <div className="flex-1 bg-slate-100 rounded-full h-1.5"><div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${pctBar}%` }} /></div>
+                <span className="w-6 text-right">{n}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {isEnrolled && (
+        <div className="p-4 rounded-xl border border-slate-200">
+          <p className="text-[13px] font-semibold text-slate-700 mb-2">{summary?.myReview ? "Update your review" : "Write a review"}</p>
+          <div className="flex gap-1 mb-2.5">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <button key={s} onClick={() => setRating(s)}>
+                <Star className={cn("h-6 w-6 transition-colors", s <= rating ? "fill-amber-400 text-amber-400" : "text-slate-300 hover:text-amber-300")} />
+              </button>
+            ))}
+          </div>
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2}
+            placeholder="Share your experience (optional)…"
+            className="w-full p-2.5 text-[12.5px] rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none resize-none" />
+          <button onClick={onSubmit} disabled={isPending}
+            className="mt-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors disabled:opacity-60">
+            {isPending ? "Saving…" : summary?.myReview ? "Update Review" : "Submit Review"}
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {(summary?.reviews ?? []).length === 0
+          ? <p className="text-[12px] text-slate-400 text-center py-4">No reviews yet. Be the first!</p>
+          : (summary?.reviews ?? []).map((r) => (
+            <div key={r.id} className="flex gap-3 p-3.5 rounded-xl border border-slate-100">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                {(r.userName ?? "U").charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[12.5px] font-semibold text-slate-700">{r.userName ?? "Anonymous"}</span>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map((s) => <Star key={s} className={cn("h-2.5 w-2.5", s <= r.rating ? "fill-amber-400 text-amber-400" : "text-slate-300")} />)}
+                  </div>
+                </div>
+                {r.comment && <p className="text-[12.5px] text-slate-600 leading-snug">{r.comment}</p>}
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── small shared bits ─── */
+function Gate({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+      <Lock className="h-5 w-5 text-amber-600 shrink-0" />
+      <p className="text-[13px] font-medium text-amber-800">{label}</p>
+    </div>
+  );
+}
+function Empty({ Icon, label }: { Icon: typeof FileQuestion; label: string }) {
+  return (
+    <div className="text-center py-10">
+      <Icon className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+      <p className="text-[12.5px] text-slate-400">{label}</p>
     </div>
   );
 }

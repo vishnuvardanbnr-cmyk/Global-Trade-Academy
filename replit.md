@@ -22,15 +22,22 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- DB schema (source of truth): `lib/db/src/schema/*.ts` (courses, lessons, enrollments, quizzes, quiz_questions, quiz_attempts, tasks, task_completions, certificates, reviews, notes, bookmarks, course_prerequisites, xp_events, learning_days)
+- API contract (source of truth): `lib/api-spec/openapi.yaml` → codegen → `lib/api-client-react/src/generated/`
+- Server routes: `artifacts/api-server/src/routes/*.ts`; shared LMS logic: `artifacts/api-server/src/lib/lms.ts`
+- Frontend (React+Vite): `artifacts/edu/src/pages/*` + `artifacts/edu/src/components/layout/`
+- Seed: `artifacts/api-server/src/seed.ts`
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Contract-first: DB schema → OpenAPI spec → `pnpm --filter @workspace/api-spec run codegen` → typed Orval hooks + Zod schemas. Always update the spec and regenerate when changing response shapes.
+- Auth: Clerk. `getAuth(req).userId` (clerkId) is used directly as the primary key in `users.id` and as `userId` FKs everywhere.
+- XP is an idempotent ledger: `awardXp(userId, type, refId, amount)` inserts into `xp_events` with `onConflictDoNothing`, so each (user, type, refId) grants XP at most once. Level = floor(xp/500)+1 (XP_PER_LEVEL=500).
+- Content gating (paywall + drip) is enforced server-side in `lib/lms.ts` (`isEnrolled`, `ownsCourse`, `getUnlockedLessonIds`). Lesson read endpoints strip `videoUrl`/`content` and set `locked: true` for non-unlocked lessons. Course owners see everything.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+EDU is a trading-education LMS with 4 tiers: (1) course player with persisted progress, completion + XP; (2) quiz engine + practical tasks with XP rewards; (3) certificates, reviews, notes, bookmarks, prerequisites, learning-day streaks; (4) instructor course/content CRUD (lessons, quizzes, tasks, drip scheduling) + analytics.
 
 ## User preferences
 
@@ -38,7 +45,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Every mutating/learner route must gate on enrollment + unlock state, not just authentication. See the security topic in `.agents/memory/`.
+- `seed.ts` is NOT idempotent (no truncate) — re-running duplicates courses/lessons. To add demo data to an already-seeded DB, insert directly via SQL for existing course IDs instead of re-running the full seed.
+- After changing any API response shape, run codegen before typechecking the frontend, or generated types will be stale.
 
 ## Pointers
 

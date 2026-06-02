@@ -1,0 +1,1 @@
+- [LMS server-side authorization](lms-authorization.md) — every learner/mutating route must gate on enrollment + unlock state, not just auth; content endpoints must strip paid fields when locked.
