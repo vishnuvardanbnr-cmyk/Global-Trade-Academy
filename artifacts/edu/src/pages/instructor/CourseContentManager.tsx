@@ -20,6 +20,7 @@ import {
   Plus, Trash2, Pencil, Video, FileText, GripVertical, Lock, Unlock,
   HelpCircle, CheckCircle2, X, Clock, Link2, ChevronDown, ChevronUp,
   FolderOpen, FolderClosed, MoveVertical, ArrowUp, ArrowDown, LayoutList,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,9 @@ function LessonsManager({ courseId }: { courseId: number }) {
   const { data: lessons, isLoading: lessonsLoading } = useListLessons(courseId, {
     query: { enabled: courseId > 0, queryKey: getListLessonsQueryKey(courseId) },
   });
+  const { data: quizzesForLessons } = useListQuizzes(courseId, {
+    query: { enabled: courseId > 0, queryKey: getListQuizzesQueryKey(courseId) },
+  });
   const { mutateAsync: createLesson, isPending: creatingLesson } = useCreateLesson();
   const { mutateAsync: updateLesson, isPending: updatingLesson } = useUpdateLesson();
   const { mutateAsync: deleteLesson } = useDeleteLesson();
@@ -72,6 +76,12 @@ function LessonsManager({ courseId }: { courseId: number }) {
 
   const sortedSections = [...(sections ?? [])].sort((a, b) => a.position - b.position);
   const allLessons = [...(lessons ?? [])].sort((a, b) => a.order - b.order);
+  // lessonIds that have at least one public (non-assigned) quiz linked
+  const quizzedLessonIds = new Set(
+    (quizzesForLessons ?? [])
+      .filter((q) => q.lessonId != null)
+      .map((q) => q.lessonId as number),
+  );
 
   const lessonsBySection = (sectionId: number | null): Lesson[] =>
     allLessons.filter((l) => (sectionId == null ? l.sectionId == null : l.sectionId === sectionId));
@@ -300,6 +310,11 @@ function LessonsManager({ courseId }: { courseId: number }) {
             )}
             {(l.dripDays ?? 0) > 0 && <span className="text-[10px] text-amber-600">Day {l.dripDays}</span>}
             {l.duration != null && <span className="text-[10px] text-muted-foreground">{l.duration}m</span>}
+            {!quizzedLessonIds.has(l.id) && (
+              <span className="text-[10px] text-amber-600 flex items-center gap-0.5" title="No quiz linked — students cannot be gated on this lesson">
+                <AlertTriangle className="h-2.5 w-2.5" /> No quiz
+              </span>
+            )}
           </div>
         </div>
         {/* Move to section dropdown */}

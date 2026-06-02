@@ -8,7 +8,7 @@ import {
   tasksTable,
   taskCompletionsTable,
 } from "@workspace/db";
-import { eq, and, asc, desc, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, isNull, or } from "drizzle-orm";
 import { awardXp, ownsCourse, recordLearningDay, isEnrolled, advanceGateOnPass } from "../lib/lms";
 
 const router = Router();
@@ -24,10 +24,19 @@ router.get("/courses/:courseId/quizzes", async (req, res): Promise<void> => {
     const courseId = parseInt(req.params.courseId);
     if (isNaN(courseId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+    // Instructors see all quizzes for their course; students see only public + their own assigned quizzes
+    const isOwner = await ownsCourse(clerkId, courseId);
+    const visibilityFilter = isOwner
+      ? eq(quizzesTable.courseId, courseId)
+      : and(
+          eq(quizzesTable.courseId, courseId),
+          or(isNull(quizzesTable.assignedUserId), eq(quizzesTable.assignedUserId, clerkId)),
+        );
+
     const quizzes = await db
       .select()
       .from(quizzesTable)
-      .where(eq(quizzesTable.courseId, courseId))
+      .where(visibilityFilter)
       .orderBy(asc(quizzesTable.order));
 
     if (quizzes.length === 0) { res.json([]); return; }
@@ -137,6 +146,13 @@ router.get("/quizzes/:quizId", async (req, res): Promise<void> => {
     const quiz = await db.select().from(quizzesTable).where(eq(quizzesTable.id, quizId)).limit(1).then((r) => r[0]);
     if (!quiz) { res.status(404).json({ error: "Quiz not found" }); return; }
 
+    // Access control: quiz is accessible if public (no assignedUserId), assigned to this user, or user owns the course
+    const canAccess =
+      quiz.assignedUserId === null ||
+      quiz.assignedUserId === clerkId ||
+      (await ownsCourse(clerkId, quiz.courseId));
+    if (!canAccess) { res.status(403).json({ error: "Forbidden" }); return; }
+
     const questions = await db
       .select()
       .from(quizQuestionsTable)
@@ -239,6 +255,13 @@ router.post("/quizzes/:quizId/attempts", async (req, res): Promise<void> => {
 
     const quiz = await db.select().from(quizzesTable).where(eq(quizzesTable.id, quizId)).limit(1).then((r) => r[0]);
     if (!quiz) { res.status(404).json({ error: "Quiz not found" }); return; }
+
+    // Access control: student can only attempt quizzes assigned to them or public quizzes
+    const canAccess =
+      quiz.assignedUserId === null ||
+      quiz.assignedUserId === clerkId ||
+      (await ownsCourse(clerkId, quiz.courseId));
+    if (!canAccess) { res.status(403).json({ error: "Forbidden" }); return; }
 
     if (!(await isEnrolled(clerkId, quiz.courseId))) { res.status(403).json({ error: "Not enrolled" }); return; }
 
