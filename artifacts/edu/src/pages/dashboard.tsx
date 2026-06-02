@@ -89,7 +89,7 @@ export default function Dashboard() {
             <Skeleton className="h-8 w-64 mb-2" />
           ) : (
             <h1 className="text-2xl font-bold text-foreground">
-              Good morning, {clerkUser?.fullName ?? clerkUser?.firstName ?? user?.displayName ?? "Trader"} 👋
+              Hello, {clerkUser?.fullName ?? clerkUser?.firstName ?? user?.displayName ?? "Trader"} 👋
             </h1>
           )}
           <p className="text-sm text-muted-foreground">Here's what's happening with your portfolio and learning today.</p>
