@@ -11,7 +11,9 @@ import {
   useListNotes, useCreateNote, useDeleteNote, getListNotesQueryKey,
   useListBookmarks, useToggleBookmark, getListBookmarksQueryKey,
   getGetDashboardSummaryQueryKey,
+  useGetLessonGate, getGetLessonGateQueryKey,
   type QuizAttemptResult,
+  type LessonGate,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +23,7 @@ import {
   BookOpen, Clock, Users, Star, Play, CheckCircle2, Lock, ChevronRight,
   Award, ArrowLeft, ChevronDown, ChevronUp, FileQuestion, ListTodo,
   StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
-  Trash2, Loader2,
+  Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
 } from "lucide-react";
 
 /* ─── Chapter builder (from DB lessons) ─────────────────────────── */
@@ -94,6 +96,16 @@ export default function CourseDetail() {
   const chIdx = curChapter ? chapterGroups.indexOf(curChapter) : 0;
   const curDone = cur ? completedSet.has(cur.id) : false;
 
+  // Gate for the currently active lesson
+  const { data: gate } = useGetLessonGate(cur?.id ?? -1, {
+    query: {
+      enabled: isEnrolled && curDone && (cur?.id ?? 0) > 0,
+      queryKey: getGetLessonGateQueryKey(cur?.id ?? -1),
+      retry: false,
+    },
+  });
+  // Treat 404 (no gate) as null by relying on `data` being undefined
+
   function lessonLocked(l: DbLesson): boolean {
     if (!isEnrolled) return !l.isFree;
     if (progress?.unlockedLessonIds) return !unlockedSet.has(l.id);
@@ -103,6 +115,7 @@ export default function CourseDetail() {
   const invalidateProgress = async () => {
     await qc.invalidateQueries({ queryKey: getGetCourseProgressQueryKey(courseId) });
     await qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    if (cur) await qc.invalidateQueries({ queryKey: getGetLessonGateQueryKey(cur.id) });
   };
 
   const doEnroll = async () => {
@@ -128,7 +141,6 @@ export default function CourseDetail() {
       } else {
         toast({ title: "Lesson complete", description: `+${res.xpAwarded} XP earned` });
       }
-      if (activeIdx < totalL - 1) setActiveIdx((p) => p + 1);
     } catch { toast({ title: "Could not save progress", variant: "destructive" }); }
   };
 
@@ -342,6 +354,9 @@ export default function CourseDetail() {
                   className={cn("flex items-center gap-1.5 px-5 py-3 text-[12.5px] font-semibold transition-colors whitespace-nowrap",
                     tab === k ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600")}>
                   <Icon className="h-3.5 w-3.5" />{label}
+                  {k === "quiz" && gate && (gate.status === "awaiting_quiz" || gate.status === "rejected") && (
+                    <span className="ml-1 w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                  )}
                 </button>
               ))}
             </div>
@@ -353,10 +368,16 @@ export default function CourseDetail() {
                   isEnrolled={isEnrolled} curDone={curDone} marking={marking}
                   markDone={markDone} doEnroll={doEnroll} enrolling={enrolling}
                   hasNext={activeIdx < totalL - 1} onNext={() => setActiveIdx((p) => p + 1)}
-                  courseId={courseId}
+                  courseId={courseId} gate={gate}
+                  onGoToQuiz={() => setTab("quiz")}
                 />
               )}
-              {tab === "quiz" && <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} />}
+              {tab === "quiz" && (
+                <QuizTab
+                  courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress}
+                  gate={gate}
+                />
+              )}
               {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} />}
               {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
               {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
@@ -368,14 +389,68 @@ export default function CourseDetail() {
   );
 }
 
+/* ════════════════════ Gate Banner ════════════════════ */
+function LessonGateBanner({ gate, onGoToQuiz }: { gate: LessonGate; onGoToQuiz: () => void }) {
+  if (gate.status === "approved") {
+    return (
+      <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+        <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+        <p className="text-[12.5px] font-semibold text-emerald-800">Gate approved — next lesson is unlocked!</p>
+      </div>
+    );
+  }
+  if (gate.status === "pending_review") {
+    return (
+      <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-200">
+        <ClipboardCheck className="h-5 w-5 text-blue-600 shrink-0" />
+        <div className="flex-1">
+          <p className="text-[12.5px] font-semibold text-blue-800">Quiz submitted — awaiting instructor review</p>
+          <p className="text-[11.5px] text-blue-600">Score: {gate.score}%. You'll be notified once reviewed.</p>
+        </div>
+      </div>
+    );
+  }
+  if (gate.status === "rejected") {
+    return (
+      <div className="flex items-center gap-3 p-3 rounded-xl bg-red-50 border border-red-200">
+        <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+        <div className="flex-1">
+          <p className="text-[12.5px] font-semibold text-red-800">Quiz attempt rejected</p>
+          {gate.reviewNote && <p className="text-[11.5px] text-red-600 mt-0.5">Instructor feedback: {gate.reviewNote}</p>}
+          <p className="text-[11.5px] text-red-600 mt-0.5">A new quiz has been assigned — pass it to continue.</p>
+        </div>
+        <button onClick={onGoToQuiz}
+          className="shrink-0 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[12px] font-semibold transition-colors">
+          Take Quiz
+        </button>
+      </div>
+    );
+  }
+  // awaiting_quiz
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
+      <FileQuestion className="h-5 w-5 text-amber-600 shrink-0" />
+      <div className="flex-1">
+        <p className="text-[12.5px] font-semibold text-amber-800">Pass the lesson quiz to unlock the next lesson</p>
+        <p className="text-[11.5px] text-amber-600">Your answer will be reviewed by the instructor before you proceed.</p>
+      </div>
+      <button onClick={onGoToQuiz}
+        className="shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[12px] font-semibold transition-colors">
+        Take Quiz
+      </button>
+    </div>
+  );
+}
+
 /* ════════════════════ Overview Tab ════════════════════ */
 function OverviewTab({
-  cur, curChapter, chIdx, isEnrolled, curDone, marking, markDone, doEnroll, enrolling, hasNext, onNext, courseId,
+  cur, curChapter, chIdx, isEnrolled, curDone, marking, markDone, doEnroll, enrolling, hasNext, onNext, courseId, gate, onGoToQuiz,
 }: {
   cur: DbLesson | undefined; curChapter: string; chIdx: number;
   isEnrolled: boolean; curDone: boolean; marking: boolean;
   markDone: () => void; doEnroll: () => void; enrolling: boolean;
   hasNext: boolean; onNext: () => void; courseId: number;
+  gate?: LessonGate; onGoToQuiz: () => void;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -392,6 +467,9 @@ function OverviewTab({
   };
 
   if (!cur) return <p className="text-[13px] text-slate-400 text-center py-8">Select a lesson to begin.</p>;
+
+  // Gate approved → allow "Next Lesson" navigation; pending/awaiting → block "Next"
+  const gateBlocksNext = gate && gate.status !== "approved";
 
   return (
     <div className="space-y-4">
@@ -431,19 +509,23 @@ function OverviewTab({
       </div>
 
       {isEnrolled ? (
-        <div className="flex flex-wrap gap-2">
-          <button onClick={markDone} disabled={marking}
-            className={cn("flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-60",
-              curDone ? "bg-emerald-100 text-emerald-700" : "bg-blue-600 hover:bg-blue-700 text-white")}>
-            {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {curDone ? "Completed ✓" : "Mark as Complete"}
-          </button>
-          {hasNext && (
-            <button onClick={onNext}
-              className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-[13px] font-semibold transition-colors">
-              Next Lesson <ChevronRight className="h-3.5 w-3.5" />
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={markDone} disabled={marking}
+              className={cn("flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-60",
+                curDone ? "bg-emerald-100 text-emerald-700" : "bg-blue-600 hover:bg-blue-700 text-white")}>
+              {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {curDone ? "Completed ✓" : "Mark as Complete"}
             </button>
-          )}
+            {hasNext && !gateBlocksNext && (
+              <button onClick={onNext}
+                className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-[13px] font-semibold transition-colors">
+                Next Lesson <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {/* Gate banner appears after lesson is done */}
+          {curDone && gate && <LessonGateBanner gate={gate} onGoToQuiz={onGoToQuiz} />}
         </div>
       ) : (
         <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
@@ -453,7 +535,7 @@ function OverviewTab({
             <p className="text-[11.5px] text-amber-600">Free lessons are available to preview</p>
           </div>
           <button onClick={doEnroll} disabled={enrolling}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[12px] font-bold transition-colors shrink-0">
+            className="shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-60">
             {enrolling ? "…" : "Enroll"}
           </button>
         </div>
@@ -463,55 +545,135 @@ function OverviewTab({
 }
 
 /* ════════════════════ Quiz Tab ════════════════════ */
-function QuizTab({ courseId, isEnrolled, onGraded }: { courseId: number; isEnrolled: boolean; onGraded: () => void }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const { data: quizzes, isLoading } = useListQuizzes(courseId, { query: { enabled: courseId > 0, queryKey: getListQuizzesQueryKey(courseId) } });
+function QuizTab({
+  courseId, isEnrolled, onGraded, gate,
+}: {
+  courseId: number; isEnrolled: boolean; onGraded: () => void; gate?: LessonGate;
+}) {
+  const { data: quizzes, isLoading } = useListQuizzes(courseId, {
+    query: { enabled: courseId > 0, queryKey: getListQuizzesQueryKey(courseId) },
+  });
   const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
 
-  if (!isEnrolled) return <Gate label="Enroll to take quizzes and earn XP." />;
+  if (!isEnrolled) return <GateBlock label="Enroll to access quizzes." />;
   if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
   if (!quizzes || quizzes.length === 0) return <Empty Icon={FileQuestion} label="No quizzes for this course yet." />;
 
-  if (activeQuizId != null) {
-    return <QuizRunner quizId={activeQuizId} onBack={() => setActiveQuizId(null)}
-      onGraded={async () => {
-        await qc.invalidateQueries({ queryKey: getListQuizzesQueryKey(courseId) });
-        onGraded();
-      }} />;
+  if (activeQuizId !== null) {
+    return (
+      <QuizRunner
+        quizId={activeQuizId}
+        isGateQuiz={gate?.requiredQuizId === activeQuizId}
+        onBack={() => setActiveQuizId(null)}
+        onGraded={onGraded}
+      />
+    );
   }
+
+  // Separate gate quiz from regular quizzes
+  const gateQuiz = gate ? quizzes.find((q) => q.id === gate.requiredQuizId) : null;
+  const regularQuizzes = gate ? quizzes.filter((q) => q.id !== gate.requiredQuizId) : quizzes;
+  const isActiveGate = gate && (gate.status === "awaiting_quiz" || gate.status === "rejected");
+  const isPendingReview = gate?.status === "pending_review";
 
   return (
     <div className="space-y-3">
-      <div>
-        <h3 className="text-[15px] font-bold text-slate-800">Course Quizzes</h3>
-        <p className="text-[12px] text-slate-400">Pass to earn XP · Unlimited attempts</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[15px] font-bold text-slate-800">Practice Quizzes</h3>
+          <p className="text-[12px] text-slate-400">Test your understanding and earn XP</p>
+        </div>
+        <span className="text-[12px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+          {quizzes.filter((q) => q.passed).length}/{quizzes.length} passed
+        </span>
       </div>
-      {quizzes.map((q) => (
-        <div key={q.id} className="p-4 rounded-xl border border-slate-200 hover:border-blue-300 transition-colors">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                <p className="text-[13px] font-semibold text-slate-700">{q.title}</p>
-                {q.passed && <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Passed</span>}
-              </div>
-              <p className="text-[12px] text-slate-400">
-                {q.questionCount ?? 0} questions · Pass at {q.passingScore}% · +{q.xpReward} XP
-                {q.bestScore != null && ` · Best: ${q.bestScore}%`}
-              </p>
+
+      {/* Gate quiz — pinned at top when active */}
+      {gateQuiz && (
+        <div className={cn("rounded-xl border-2 p-4 space-y-3",
+          isActiveGate ? "border-amber-400 bg-amber-50/60" :
+          isPendingReview ? "border-blue-300 bg-blue-50/50" :
+          gate?.status === "approved" ? "border-emerald-300 bg-emerald-50/50" :
+          "border-slate-200 bg-white")}>
+          {/* Gate status header */}
+          {isActiveGate && (
+            <div className="flex items-center gap-2 text-[11.5px] font-semibold text-amber-700">
+              <FileQuestion className="h-3.5 w-3.5" />
+              {gate?.status === "rejected" ? "Retake Required — Instructor assigned a new quiz" : "Lesson Gate — Pass to unlock the next lesson"}
             </div>
-            <button onClick={() => setActiveQuizId(q.id)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors shrink-0">
-              {q.passed ? "Retake" : "Start"}
-            </button>
+          )}
+          {isPendingReview && (
+            <div className="flex items-center gap-2 text-[11.5px] font-semibold text-blue-700">
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              Awaiting instructor review · Score: {gate?.score}%
+            </div>
+          )}
+          {gate?.status === "approved" && (
+            <div className="flex items-center gap-2 text-[11.5px] font-semibold text-emerald-700">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Gate approved ✓
+            </div>
+          )}
+
+          {/* Quiz card */}
+          <div className="flex items-center gap-3">
+            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+              isActiveGate ? "bg-amber-100" : isPendingReview ? "bg-blue-100" : "bg-emerald-100")}>
+              <FileQuestion className={cn("h-4 w-4",
+                isActiveGate ? "text-amber-600" : isPendingReview ? "text-blue-600" : "text-emerald-600")} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-[13px] text-slate-800 truncate">{gateQuiz.title}</p>
+              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
+                <span>{gateQuiz.questionCount ?? 0} questions</span>
+                <span>·</span>
+                <span>Pass {gateQuiz.passingScore}%</span>
+                {gateQuiz.bestScore != null && <span>· Best: {gateQuiz.bestScore}%</span>}
+              </div>
+            </div>
+            {!isPendingReview && (
+              <button onClick={() => setActiveQuizId(gateQuiz.id)}
+                className={cn("px-4 py-2 rounded-lg text-[12.5px] font-bold transition-colors shrink-0",
+                  isActiveGate ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-blue-600 hover:bg-blue-700 text-white")}>
+                {gateQuiz.passed && gate?.status !== "rejected" ? "Retake" : "Start"}
+              </button>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* Regular quizzes */}
+      {regularQuizzes.map((q) => (
+        <div key={q.id} className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors">
+          <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+            q.passed ? "bg-emerald-100" : "bg-slate-100")}>
+            <FileQuestion className={cn("h-4 w-4", q.passed ? "text-emerald-600" : "text-slate-400")} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-[13px] text-slate-800">{q.title}</p>
+              {q.passed && <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold">Passed</span>}
+            </div>
+            <p className="text-[11.5px] text-slate-400 mt-0.5">
+              {q.questionCount ?? 0} questions · Pass {q.passingScore}%
+              {q.bestScore != null && ` · Best: ${q.bestScore}%`}
+            </p>
+          </div>
+          <button onClick={() => setActiveQuizId(q.id)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors shrink-0">
+            {q.passed ? "Retake" : "Start"}
+          </button>
         </div>
       ))}
     </div>
   );
 }
 
-function QuizRunner({ quizId, onBack, onGraded }: { quizId: number; onBack: () => void; onGraded: () => void }) {
+function QuizRunner({
+  quizId, isGateQuiz, onBack, onGraded,
+}: {
+  quizId: number; isGateQuiz: boolean; onBack: () => void; onGraded: () => void;
+}) {
   const { toast } = useToast();
   const { data: quiz, isLoading } = useGetQuiz(quizId);
   const { mutateAsync: submit, isPending: submitting } = useSubmitQuizAttempt();
@@ -533,6 +695,7 @@ function QuizRunner({ quizId, onBack, onGraded }: { quizId: number; onBack: () =
 
   if (result) {
     const resultMap = new Map((result.results ?? []).map((r) => [r.questionId, r]));
+    const gateStatus = (result as unknown as Record<string, unknown>).gateStatus as string | undefined;
     return (
       <div className="text-center py-4">
         <div className={cn("w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3",
@@ -543,8 +706,20 @@ function QuizRunner({ quizId, onBack, onGraded }: { quizId: number; onBack: () =
         <p className="text-[12.5px] text-slate-400 mb-1">You scored <strong className="text-slate-700">{result.correctCount}/{result.total}</strong></p>
         <div className={cn("text-[36px] font-extrabold mb-3", result.passed ? "text-emerald-600" : "text-amber-500")}>{result.score}%</div>
         {result.xpAwarded > 0 && (
-          <span className="inline-block px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[11.5px] font-semibold mb-4">+{result.xpAwarded} XP Earned</span>
+          <span className="inline-block px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[11.5px] font-semibold mb-3">+{result.xpAwarded} XP Earned</span>
         )}
+
+        {/* Gate-specific status message */}
+        {isGateQuiz && result.passed && gateStatus === "pending_review" && (
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50 border border-blue-200 mb-3 text-left">
+            <ClipboardCheck className="h-5 w-5 text-blue-600 shrink-0" />
+            <div>
+              <p className="text-[12.5px] font-semibold text-blue-800">Submitted for instructor review</p>
+              <p className="text-[11.5px] text-blue-600">Your result has been sent to the instructor. Once approved, the next lesson will unlock.</p>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-1.5 text-left mt-3">
           {questions.map((q) => {
             const r = resultMap.get(q.id);
@@ -566,7 +741,9 @@ function QuizRunner({ quizId, onBack, onGraded }: { quizId: number; onBack: () =
         </div>
         <div className="flex justify-center gap-2 mt-5">
           <button onClick={onBack} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">Back to Quizzes</button>
-          <button onClick={() => { setResult(null); setAnswers({}); }} className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors">Retake</button>
+          {(!isGateQuiz || !result.passed) && (
+            <button onClick={() => { setResult(null); setAnswers({}); }} className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors">Retake</button>
+          )}
         </div>
       </div>
     );
@@ -579,6 +756,7 @@ function QuizRunner({ quizId, onBack, onGraded }: { quizId: number; onBack: () =
         <div>
           <button onClick={onBack} className="text-[12px] text-slate-400 hover:text-slate-600 flex items-center gap-1 mb-1"><ArrowLeft className="h-3 w-3" /> Quizzes</button>
           <h3 className="text-[15px] font-bold text-slate-800">{quiz.title}</h3>
+          {isGateQuiz && <p className="text-[11px] text-amber-600 mt-0.5 flex items-center gap-1"><FileQuestion className="h-3 w-3" /> Lesson Gate Quiz</p>}
         </div>
         <span className="text-[11.5px] font-medium text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">{answeredCount}/{questions.length} answered</span>
       </div>
@@ -623,7 +801,7 @@ function TasksTab({ courseId, isEnrolled, onDone }: { courseId: number; isEnroll
   const [submissions, setSubmissions] = useState<Record<number, string>>({});
   const [openId, setOpenId] = useState<number | null>(null);
 
-  if (!isEnrolled) return <Gate label="Enroll to complete tasks and earn XP." />;
+  if (!isEnrolled) return <GateBlock label="Enroll to complete tasks and earn XP." />;
   if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
   if (!tasks || tasks.length === 0) return <Empty Icon={ListTodo} label="No tasks for this course yet." />;
 
@@ -712,7 +890,7 @@ function NotesTab({ lesson, isEnrolled }: { lesson: DbLesson | undefined; isEnro
   const { mutateAsync: deleteNote } = useDeleteNote();
   const [content, setContent] = useState("");
 
-  if (!isEnrolled) return <Gate label="Enroll to take lesson notes." />;
+  if (!isEnrolled) return <GateBlock label="Enroll to take lesson notes." />;
   if (!lesson) return <Empty Icon={StickyNote} label="Select a lesson to take notes." />;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: getListNotesQueryKey(lessonId) });
@@ -863,7 +1041,7 @@ function ReviewsTab({ courseId, isEnrolled }: { courseId: number; isEnrolled: bo
 }
 
 /* ─── small shared bits ─── */
-function Gate({ label }: { label: string }) {
+function GateBlock({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
       <Lock className="h-5 w-5 text-amber-600 shrink-0" />

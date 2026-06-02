@@ -11,6 +11,7 @@ import {
   ensureCertificate,
   ownsCourse,
   isEnrolled,
+  upsertLessonGate,
   XP,
 } from "../lib/lms";
 
@@ -121,9 +122,17 @@ router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
       if (!clerkId) {
         locked = true;
       } else {
-        const unlocked = await getUnlockedLessonIds(clerkId, lesson.courseId, [
-          { id: lesson.id, isFree: lesson.isFree, dripDays: lesson.dripDays },
-        ]);
+        // Load all course lessons to apply gate ordering correctly
+        const allLessons = await db
+          .select()
+          .from(lessonsTable)
+          .where(eq(lessonsTable.courseId, lesson.courseId))
+          .orderBy(asc(lessonsTable.order));
+        const unlocked = await getUnlockedLessonIds(
+          clerkId,
+          lesson.courseId,
+          allLessons.map((l) => ({ id: l.id, isFree: l.isFree, dripDays: l.dripDays })),
+        );
         locked = !unlocked.includes(lesson.id);
       }
     }
@@ -201,13 +210,6 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
 
     const { completed, watchedSeconds } = req.body;
 
-    const existing = await db
-      .select()
-      .from(lessonProgressTable)
-      .where(and(eq(lessonProgressTable.lessonId, lessonId), eq(lessonProgressTable.userId, clerkId)))
-      .limit(1)
-      .then((r) => r[0]);
-
     const lesson = await db.select().from(lessonsTable).where(eq(lessonsTable.id, lessonId)).limit(1).then((r) => r[0]);
     if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
 
@@ -215,10 +217,25 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
     const enrolled = await isEnrolled(clerkId, lesson.courseId);
     if (!enrolled && !lesson.isFree) { res.status(403).json({ error: "Not enrolled" }); return; }
 
-    const unlocked = await getUnlockedLessonIds(clerkId, lesson.courseId, [
-      { id: lesson.id, isFree: lesson.isFree, dripDays: lesson.dripDays },
-    ]);
+    // Load all course lessons to check gate ordering correctly
+    const allLessons = await db
+      .select()
+      .from(lessonsTable)
+      .where(eq(lessonsTable.courseId, lesson.courseId))
+      .orderBy(asc(lessonsTable.order));
+    const unlocked = await getUnlockedLessonIds(
+      clerkId,
+      lesson.courseId,
+      allLessons.map((l) => ({ id: l.id, isFree: l.isFree, dripDays: l.dripDays })),
+    );
     if (!unlocked.includes(lesson.id)) { res.status(403).json({ error: "Lesson locked" }); return; }
+
+    const existing = await db
+      .select()
+      .from(lessonProgressTable)
+      .where(and(eq(lessonProgressTable.lessonId, lessonId), eq(lessonProgressTable.userId, clerkId)))
+      .limit(1)
+      .then((r) => r[0]);
 
     const wasCompleted = existing?.completed ?? false;
 
@@ -251,6 +268,9 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
       courseCompleted = state.completed;
       certificateSerial = state.certificateSerial;
       xpAwarded += state.xpAwarded;
+
+      // Create the lesson gate if this lesson has a linked quiz
+      await upsertLessonGate(clerkId, lesson.courseId, lessonId);
     }
 
     res.json({

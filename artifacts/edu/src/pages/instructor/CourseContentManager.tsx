@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Trash2, Pencil, Video, FileText, GripVertical, Lock, Unlock,
-  HelpCircle, CheckCircle2, X, Clock,
+  HelpCircle, CheckCircle2, X, Clock, Link2,
 } from "lucide-react";
 
 const LESSON_TYPES = ["video", "article", "exercise"];
@@ -181,11 +181,13 @@ function QuizzesManager({ courseId }: { courseId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: quizzes, isLoading } = useListQuizzes(courseId, { query: { enabled: courseId > 0, queryKey: getListQuizzesQueryKey(courseId) } });
+  const { data: lessons } = useListLessons(courseId, { query: { enabled: courseId > 0, queryKey: getListLessonsQueryKey(courseId) } });
   const { mutateAsync: createQuiz, isPending: creating } = useCreateQuiz();
   const { mutateAsync: deleteQuiz } = useDeleteQuiz();
 
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
+  const [lessonId, setLessonId] = useState<string>("none");
   const [passingScore, setPassingScore] = useState("70");
   const [xpReward, setXpReward] = useState("50");
   const [questions, setQuestions] = useState<QuizQuestionInput[]>([emptyQuestion()]);
@@ -193,7 +195,8 @@ function QuizzesManager({ courseId }: { courseId: number }) {
   const invalidate = () => qc.invalidateQueries({ queryKey: getListQuizzesQueryKey(courseId) });
 
   const reset = () => {
-    setTitle(""); setPassingScore("70"); setXpReward("50"); setQuestions([emptyQuestion()]); setShowForm(false);
+    setTitle(""); setLessonId("none"); setPassingScore("70"); setXpReward("50");
+    setQuestions([emptyQuestion()]); setShowForm(false);
   };
 
   const submit = async () => {
@@ -205,6 +208,7 @@ function QuizzesManager({ courseId }: { courseId: number }) {
     try {
       await createQuiz({ courseId, data: {
         title: title.trim(),
+        lessonId: lessonId !== "none" ? parseInt(lessonId) : undefined,
         passingScore: parseInt(passingScore) || 70,
         xpReward: parseInt(xpReward) || 50,
         questions: cleaned,
@@ -223,6 +227,9 @@ function QuizzesManager({ courseId }: { courseId: number }) {
   const updateOption = (qIdx: number, oIdx: number, val: string) =>
     setQuestions(qs => qs.map((q, i) => i === qIdx ? { ...q, options: q.options.map((o, j) => j === oIdx ? val : o) } : q));
 
+  // Build lesson map for display
+  const lessonMap = new Map((lessons ?? []).map((l) => [l.id, l.title]));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -239,6 +246,33 @@ function QuizzesManager({ courseId }: { courseId: number }) {
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={reset}><X className="h-4 w-4" /></Button>
           </div>
           <Input placeholder="Quiz title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-quiz-title" />
+
+          {/* Lesson link — makes this the gate quiz for that lesson */}
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1 flex items-center gap-1">
+              <Link2 className="h-3 w-3" /> Link to lesson (gate quiz)
+            </label>
+            <Select value={lessonId} onValueChange={setLessonId}>
+              <SelectTrigger data-testid="select-quiz-lesson">
+                <SelectValue placeholder="None — standalone quiz" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None — standalone quiz</SelectItem>
+                {(lessons ?? []).map((l) => (
+                  <SelectItem key={l.id} value={String(l.id)}>
+                    {l.order}. {l.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {lessonId !== "none" && (
+              <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
+                <HelpCircle className="h-3 w-3" />
+                Students must pass this quiz before unlocking the next lesson.
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">Passing score (%)</label>
@@ -301,10 +335,15 @@ function QuizzesManager({ courseId }: { courseId: number }) {
               <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0"><HelpCircle className="h-4 w-4 text-muted-foreground" /></div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate">{q.title}</p>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="text-[10px] text-muted-foreground">{q.questionCount ?? 0} questions</span>
                   <span className="text-[10px] text-muted-foreground">Pass {q.passingScore}%</span>
                   <span className="text-[10px] text-amber-600">+{q.xpReward} XP</span>
+                  {q.lessonId && lessonMap.has(q.lessonId) && (
+                    <span className="text-[10px] text-blue-600 flex items-center gap-0.5 font-medium">
+                      <Link2 className="h-2.5 w-2.5" /> Gate: {lessonMap.get(q.lessonId)}
+                    </span>
+                  )}
                 </div>
               </div>
               <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => remove(q.id)} data-testid={`button-delete-quiz-${q.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>

@@ -500,6 +500,7 @@ export interface QuizAttemptResult {
   correctCount: number;
   total: number;
   xpAwarded: number;
+  gateStatus?: string;
   results?: QuizQuestionResult[];
 }
 
@@ -660,6 +661,72 @@ export interface CourseAnalytics {
   quizStats?: QuizStat[];
 }
 
+export interface LessonGate {
+  id: number;
+  userId: string;
+  courseId: number;
+  lessonId: number;
+  requiredQuizId: number;
+  status: string;
+  /** @nullable */
+  score?: number | null;
+  /** @nullable */
+  reviewNote?: string | null;
+  /** @nullable */
+  reviewedBy?: string | null;
+  /** @nullable */
+  reviewedAt?: string | null;
+  /** @nullable */
+  submittedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GateReviewItem {
+  id: number;
+  userId: string;
+  /** @nullable */
+  userName?: string | null;
+  /** @nullable */
+  userAvatar?: string | null;
+  courseId: number;
+  /** @nullable */
+  courseTitle?: string | null;
+  lessonId: number;
+  /** @nullable */
+  lessonTitle?: string | null;
+  requiredQuizId: number;
+  /** @nullable */
+  quizTitle?: string | null;
+  status: string;
+  /** @nullable */
+  score?: number | null;
+  /** @nullable */
+  reviewNote?: string | null;
+  /** @nullable */
+  submittedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type GateRejectInputNewQuiz = {
+  /** @minLength 1 */
+  title: string;
+  description?: string;
+  passingScore?: number;
+  questions: QuizQuestionInput[];
+};
+
+export interface GateRejectInput {
+  /** @minLength 1 */
+  reviewNote: string;
+  newQuiz: GateRejectInputNewQuiz;
+}
+
+export interface ReviewCount {
+  pending: number;
+}
+
 export type ListUsersParams = {
 role?: string;
 search?: string;
@@ -690,5 +757,10 @@ authorId?: string;
 export type ListTradersParams = {
 sortBy?: string;
 verified?: boolean;
+};
+
+export type ListInstructorReviewsParams = {
+status?: string;
+courseId?: number;
 };
 

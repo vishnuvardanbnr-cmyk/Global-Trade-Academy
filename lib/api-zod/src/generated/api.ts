@@ -1164,6 +1164,7 @@ export const SubmitQuizAttemptResponse = zod.object({
   "correctCount": zod.number(),
   "total": zod.number(),
   "xpAwarded": zod.number(),
+  "gateStatus": zod.string().optional(),
   "results": zod.array(zod.object({
   "questionId": zod.number(),
   "correct": zod.boolean(),
@@ -1474,6 +1475,136 @@ export const GetCourseAnalyticsResponse = zod.object({
   "passRate": zod.number(),
   "averageScore": zod.number().optional()
 })).optional()
+})
+
+
+/**
+ * @summary Get the approval gate state for a lesson (current user)
+ */
+export const GetLessonGateParams = zod.object({
+  "lessonId": zod.coerce.number()
+})
+
+export const GetLessonGateResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.string(),
+  "courseId": zod.number(),
+  "lessonId": zod.number(),
+  "requiredQuizId": zod.number(),
+  "status": zod.string(),
+  "score": zod.number().nullish(),
+  "reviewNote": zod.string().nullish(),
+  "reviewedBy": zod.string().nullish(),
+  "reviewedAt": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary List pending and recent gate reviews (instructor)
+ */
+export const ListInstructorReviewsQueryParams = zod.object({
+  "status": zod.coerce.string().optional(),
+  "courseId": zod.coerce.number().optional()
+})
+
+export const ListInstructorReviewsResponseItem = zod.object({
+  "id": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "userAvatar": zod.string().nullish(),
+  "courseId": zod.number(),
+  "courseTitle": zod.string().nullish(),
+  "lessonId": zod.number(),
+  "lessonTitle": zod.string().nullish(),
+  "requiredQuizId": zod.number(),
+  "quizTitle": zod.string().nullish(),
+  "status": zod.string(),
+  "score": zod.number().nullish(),
+  "reviewNote": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListInstructorReviewsResponse = zod.array(ListInstructorReviewsResponseItem)
+
+
+/**
+ * @summary Get count of pending gate reviews (instructor)
+ */
+export const GetInstructorReviewCountResponse = zod.object({
+  "pending": zod.number()
+})
+
+
+/**
+ * @summary Approve a student lesson gate (instructor)
+ */
+export const ApproveGateParams = zod.object({
+  "gateId": zod.coerce.number()
+})
+
+export const ApproveGateResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.string(),
+  "courseId": zod.number(),
+  "lessonId": zod.number(),
+  "requiredQuizId": zod.number(),
+  "status": zod.string(),
+  "score": zod.number().nullish(),
+  "reviewNote": zod.string().nullish(),
+  "reviewedBy": zod.string().nullish(),
+  "reviewedAt": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Reject a gate and assign a new quiz (instructor)
+ */
+export const RejectGateParams = zod.object({
+  "gateId": zod.coerce.number()
+})
+
+
+
+
+
+
+export const RejectGateBody = zod.object({
+  "reviewNote": zod.string().min(1),
+  "newQuiz": zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "passingScore": zod.number().optional(),
+  "questions": zod.array(zod.object({
+  "question": zod.string().min(1),
+  "options": zod.array(zod.string()),
+  "correctIndex": zod.number(),
+  "explanation": zod.string().optional(),
+  "order": zod.number().optional()
+}))
+})
+})
+
+export const RejectGateResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.string(),
+  "courseId": zod.number(),
+  "lessonId": zod.number(),
+  "requiredQuizId": zod.number(),
+  "status": zod.string(),
+  "score": zod.number().nullish(),
+  "reviewNote": zod.string().nullish(),
+  "reviewedBy": zod.string().nullish(),
+  "reviewedAt": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 

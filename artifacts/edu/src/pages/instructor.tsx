@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { useListCourses, useCreateCourse, useUpdateCourse, useDeleteCourse, useListLiveClasses, useCreateLiveClass, useListAttendance, getListCoursesQueryKey, getListLiveClassesQueryKey } from "@workspace/api-client-react";
+import {
+  useListCourses, useCreateCourse, useUpdateCourse, useDeleteCourse,
+  useListLiveClasses, useCreateLiveClass, useListAttendance,
+  getListCoursesQueryKey, getListLiveClassesQueryKey,
+  useListInstructorReviews, useApproveGate, useRejectGate,
+  getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
+  type GateReviewItem,
+} from "@workspace/api-client-react";
 import { useUser } from "@clerk/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,8 +20,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
-import { Plus, BookOpen, Video, Users, Trash2, Settings2 } from "lucide-react";
+import {
+  Plus, BookOpen, Video, Users, Trash2, Settings2,
+  ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
+  FileQuestion, Clock,
+} from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
+import { cn } from "@/lib/utils";
 
 function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
@@ -75,6 +87,257 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ─── Reject dialog: write a new quiz for the student ─── */
+type QuizQuestionDraft = { question: string; options: string[]; correctIndex: number; explanation: string };
+const emptyQ = (): QuizQuestionDraft => ({ question: "", options: ["", "", "", ""], correctIndex: 0, explanation: "" });
+
+function RejectDialog({
+  gate, onDone,
+}: {
+  gate: GateReviewItem; onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const { mutateAsync: reject, isPending } = useRejectGate();
+
+  const [reviewNote, setReviewNote] = useState("");
+  const [quizTitle, setQuizTitle] = useState("Replacement Quiz");
+  const [passingScore, setPassingScore] = useState("70");
+  const [questions, setQuestions] = useState<QuizQuestionDraft[]>([emptyQ()]);
+
+  const updateQuestion = (idx: number, patch: Partial<QuizQuestionDraft>) =>
+    setQuestions((qs) => qs.map((q, i) => i === idx ? { ...q, ...patch } : q));
+  const updateOption = (qIdx: number, oIdx: number, val: string) =>
+    setQuestions((qs) => qs.map((q, i) => i === qIdx ? { ...q, options: q.options.map((o, j) => j === oIdx ? val : o) } : q));
+
+  const submit = async () => {
+    if (!reviewNote.trim()) { toast({ title: "Review note required", variant: "destructive" }); return; }
+    if (!quizTitle.trim()) { toast({ title: "Quiz title required", variant: "destructive" }); return; }
+    const cleaned = questions
+      .map((q, i) => ({ ...q, order: i + 1, options: q.options.map((o) => o.trim()).filter(Boolean) }))
+      .filter((q) => q.question.trim() && q.options.length >= 2);
+    if (cleaned.length === 0) { toast({ title: "Add at least one complete question", variant: "destructive" }); return; }
+
+    try {
+      await reject({
+        gateId: gate.id,
+        data: {
+          reviewNote: reviewNote.trim(),
+          newQuiz: {
+            title: quizTitle.trim(),
+            passingScore: parseInt(passingScore) || 70,
+            questions: cleaned,
+          },
+        },
+      });
+      toast({ title: "Gate rejected", description: "New quiz assigned to student." });
+      setOpen(false);
+      onDone();
+    } catch { toast({ title: "Could not reject gate", variant: "destructive" }); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="destructive" data-testid={`button-reject-gate-${gate.id}`}>
+          <XCircle className="h-3.5 w-3.5 mr-1.5" /> Reject
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Reject & Assign New Quiz</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-1">
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm">
+            <p className="font-medium text-slate-700">{gate.userName ?? gate.userId}</p>
+            <p className="text-slate-400 text-[12px]">{gate.courseTitle} · {gate.lessonTitle}</p>
+            <p className="text-slate-500 mt-1 text-[12px]">Score: <strong>{gate.score}%</strong></p>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-slate-700 block mb-1.5">Feedback to student <span className="text-red-500">*</span></label>
+            <Textarea
+              rows={2}
+              placeholder="Explain why you're rejecting this attempt and what to improve…"
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+            />
+          </div>
+
+          <div className="border border-border rounded-xl p-4 space-y-3">
+            <h4 className="font-semibold text-sm text-slate-700">New Quiz for Student</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Quiz title</label>
+                <Input value={quizTitle} onChange={(e) => setQuizTitle(e.target.value)} placeholder="Quiz title" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Passing score (%)</label>
+                <Input type="number" min="0" max="100" value={passingScore} onChange={(e) => setPassingScore(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {questions.map((q, qIdx) => (
+                <div key={qIdx} className="rounded-lg border border-border p-3 space-y-2 bg-white">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground">Question {qIdx + 1}</span>
+                    {questions.length > 1 && (
+                      <button onClick={() => setQuestions((qs) => qs.filter((_, i) => i !== qIdx))}
+                        className="text-destructive hover:text-destructive/80 transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <Input placeholder="Question text" value={q.question} onChange={(e) => updateQuestion(qIdx, { question: e.target.value })} />
+                  <div className="space-y-1.5">
+                    {q.options.map((opt, oIdx) => (
+                      <div key={oIdx} className="flex items-center gap-2">
+                        <button type="button" onClick={() => updateQuestion(qIdx, { correctIndex: oIdx })}
+                          className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${q.correctIndex === oIdx ? "border-emerald-500 bg-emerald-500 text-white" : "border-border"}`}>
+                          {q.correctIndex === oIdx && <CheckCircle2 className="h-3 w-3" />}
+                        </button>
+                        <Input placeholder={`Option ${oIdx + 1}`} value={opt} onChange={(e) => updateOption(qIdx, oIdx, e.target.value)} className="h-8 text-sm" />
+                      </div>
+                    ))}
+                  </div>
+                  <Input placeholder="Explanation (shown after submission)" value={q.explanation} onChange={(e) => updateQuestion(qIdx, { explanation: e.target.value })} className="text-sm" />
+                </div>
+              ))}
+              <Button size="sm" variant="outline" onClick={() => setQuestions((qs) => [...qs, emptyQ()])}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Question
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={submit} disabled={isPending}>
+              {isPending ? "Rejecting…" : "Reject & Assign Quiz"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Review Queue Card ─── */
+function ReviewQueueCard() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: reviews, isLoading } = useListInstructorReviews(
+    { status: "pending_review" },
+    { query: { queryKey: getListInstructorReviewsQueryKey({ status: "pending_review" }), refetchInterval: 30000 } },
+  );
+  const { mutateAsync: approve, isPending: approving } = useApproveGate();
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: getListInstructorReviewsQueryKey({ status: "pending_review" }) });
+    qc.invalidateQueries({ queryKey: getGetInstructorReviewCountQueryKey() });
+  };
+
+  const doApprove = async (gateId: number) => {
+    try {
+      await approve({ gateId });
+      toast({ title: "Gate approved", description: "Next lesson unlocked for the student." });
+      invalidate();
+    } catch { toast({ title: "Could not approve", variant: "destructive" }); }
+  };
+
+  const pending = reviews ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div className="flex items-center gap-2">
+          <CardTitle>Review Queue</CardTitle>
+          {pending.length > 0 && (
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold">
+              {pending.length}
+            </span>
+          )}
+        </div>
+        <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">{Array(2).fill(0).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+        ) : pending.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground">
+            <ClipboardCheck className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No pending reviews</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pending.map((item) => {
+              const expanded = expandedId === item.id;
+              return (
+                <div key={item.id} className="rounded-lg border border-border overflow-hidden" data-testid={`row-review-${item.id}`}>
+                  <div className="flex items-center gap-3 p-3">
+                    {/* Avatar */}
+                    <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                      {(item.userName ?? item.userId ?? "?").charAt(0).toUpperCase()}
+                    </div>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{item.userName ?? item.userId}</p>
+                      <div className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground flex-wrap">
+                        <span className="truncate max-w-[140px]">{item.courseTitle}</span>
+                        <span>·</span>
+                        <span className="truncate max-w-[120px]">{item.lessonTitle}</span>
+                        {item.score != null && (
+                          <>
+                            <span>·</span>
+                            <span className={cn("font-semibold", item.score >= 70 ? "text-emerald-600" : "text-amber-600")}>
+                              {item.score}%
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {/* Submitted date */}
+                    {item.submittedAt && (
+                      <div className="text-[11px] text-muted-foreground shrink-0 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(item.submittedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                    {/* Expand quiz details */}
+                    <button onClick={() => setExpandedId(expanded ? null : item.id)}
+                      className="p-1.5 rounded-md hover:bg-secondary transition-colors shrink-0"
+                      title="Quiz details">
+                      {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  {expanded && (
+                    <div className="px-3 pb-3 border-t border-border bg-secondary/20">
+                      <div className="py-2.5 flex items-center gap-2 text-[12px] text-muted-foreground">
+                        <FileQuestion className="h-3.5 w-3.5 shrink-0" />
+                        <span>Quiz: <strong className="text-foreground">{item.quizTitle}</strong></span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 px-3 pb-3">
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => doApprove(item.id)} disabled={approving} data-testid={`button-approve-gate-${item.id}`}>
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Approve
+                    </Button>
+                    <RejectDialog gate={item} onDone={invalidate} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -141,6 +404,9 @@ export default function InstructorPanel() {
           <CardContent><div className="text-3xl font-bold">{liveClasses?.length ?? 0}</div></CardContent>
         </Card>
       </div>
+
+      {/* Review Queue — always visible for instructor */}
+      <ReviewQueueCard />
 
       {/* Courses */}
       <Card>

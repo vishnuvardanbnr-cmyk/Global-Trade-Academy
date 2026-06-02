@@ -9,7 +9,7 @@ import {
   taskCompletionsTable,
 } from "@workspace/db";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
-import { awardXp, ownsCourse, recordLearningDay, isEnrolled } from "../lib/lms";
+import { awardXp, ownsCourse, recordLearningDay, isEnrolled, advanceGateOnPass } from "../lib/lms";
 
 const router = Router();
 
@@ -283,7 +283,21 @@ router.post("/quizzes/:quizId/attempts", async (req, res): Promise<void> => {
       await recordLearningDay(clerkId);
     }
 
-    res.json({ score, passed, correctCount, total, xpAwarded, results });
+    // Advance lesson gate if this quiz is a gate quiz (passed → pending_review)
+    let gateStatus: string | null = null;
+    if (passed) {
+      gateStatus = await advanceGateOnPass(clerkId, quizId, score);
+    }
+
+    res.json({
+      score,
+      passed,
+      correctCount,
+      total,
+      xpAwarded,
+      ...(gateStatus !== null && { gateStatus }),
+      results,
+    });
   } catch (err) {
     req.log.error({ err }, "Error submitting quiz attempt");
     res.status(500).json({ error: "Internal server error" });

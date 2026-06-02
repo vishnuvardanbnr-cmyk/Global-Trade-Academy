@@ -42,6 +42,8 @@ tags:
     description: Lesson notes
   - name: bookmarks
     description: Lesson bookmarks
+  - name: lessonGates
+    description: Lesson quiz approval gates
 
 paths:
   /healthz:
@@ -1329,6 +1331,83 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CourseAnalytics" }
 
+  # ── LMS: LESSON GATES ────────────────────────────────────────────
+  /lessons/{lessonId}/gate:
+    get:
+      operationId: getLessonGate
+      tags: [lessonGates]
+      summary: Get the approval gate state for a lesson (current user)
+      parameters:
+        - { name: lessonId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Gate state (null body if no gate exists yet)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonGate" }
+
+  /instructor/reviews:
+    get:
+      operationId: listInstructorReviews
+      tags: [lessonGates]
+      summary: List pending and recent gate reviews (instructor)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: courseId, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Gate review items
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GateReviewItem" }
+
+  /instructor/reviews/count:
+    get:
+      operationId: getInstructorReviewCount
+      tags: [lessonGates]
+      summary: Get count of pending gate reviews (instructor)
+      responses:
+        "200":
+          description: Pending count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewCount" }
+
+  /instructor/reviews/{gateId}/approve:
+    post:
+      operationId: approveGate
+      tags: [lessonGates]
+      summary: Approve a student lesson gate (instructor)
+      parameters:
+        - { name: gateId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Updated gate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonGate" }
+
+  /instructor/reviews/{gateId}/reject:
+    post:
+      operationId: rejectGate
+      tags: [lessonGates]
+      summary: Reject a gate and assign a new quiz (instructor)
+      parameters:
+        - { name: gateId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GateRejectInput" }
+      responses:
+        "200":
+          description: Updated gate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonGate" }
+
 components:
   schemas:
     HealthStatus:
@@ -1850,6 +1929,7 @@ components:
         correctCount: { type: integer }
         total: { type: integer }
         xpAwarded: { type: integer }
+        gateStatus: { type: string }
         results:
           type: array
           items: { $ref: "#/components/schemas/QuizQuestionResult" }
@@ -2041,3 +2121,65 @@ components:
         quizStats:
           type: array
           items: { $ref: "#/components/schemas/QuizStat" }
+
+    # ── LMS: LESSON GATES ──────────────────────────────────────────
+    LessonGate:
+      type: object
+      required: [id, userId, courseId, lessonId, requiredQuizId, status, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        userId: { type: string }
+        courseId: { type: integer }
+        lessonId: { type: integer }
+        requiredQuizId: { type: integer }
+        status: { type: string }
+        score: { type: ["integer", "null"] }
+        reviewNote: { type: ["string", "null"] }
+        reviewedBy: { type: ["string", "null"] }
+        reviewedAt: { type: ["string", "null"] }
+        submittedAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    GateReviewItem:
+      type: object
+      required: [id, userId, courseId, lessonId, requiredQuizId, status, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        userId: { type: string }
+        userName: { type: ["string", "null"] }
+        userAvatar: { type: ["string", "null"] }
+        courseId: { type: integer }
+        courseTitle: { type: ["string", "null"] }
+        lessonId: { type: integer }
+        lessonTitle: { type: ["string", "null"] }
+        requiredQuizId: { type: integer }
+        quizTitle: { type: ["string", "null"] }
+        status: { type: string }
+        score: { type: ["integer", "null"] }
+        reviewNote: { type: ["string", "null"] }
+        submittedAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    GateRejectInput:
+      type: object
+      required: [reviewNote, newQuiz]
+      properties:
+        reviewNote: { type: string, minLength: 1 }
+        newQuiz:
+          type: object
+          required: [title, questions]
+          properties:
+            title: { type: string, minLength: 1 }
+            description: { type: string }
+            passingScore: { type: integer }
+            questions:
+              type: array
+              items: { $ref: "#/components/schemas/QuizQuestionInput" }
+
+    ReviewCount:
+      type: object
+      required: [pending]
+      properties:
+        pending: { type: integer }

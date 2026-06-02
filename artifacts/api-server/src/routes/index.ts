@@ -11,6 +11,7 @@ import tradingRouter from "./trading";
 import dashboardRouter from "./dashboard";
 import assessmentsRouter from "./assessments";
 import engagementRouter from "./engagement";
+import gatesRouter from "./gates";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(tradingRouter);
 router.use(dashboardRouter);
 router.use(assessmentsRouter);
 router.use(engagementRouter);
+router.use(gatesRouter);
 
 export default router;

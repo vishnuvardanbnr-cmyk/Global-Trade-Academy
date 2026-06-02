@@ -116,7 +116,7 @@ async function seed() {
 
   console.log(`Inserted ${courses.length} courses`);
 
-  await db.insert(lessonsTable).values([
+  const lessons = await db.insert(lessonsTable).values([
     { courseId: courses[0].id, title: "What is Forex?", description: "Introduction to the foreign exchange market", type: "video", duration: 12, order: 1, isFree: true, dripDays: 0 },
     { courseId: courses[0].id, title: "Major Currency Pairs", description: "EUR/USD, GBP/USD, USD/JPY and more", type: "video", duration: 18, order: 2, isFree: true, dripDays: 0 },
     { courseId: courses[0].id, title: "Reading Forex Charts", description: "Candlestick patterns and chart types", type: "video", duration: 25, order: 3, isFree: false, dripDays: 0 },
@@ -130,14 +130,15 @@ async function seed() {
     { courseId: courses[2].id, title: "Blockchain Fundamentals", description: "How blockchain technology works", type: "video", duration: 20, order: 1, isFree: true, dripDays: 0 },
     { courseId: courses[2].id, title: "Bitcoin Deep Dive", description: "BTC supply, demand, and market cycles", type: "video", duration: 35, order: 2, isFree: false, dripDays: 0 },
     { courseId: courses[2].id, title: "DeFi Protocols Overview", description: "DEXes, lending, yield farming", type: "video", duration: 45, order: 3, isFree: false, dripDays: 2 },
-  ]);
+  ]).returning();
 
   console.log("Inserted lessons");
 
   // Quizzes + questions (Tier 2)
+  // lessonId links the quiz as a gate quiz for that lesson — students must pass it before unlocking the next lesson
   const quizzes = await db.insert(quizzesTable).values([
-    { courseId: courses[0].id, title: "Forex Basics Knowledge Check", description: "Test your understanding of forex fundamentals.", passingScore: 70, xpReward: 100, order: 1 },
-    { courseId: courses[1].id, title: "Price Action Quiz", description: "Confirm your grasp of price action concepts.", passingScore: 70, xpReward: 150, order: 1 },
+    { courseId: courses[0].id, lessonId: lessons[0].id, title: "Forex Basics Knowledge Check", description: "Test your understanding of forex fundamentals.", passingScore: 70, xpReward: 100, order: 1 },
+    { courseId: courses[1].id, lessonId: lessons[5].id, title: "Price Action Quiz", description: "Confirm your grasp of price action concepts.", passingScore: 70, xpReward: 150, order: 1 },
   ]).returning();
 
   await db.insert(quizQuestionsTable).values([

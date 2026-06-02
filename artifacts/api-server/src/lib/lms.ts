@@ -8,8 +8,10 @@ import {
   enrollmentsTable,
   certificatesTable,
   coursesTable,
+  quizzesTable,
+  lessonGatesTable,
 } from "@workspace/db";
-import { eq, and, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, sql, inArray, desc, isNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
 export const XP = {
@@ -176,13 +178,20 @@ export async function isEnrolled(userId: string, courseId: number): Promise<bool
 
 /**
  * Compute which lessons are unlocked for a user in a course, honoring free
- * previews and drip scheduling relative to the enrollment date.
+ * previews, drip scheduling, and lesson gate approvals.
+ *
+ * lessons must be passed in ascending order (by order column).
+ * Gate rule: lessons[0] is always unlocked (drip permitting).
+ *            lessons[i > 0] additionally requires lessons[i-1] gate to be
+ *            approved (or no gate to exist yet for lessons[i-1]).
  */
 export async function getUnlockedLessonIds(
   userId: string,
   courseId: number,
   lessons: { id: number; isFree: boolean; dripDays: number }[],
 ): Promise<number[]> {
+  if (lessons.length === 0) return [];
+
   const enrollment = await db
     .select({ enrolledAt: enrollmentsTable.enrolledAt })
     .from(enrollmentsTable)
@@ -191,19 +200,116 @@ export async function getUnlockedLessonIds(
     .then((r) => r[0]);
 
   const now = Date.now();
-  const unlocked: number[] = [];
+
+  // Step 1: Drip/free eligibility
+  const dripUnlocked = new Set<number>();
   for (const l of lessons) {
-    if (l.isFree) {
-      unlocked.push(l.id);
-      continue;
-    }
+    if (l.isFree) { dripUnlocked.add(l.id); continue; }
     if (!enrollment) continue;
-    if (l.dripDays <= 0) {
+    if (l.dripDays <= 0) { dripUnlocked.add(l.id); continue; }
+    const releaseAt = new Date(enrollment.enrolledAt).getTime() + l.dripDays * 86400000;
+    if (now >= releaseAt) dripUnlocked.add(l.id);
+  }
+
+  // Step 2: Load gate states for all lessons in this batch
+  const lessonIds = lessons.map((l) => l.id);
+  const gates = await db
+    .select()
+    .from(lessonGatesTable)
+    .where(and(eq(lessonGatesTable.userId, userId), inArray(lessonGatesTable.lessonId, lessonIds)));
+  const gateByLesson = new Map(gates.map((g) => [g.lessonId, g]));
+
+  // Step 3: Apply gate ordering rule
+  const unlocked: number[] = [];
+  for (let i = 0; i < lessons.length; i++) {
+    const l = lessons[i];
+    if (!dripUnlocked.has(l.id)) continue;
+
+    if (i === 0) {
       unlocked.push(l.id);
       continue;
     }
-    const releaseAt = new Date(enrollment.enrolledAt).getTime() + l.dripDays * 86400000;
-    if (now >= releaseAt) unlocked.push(l.id);
+
+    const prevGate = gateByLesson.get(lessons[i - 1].id);
+    if (!prevGate || prevGate.status === "approved") {
+      unlocked.push(l.id);
+    }
+    // awaiting_quiz | pending_review | rejected → blocked
   }
+
   return unlocked;
+}
+
+/**
+ * When a lesson is marked complete, create its gate entry if a default quiz
+ * exists for it. Safe to call multiple times — skips if gate already exists.
+ */
+export async function upsertLessonGate(
+  userId: string,
+  courseId: number,
+  lessonId: number,
+): Promise<typeof lessonGatesTable.$inferSelect | null> {
+  // Find the standard (non-student-specific) quiz for this lesson
+  const quiz = await db
+    .select({ id: quizzesTable.id })
+    .from(quizzesTable)
+    .where(
+      and(
+        eq(quizzesTable.lessonId, lessonId),
+        isNull(quizzesTable.assignedUserId),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0]);
+
+  if (!quiz) return null; // No gate quiz assigned to this lesson
+
+  // Idempotent: only create if gate doesn't already exist
+  const existing = await db
+    .select()
+    .from(lessonGatesTable)
+    .where(and(eq(lessonGatesTable.userId, userId), eq(lessonGatesTable.lessonId, lessonId)))
+    .limit(1)
+    .then((r) => r[0]);
+
+  if (existing) return existing;
+
+  return db
+    .insert(lessonGatesTable)
+    .values({ userId, courseId, lessonId, requiredQuizId: quiz.id, status: "awaiting_quiz" })
+    .returning()
+    .then((r) => r[0]);
+}
+
+/**
+ * After a student passes a quiz, advance their gate (if any) from
+ * awaiting_quiz or rejected → pending_review.
+ * Returns the new gate status, or null if this quiz isn't a gate quiz.
+ */
+export async function advanceGateOnPass(
+  userId: string,
+  quizId: number,
+  score: number,
+): Promise<string | null> {
+  const gate = await db
+    .select()
+    .from(lessonGatesTable)
+    .where(
+      and(
+        eq(lessonGatesTable.userId, userId),
+        eq(lessonGatesTable.requiredQuizId, quizId),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0]);
+
+  if (!gate) return null;
+  if (gate.status !== "awaiting_quiz" && gate.status !== "rejected") return gate.status;
+
+  await db
+    .update(lessonGatesTable)
+    .set({ status: "pending_review", score, submittedAt: new Date() })
+    .where(eq(lessonGatesTable.id, gate.id));
+
+  return "pending_review";
 }

@@ -13,5 +13,6 @@ export interface QuizAttemptResult {
   correctCount: number;
   total: number;
   xpAwarded: number;
+  gateStatus?: string;
   results?: QuizQuestionResult[];
 }

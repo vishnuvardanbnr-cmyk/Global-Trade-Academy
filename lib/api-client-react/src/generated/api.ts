@@ -40,15 +40,19 @@ import type {
   DashboardSummary,
   Enrollment,
   EnrollmentInput,
+  GateRejectInput,
+  GateReviewItem,
   HealthStatus,
   LeaderboardEntry,
   Lesson,
+  LessonGate,
   LessonInput,
   LessonProgress,
   LessonProgressUpdate,
   LessonUpdate,
   ListAttendanceParams,
   ListCoursesParams,
+  ListInstructorReviewsParams,
   ListLiveClassesParams,
   ListPostsParams,
   ListTradersParams,
@@ -70,6 +74,7 @@ import type {
   QuizAttemptResult,
   QuizInput,
   Review,
+  ReviewCount,
   ReviewInput,
   ReviewSummary,
   Task,
@@ -5543,4 +5548,384 @@ export function useGetCourseAnalytics<TData = Awaited<ReturnType<typeof getCours
 
 
 
+
+export const getGetLessonGateUrl = (lessonId: number,) => {
+
+
+
+
+  return `/api/lessons/${lessonId}/gate`
+}
+
+/**
+ * @summary Get the approval gate state for a lesson (current user)
+ */
+export const getLessonGate = async (lessonId: number, options?: RequestInit): Promise<LessonGate> => {
+
+  return customFetch<LessonGate>(getGetLessonGateUrl(lessonId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLessonGateQueryKey = (lessonId: number,) => {
+    return [
+    `/api/lessons/${lessonId}/gate`
+    ] as const;
+    }
+
+
+export const getGetLessonGateQueryOptions = <TData = Awaited<ReturnType<typeof getLessonGate>>, TError = ErrorType<unknown>>(lessonId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLessonGate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLessonGateQueryKey(lessonId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLessonGate>>> = ({ signal }) => getLessonGate(lessonId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(lessonId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLessonGate>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLessonGateQueryResult = NonNullable<Awaited<ReturnType<typeof getLessonGate>>>
+export type GetLessonGateQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the approval gate state for a lesson (current user)
+ */
+
+export function useGetLessonGate<TData = Awaited<ReturnType<typeof getLessonGate>>, TError = ErrorType<unknown>>(
+ lessonId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLessonGate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLessonGateQueryOptions(lessonId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListInstructorReviewsUrl = (params?: ListInstructorReviewsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/instructor/reviews?${stringifiedParams}` : `/api/instructor/reviews`
+}
+
+/**
+ * @summary List pending and recent gate reviews (instructor)
+ */
+export const listInstructorReviews = async (params?: ListInstructorReviewsParams, options?: RequestInit): Promise<GateReviewItem[]> => {
+
+  return customFetch<GateReviewItem[]>(getListInstructorReviewsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListInstructorReviewsQueryKey = (params?: ListInstructorReviewsParams,) => {
+    return [
+    `/api/instructor/reviews`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListInstructorReviewsQueryOptions = <TData = Awaited<ReturnType<typeof listInstructorReviews>>, TError = ErrorType<unknown>>(params?: ListInstructorReviewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInstructorReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInstructorReviewsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstructorReviews>>> = ({ signal }) => listInstructorReviews(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInstructorReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListInstructorReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof listInstructorReviews>>>
+export type ListInstructorReviewsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List pending and recent gate reviews (instructor)
+ */
+
+export function useListInstructorReviews<TData = Awaited<ReturnType<typeof listInstructorReviews>>, TError = ErrorType<unknown>>(
+ params?: ListInstructorReviewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInstructorReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListInstructorReviewsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetInstructorReviewCountUrl = () => {
+
+
+
+
+  return `/api/instructor/reviews/count`
+}
+
+/**
+ * @summary Get count of pending gate reviews (instructor)
+ */
+export const getInstructorReviewCount = async ( options?: RequestInit): Promise<ReviewCount> => {
+
+  return customFetch<ReviewCount>(getGetInstructorReviewCountUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInstructorReviewCountQueryKey = () => {
+    return [
+    `/api/instructor/reviews/count`
+    ] as const;
+    }
+
+
+export const getGetInstructorReviewCountQueryOptions = <TData = Awaited<ReturnType<typeof getInstructorReviewCount>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInstructorReviewCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstructorReviewCountQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstructorReviewCount>>> = ({ signal }) => getInstructorReviewCount({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstructorReviewCount>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInstructorReviewCountQueryResult = NonNullable<Awaited<ReturnType<typeof getInstructorReviewCount>>>
+export type GetInstructorReviewCountQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get count of pending gate reviews (instructor)
+ */
+
+export function useGetInstructorReviewCount<TData = Awaited<ReturnType<typeof getInstructorReviewCount>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInstructorReviewCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInstructorReviewCountQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getApproveGateUrl = (gateId: number,) => {
+
+
+
+
+  return `/api/instructor/reviews/${gateId}/approve`
+}
+
+/**
+ * @summary Approve a student lesson gate (instructor)
+ */
+export const approveGate = async (gateId: number, options?: RequestInit): Promise<LessonGate> => {
+
+  return customFetch<LessonGate>(getApproveGateUrl(gateId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getApproveGateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveGate>>, TError,{gateId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveGate>>, TError,{gateId: number}, TContext> => {
+
+const mutationKey = ['approveGate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveGate>>, {gateId: number}> = (props) => {
+          const {gateId} = props ?? {};
+
+          return  approveGate(gateId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveGateMutationResult = NonNullable<Awaited<ReturnType<typeof approveGate>>>
+
+    export type ApproveGateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Approve a student lesson gate (instructor)
+ */
+export const useApproveGate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveGate>>, TError,{gateId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveGate>>,
+        TError,
+        {gateId: number},
+        TContext
+      > => {
+      return useMutation(getApproveGateMutationOptions(options));
+    }
+
+export const getRejectGateUrl = (gateId: number,) => {
+
+
+
+
+  return `/api/instructor/reviews/${gateId}/reject`
+}
+
+/**
+ * @summary Reject a gate and assign a new quiz (instructor)
+ */
+export const rejectGate = async (gateId: number,
+    gateRejectInput: GateRejectInput, options?: RequestInit): Promise<LessonGate> => {
+
+  return customFetch<LessonGate>(getRejectGateUrl(gateId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      gateRejectInput,)
+  }
+);}
+
+
+
+
+export const getRejectGateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectGate>>, TError,{gateId: number;data: BodyType<GateRejectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectGate>>, TError,{gateId: number;data: BodyType<GateRejectInput>}, TContext> => {
+
+const mutationKey = ['rejectGate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectGate>>, {gateId: number;data: BodyType<GateRejectInput>}> = (props) => {
+          const {gateId,data} = props ?? {};
+
+          return  rejectGate(gateId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectGateMutationResult = NonNullable<Awaited<ReturnType<typeof rejectGate>>>
+    export type RejectGateMutationBody = BodyType<GateRejectInput>
+    export type RejectGateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reject a gate and assign a new quiz (instructor)
+ */
+export const useRejectGate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectGate>>, TError,{gateId: number;data: BodyType<GateRejectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectGate>>,
+        TError,
+        {gateId: number;data: BodyType<GateRejectInput>},
+        TContext
+      > => {
+      return useMutation(getRejectGateMutationOptions(options));
+    }
 

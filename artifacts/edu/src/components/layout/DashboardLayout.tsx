@@ -8,7 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useGetMe } from "@workspace/api-client-react";
+import { useGetMe, useGetInstructorReviewCount, getGetInstructorReviewCountQueryKey } from "@workspace/api-client-react";
 
 const mainNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -31,12 +31,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: me } = useGetMe();
 
   const role = user?.publicMetadata?.role as string | undefined;
+  const isInstructor = role === "instructor";
   const initials = (user?.firstName?.charAt(0) ?? "") + (user?.lastName?.charAt(0) ?? "");
 
   const xp = me?.xp ?? 0;
   const level = Math.floor(xp / XP_PER_LEVEL) + 1;
   const xpIntoLevel = xp % XP_PER_LEVEL;
   const xpToNext = XP_PER_LEVEL;
+
+  // Pending review count badge — only fetched for instructors
+  const { data: reviewCount } = useGetInstructorReviewCount({
+    query: {
+      enabled: isInstructor,
+      queryKey: getGetInstructorReviewCountQueryKey(),
+      refetchInterval: 30000,
+    },
+  });
+  const pendingReviews = reviewCount?.pending ?? 0;
 
   /* Trading chat uses full-bleed layout with no padding */
   const isFullBleed = location.startsWith("/trading-chat");
@@ -92,7 +103,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   location.startsWith("/instructor") ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 )}>
                   <ShieldAlert className="h-4 w-4 shrink-0" />
-                  <span>Instructor Panel</span>
+                  <span className="flex-1">Instructor Panel</span>
+                  {pendingReviews > 0 && (
+                    <span className={cn(
+                      "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1",
+                      location.startsWith("/instructor") ? "bg-white text-primary" : "bg-red-500 text-white"
+                    )}>
+                      {pendingReviews > 99 ? "99+" : pendingReviews}
+                    </span>
+                  )}
                 </div>
               </Link>
             )}
