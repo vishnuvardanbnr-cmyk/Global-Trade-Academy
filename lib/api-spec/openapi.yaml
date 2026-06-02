@@ -44,6 +44,8 @@ tags:
     description: Lesson bookmarks
   - name: lessonGates
     description: Lesson quiz approval gates
+  - name: courseSections
+    description: Course section/module management
 
 paths:
   /healthz:
@@ -978,6 +980,125 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminStats"
 
+  # ── COURSE SECTIONS ──────────────────────────────────────────────
+  /courses/{courseId}/sections:
+    get:
+      operationId: listCourseSections
+      tags: [courseSections]
+      summary: List sections for a course
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Sections list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CourseSection"
+    post:
+      operationId: createCourseSection
+      tags: [courseSections]
+      summary: Create a section
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseSectionInput"
+      responses:
+        "201":
+          description: Created section
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseSection"
+
+  /sections/{sectionId}:
+    patch:
+      operationId: updateCourseSection
+      tags: [courseSections]
+      summary: Update a section
+      parameters:
+        - name: sectionId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseSectionUpdate"
+      responses:
+        "200":
+          description: Updated section
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseSection"
+    delete:
+      operationId: deleteCourseSection
+      tags: [courseSections]
+      summary: Delete a section (lessons move to unsectioned)
+      parameters:
+        - name: sectionId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+
+  /courses/{courseId}/sections/reorder:
+    post:
+      operationId: reorderCourseSections
+      tags: [courseSections]
+      summary: Bulk-update section positions
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SectionReorderInput"
+      responses:
+        "204":
+          description: Reordered
+
+  /courses/{courseId}/lessons/reorder:
+    post:
+      operationId: reorderLessons
+      tags: [lessons]
+      summary: Bulk-update lesson order and section assignment
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonReorderInput"
+      responses:
+        "204":
+          description: Reordered
+
   # ── LMS: PROGRESS ────────────────────────────────────────────────
   /courses/{courseId}/progress:
     get:
@@ -1505,12 +1626,69 @@ components:
         price: { type: number }
         isFeatured: { type: boolean }
 
+    CourseSection:
+      type: object
+      required: [id, courseId, title, position]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        position: { type: integer }
+        createdAt: { type: string }
+
+    CourseSectionInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        position: { type: integer }
+
+    CourseSectionUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        position: { type: integer }
+
+    SectionReorderInput:
+      type: object
+      required: [positions]
+      properties:
+        positions:
+          type: array
+          items:
+            type: object
+            required: [id, position]
+            properties:
+              id: { type: integer }
+              position: { type: integer }
+
+    LessonReorderInput:
+      type: object
+      required: [updates]
+      properties:
+        updates:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonReorderItem"
+
+    LessonReorderItem:
+      type: object
+      required: [id, order]
+      properties:
+        id: { type: integer }
+        order: { type: integer }
+        sectionId: { type: ["integer", "null"] }
+
     Lesson:
       type: object
       required: [id, courseId, title, type, order]
       properties:
         id: { type: integer }
         courseId: { type: integer }
+        sectionId: { type: ["integer", "null"] }
         title: { type: string }
         description: { type: ["string", "null"] }
         type: { type: string }
@@ -1536,6 +1714,7 @@ components:
         order: { type: integer }
         isFree: { type: boolean }
         dripDays: { type: integer }
+        sectionId: { type: integer }
 
     LessonUpdate:
       type: object
@@ -1549,6 +1728,7 @@ components:
         order: { type: integer }
         isFree: { type: boolean }
         dripDays: { type: integer }
+        sectionId: { type: ["integer", "null"] }
 
     LessonProgressUpdate:
       type: object

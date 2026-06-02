@@ -11,6 +11,7 @@ export const lessonsTable = pgTable("lessons", {
   videoUrl: text("video_url"),
   content: text("content"),
   duration: integer("duration"), // minutes
+  sectionId: integer("section_id"),
   order: integer("order").notNull().default(0),
   isFree: boolean("is_free").notNull().default(false),
   dripDays: integer("drip_days").notNull().default(0), // release N days after enrollment (0 = immediate)

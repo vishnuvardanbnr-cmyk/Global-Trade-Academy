@@ -9,6 +9,8 @@
 export interface Lesson {
   id: number;
   courseId: number;
+  /** @nullable */
+  sectionId?: number | null;
   title: string;
   /** @nullable */
   description?: string | null;

@@ -36,6 +36,9 @@ import type {
   CourseAnalytics,
   CourseInput,
   CourseProgress,
+  CourseSection,
+  CourseSectionInput,
+  CourseSectionUpdate,
   CourseUpdate,
   DashboardSummary,
   Enrollment,
@@ -51,6 +54,7 @@ import type {
   LessonInput,
   LessonProgress,
   LessonProgressUpdate,
+  LessonReorderInput,
   LessonUpdate,
   ListAttendanceParams,
   ListCoursesParams,
@@ -79,6 +83,7 @@ import type {
   ReviewCount,
   ReviewInput,
   ReviewSummary,
+  SectionReorderInput,
   Task,
   TaskCompleteInput,
   TaskCompletion,
@@ -3842,6 +3847,441 @@ export function useGetAdminStats<TData = Awaited<ReturnType<typeof getAdminStats
 
 
 
+
+export const getListCourseSectionsUrl = (courseId: number,) => {
+
+
+
+
+  return `/api/courses/${courseId}/sections`
+}
+
+/**
+ * @summary List sections for a course
+ */
+export const listCourseSections = async (courseId: number, options?: RequestInit): Promise<CourseSection[]> => {
+
+  return customFetch<CourseSection[]>(getListCourseSectionsUrl(courseId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCourseSectionsQueryKey = (courseId: number,) => {
+    return [
+    `/api/courses/${courseId}/sections`
+    ] as const;
+    }
+
+
+export const getListCourseSectionsQueryOptions = <TData = Awaited<ReturnType<typeof listCourseSections>>, TError = ErrorType<unknown>>(courseId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCourseSections>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCourseSectionsQueryKey(courseId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCourseSections>>> = ({ signal }) => listCourseSections(courseId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(courseId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCourseSections>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCourseSectionsQueryResult = NonNullable<Awaited<ReturnType<typeof listCourseSections>>>
+export type ListCourseSectionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List sections for a course
+ */
+
+export function useListCourseSections<TData = Awaited<ReturnType<typeof listCourseSections>>, TError = ErrorType<unknown>>(
+ courseId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCourseSections>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCourseSectionsQueryOptions(courseId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateCourseSectionUrl = (courseId: number,) => {
+
+
+
+
+  return `/api/courses/${courseId}/sections`
+}
+
+/**
+ * @summary Create a section
+ */
+export const createCourseSection = async (courseId: number,
+    courseSectionInput: CourseSectionInput, options?: RequestInit): Promise<CourseSection> => {
+
+  return customFetch<CourseSection>(getCreateCourseSectionUrl(courseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      courseSectionInput,)
+  }
+);}
+
+
+
+
+export const getCreateCourseSectionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCourseSection>>, TError,{courseId: number;data: BodyType<CourseSectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCourseSection>>, TError,{courseId: number;data: BodyType<CourseSectionInput>}, TContext> => {
+
+const mutationKey = ['createCourseSection'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCourseSection>>, {courseId: number;data: BodyType<CourseSectionInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  createCourseSection(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCourseSectionMutationResult = NonNullable<Awaited<ReturnType<typeof createCourseSection>>>
+    export type CreateCourseSectionMutationBody = BodyType<CourseSectionInput>
+    export type CreateCourseSectionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a section
+ */
+export const useCreateCourseSection = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCourseSection>>, TError,{courseId: number;data: BodyType<CourseSectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCourseSection>>,
+        TError,
+        {courseId: number;data: BodyType<CourseSectionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCourseSectionMutationOptions(options));
+    }
+
+export const getUpdateCourseSectionUrl = (sectionId: number,) => {
+
+
+
+
+  return `/api/sections/${sectionId}`
+}
+
+/**
+ * @summary Update a section
+ */
+export const updateCourseSection = async (sectionId: number,
+    courseSectionUpdate: CourseSectionUpdate, options?: RequestInit): Promise<CourseSection> => {
+
+  return customFetch<CourseSection>(getUpdateCourseSectionUrl(sectionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      courseSectionUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateCourseSectionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCourseSection>>, TError,{sectionId: number;data: BodyType<CourseSectionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCourseSection>>, TError,{sectionId: number;data: BodyType<CourseSectionUpdate>}, TContext> => {
+
+const mutationKey = ['updateCourseSection'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCourseSection>>, {sectionId: number;data: BodyType<CourseSectionUpdate>}> = (props) => {
+          const {sectionId,data} = props ?? {};
+
+          return  updateCourseSection(sectionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCourseSectionMutationResult = NonNullable<Awaited<ReturnType<typeof updateCourseSection>>>
+    export type UpdateCourseSectionMutationBody = BodyType<CourseSectionUpdate>
+    export type UpdateCourseSectionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a section
+ */
+export const useUpdateCourseSection = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCourseSection>>, TError,{sectionId: number;data: BodyType<CourseSectionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCourseSection>>,
+        TError,
+        {sectionId: number;data: BodyType<CourseSectionUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCourseSectionMutationOptions(options));
+    }
+
+export const getDeleteCourseSectionUrl = (sectionId: number,) => {
+
+
+
+
+  return `/api/sections/${sectionId}`
+}
+
+/**
+ * @summary Delete a section (lessons move to unsectioned)
+ */
+export const deleteCourseSection = async (sectionId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteCourseSectionUrl(sectionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCourseSectionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCourseSection>>, TError,{sectionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCourseSection>>, TError,{sectionId: number}, TContext> => {
+
+const mutationKey = ['deleteCourseSection'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCourseSection>>, {sectionId: number}> = (props) => {
+          const {sectionId} = props ?? {};
+
+          return  deleteCourseSection(sectionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCourseSectionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCourseSection>>>
+
+    export type DeleteCourseSectionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a section (lessons move to unsectioned)
+ */
+export const useDeleteCourseSection = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCourseSection>>, TError,{sectionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCourseSection>>,
+        TError,
+        {sectionId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteCourseSectionMutationOptions(options));
+    }
+
+export const getReorderCourseSectionsUrl = (courseId: number,) => {
+
+
+
+
+  return `/api/courses/${courseId}/sections/reorder`
+}
+
+/**
+ * @summary Bulk-update section positions
+ */
+export const reorderCourseSections = async (courseId: number,
+    sectionReorderInput: SectionReorderInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReorderCourseSectionsUrl(courseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      sectionReorderInput,)
+  }
+);}
+
+
+
+
+export const getReorderCourseSectionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderCourseSections>>, TError,{courseId: number;data: BodyType<SectionReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderCourseSections>>, TError,{courseId: number;data: BodyType<SectionReorderInput>}, TContext> => {
+
+const mutationKey = ['reorderCourseSections'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderCourseSections>>, {courseId: number;data: BodyType<SectionReorderInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  reorderCourseSections(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderCourseSectionsMutationResult = NonNullable<Awaited<ReturnType<typeof reorderCourseSections>>>
+    export type ReorderCourseSectionsMutationBody = BodyType<SectionReorderInput>
+    export type ReorderCourseSectionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Bulk-update section positions
+ */
+export const useReorderCourseSections = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderCourseSections>>, TError,{courseId: number;data: BodyType<SectionReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderCourseSections>>,
+        TError,
+        {courseId: number;data: BodyType<SectionReorderInput>},
+        TContext
+      > => {
+      return useMutation(getReorderCourseSectionsMutationOptions(options));
+    }
+
+export const getReorderLessonsUrl = (courseId: number,) => {
+
+
+
+
+  return `/api/courses/${courseId}/lessons/reorder`
+}
+
+/**
+ * @summary Bulk-update lesson order and section assignment
+ */
+export const reorderLessons = async (courseId: number,
+    lessonReorderInput: LessonReorderInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReorderLessonsUrl(courseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lessonReorderInput,)
+  }
+);}
+
+
+
+
+export const getReorderLessonsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderLessons>>, TError,{courseId: number;data: BodyType<LessonReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderLessons>>, TError,{courseId: number;data: BodyType<LessonReorderInput>}, TContext> => {
+
+const mutationKey = ['reorderLessons'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderLessons>>, {courseId: number;data: BodyType<LessonReorderInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  reorderLessons(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderLessonsMutationResult = NonNullable<Awaited<ReturnType<typeof reorderLessons>>>
+    export type ReorderLessonsMutationBody = BodyType<LessonReorderInput>
+    export type ReorderLessonsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Bulk-update lesson order and section assignment
+ */
+export const useReorderLessons = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderLessons>>, TError,{courseId: number;data: BodyType<LessonReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderLessons>>,
+        TError,
+        {courseId: number;data: BodyType<LessonReorderInput>},
+        TContext
+      > => {
+      return useMutation(getReorderLessonsMutationOptions(options));
+    }
 
 export const getGetCourseProgressUrl = (courseId: number,) => {
 

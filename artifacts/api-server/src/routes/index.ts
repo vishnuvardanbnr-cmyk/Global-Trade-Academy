@@ -12,6 +12,7 @@ import dashboardRouter from "./dashboard";
 import assessmentsRouter from "./assessments";
 import engagementRouter from "./engagement";
 import gatesRouter from "./gates";
+import sectionsRouter from "./sections";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(dashboardRouter);
 router.use(assessmentsRouter);
 router.use(engagementRouter);
 router.use(gatesRouter);
+router.use(sectionsRouter);
 
 export default router;

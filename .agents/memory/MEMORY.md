@@ -1,1 +1,2 @@
-- [LMS server-side authorization](lms-authorization.md) — every learner/mutating route must gate on enrollment + unlock state, not just auth; content endpoints must strip paid fields when locked.
+- [Sections reorder naming fix](sections-codegen-naming.md) — inline request body objects in OpenAPI cause duplicate Zod names; always use named $ref schemas for request bodies.
+- [Course sections architecture](course-sections-arch.md) — sections are optional; course-detail.tsx falls back to flat single-group when no sections exist.

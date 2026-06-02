@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRoute, Link } from "wouter";
 import {
-  useGetCourse, useListLessons, useListEnrollments, useCreateEnrollment,
+  useGetCourse, useListLessons, useListCourseSections, getListCourseSectionsQueryKey,
+  useListEnrollments, useCreateEnrollment,
   getListEnrollmentsQueryKey,
   useGetCourseProgress, getGetCourseProgressQueryKey,
   useUpdateLessonProgress,
@@ -26,33 +27,42 @@ import {
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
 } from "lucide-react";
 
-/* ─── Chapter builder (from DB lessons) ─────────────────────────── */
-const CHAPTER_TITLES: Record<string, string[]> = {
-  forex:   ["Forex Foundations", "Technical Analysis", "Trade Execution", "Risk & Psychology", "Advanced Mastery"],
-  crypto:  ["Blockchain & Crypto Basics", "Trading Techniques", "DeFi & On-Chain", "Portfolio Strategy"],
-  options: ["Options Fundamentals", "Core Strategies", "Advanced Greeks", "Income Mastery"],
-  futures: ["Futures Basics", "Contracts & Mechanics", "Advanced Strategies", "Risk Management"],
-  stocks:  ["Market Foundations", "Security Analysis", "Portfolio Building", "Advanced Techniques"],
-};
-const CHAPTER_SIZE = 4;
+/* ─── Helpers ─────────────────────────────────────────────────── */
+type DbLesson = { id: number; title: string; duration: number | null; order: number; isFree: boolean; type: string; sectionId?: number | null };
+type ChapterGroup = { id: number; title: string; dur: string; lessons: DbLesson[] };
 
-type DbLesson = { id: number; title: string; duration: number | null; order: number; isFree: boolean; type: string };
+function durStr(mins: number) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
-function buildChapters(dbLessons: DbLesson[], category: string) {
-  const titles = CHAPTER_TITLES[(category ?? "").toLowerCase()] ?? [];
-  const groups: { id: number; title: string; dur: string; lessons: DbLesson[] }[] = [];
-  for (let i = 0; i < dbLessons.length; i += CHAPTER_SIZE) {
-    const chunk = dbLessons.slice(i, i + CHAPTER_SIZE);
-    const totalMin = chunk.reduce((s, l) => s + (l.duration ?? 0), 0);
-    const h = Math.floor(totalMin / 60), m = totalMin % 60;
-    groups.push({
-      id: i / CHAPTER_SIZE + 1,
-      title: titles[i / CHAPTER_SIZE] ?? `Chapter ${i / CHAPTER_SIZE + 1}`,
-      dur: h > 0 ? `${h}h ${m}m` : `${m}m`,
-      lessons: chunk,
-    });
+function buildSectionGroups(
+  dbLessons: DbLesson[],
+  sections: { id: number; title: string; position: number }[],
+): ChapterGroup[] {
+  const sorted = [...sections].sort((a, b) => a.position - b.position);
+  const groups: ChapterGroup[] = [];
+
+  // Sections with lessons
+  for (const sec of sorted) {
+    const sectionLessons = dbLessons.filter((l) => l.sectionId === sec.id).sort((a, b) => a.order - b.order);
+    const totalMin = sectionLessons.reduce((s, l) => s + (l.duration ?? 0), 0);
+    groups.push({ id: sec.id, title: sec.title, dur: durStr(totalMin), lessons: sectionLessons });
   }
+
+  // Unsectioned lessons go at the end
+  const unsectioned = dbLessons.filter((l) => !l.sectionId).sort((a, b) => a.order - b.order);
+  if (unsectioned.length > 0) {
+    const totalMin = unsectioned.reduce((s, l) => s + (l.duration ?? 0), 0);
+    groups.push({ id: 0, title: sections.length > 0 ? "Other Lessons" : "Course Content", dur: durStr(totalMin), lessons: unsectioned });
+  }
+
   return groups;
+}
+
+function buildFlatGroups(dbLessons: DbLesson[]): ChapterGroup[] {
+  const totalMin = dbLessons.reduce((s, l) => s + (l.duration ?? 0), 0);
+  return dbLessons.length === 0 ? [] : [{ id: 1, title: "Course Content", dur: durStr(totalMin), lessons: dbLessons }];
 }
 
 type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews";
@@ -64,6 +74,9 @@ export default function CourseDetail() {
 
   const { data: course, isLoading } = useGetCourse(validId);
   const { data: lessons } = useListLessons(validId);
+  const { data: sections } = useListCourseSections(validId, {
+    query: { enabled: courseId > 0, queryKey: getListCourseSectionsQueryKey(validId) },
+  });
   const { data: enrollments } = useListEnrollments();
   const { mutateAsync: enroll, isPending: enrolling } = useCreateEnrollment();
   const qc = useQueryClient();
@@ -80,7 +93,12 @@ export default function CourseDetail() {
   const [expanded, setExpanded] = useState<number>(1);
 
   const dbLessons = (lessons ?? []) as DbLesson[];
-  const chapterGroups = useMemo(() => buildChapters(dbLessons, course?.category ?? "forex"), [dbLessons, course?.category]);
+  const chapterGroups = useMemo(() => {
+    const secs = sections ?? [];
+    return secs.length > 0
+      ? buildSectionGroups(dbLessons, secs)
+      : buildFlatGroups(dbLessons);
+  }, [dbLessons, sections]);
   const totalL = dbLessons.length;
 
   const completedSet = useMemo(

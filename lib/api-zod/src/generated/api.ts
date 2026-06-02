@@ -268,6 +268,7 @@ export const ListLessonsParams = zod.object({
 export const ListLessonsResponseItem = zod.object({
   "id": zod.number(),
   "courseId": zod.number(),
+  "sectionId": zod.number().nullish(),
   "title": zod.string(),
   "description": zod.string().nullish(),
   "type": zod.string(),
@@ -302,7 +303,8 @@ export const CreateLessonBody = zod.object({
   "duration": zod.number().optional(),
   "order": zod.number(),
   "isFree": zod.boolean().optional(),
-  "dripDays": zod.number().optional()
+  "dripDays": zod.number().optional(),
+  "sectionId": zod.number().optional()
 })
 
 
@@ -316,6 +318,7 @@ export const GetLessonParams = zod.object({
 export const GetLessonResponse = zod.object({
   "id": zod.number(),
   "courseId": zod.number(),
+  "sectionId": zod.number().nullish(),
   "title": zod.string(),
   "description": zod.string().nullish(),
   "type": zod.string(),
@@ -346,12 +349,14 @@ export const UpdateLessonBody = zod.object({
   "duration": zod.number().optional(),
   "order": zod.number().optional(),
   "isFree": zod.boolean().optional(),
-  "dripDays": zod.number().optional()
+  "dripDays": zod.number().optional(),
+  "sectionId": zod.number().nullish()
 })
 
 export const UpdateLessonResponse = zod.object({
   "id": zod.number(),
   "courseId": zod.number(),
+  "sectionId": zod.number().nullish(),
   "title": zod.string(),
   "description": zod.string().nullish(),
   "type": zod.string(),
@@ -1004,6 +1009,103 @@ export const GetAdminStatsResponse = zod.object({
   "newUsersToday": zod.number().optional(),
   "pendingInstructors": zod.number().optional(),
   "upcomingClasses": zod.number().optional()
+})
+
+
+/**
+ * @summary List sections for a course
+ */
+export const ListCourseSectionsParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListCourseSectionsResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "position": zod.number(),
+  "createdAt": zod.string().optional()
+})
+export const ListCourseSectionsResponse = zod.array(ListCourseSectionsResponseItem)
+
+
+/**
+ * @summary Create a section
+ */
+export const CreateCourseSectionParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+
+
+
+export const CreateCourseSectionBody = zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "position": zod.number().optional()
+})
+
+
+/**
+ * @summary Update a section
+ */
+export const UpdateCourseSectionParams = zod.object({
+  "sectionId": zod.coerce.number()
+})
+
+export const UpdateCourseSectionBody = zod.object({
+  "title": zod.string().optional(),
+  "description": zod.string().optional(),
+  "position": zod.number().optional()
+})
+
+export const UpdateCourseSectionResponse = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "position": zod.number(),
+  "createdAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a section (lessons move to unsectioned)
+ */
+export const DeleteCourseSectionParams = zod.object({
+  "sectionId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Bulk-update section positions
+ */
+export const ReorderCourseSectionsParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ReorderCourseSectionsBody = zod.object({
+  "positions": zod.array(zod.object({
+  "id": zod.number(),
+  "position": zod.number()
+}))
+})
+
+
+/**
+ * @summary Bulk-update lesson order and section assignment
+ */
+export const ReorderLessonsParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ReorderLessonsBody = zod.object({
+  "updates": zod.array(zod.object({
+  "id": zod.number(),
+  "order": zod.number(),
+  "sectionId": zod.number().nullish()
+}))
 })
 
 

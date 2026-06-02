@@ -21,6 +21,7 @@ function buildLessonResponse(l: typeof lessonsTable.$inferSelect, locked = false
   return {
     id: l.id,
     courseId: l.courseId,
+    sectionId: l.sectionId ?? null,
     title: l.title,
     description: l.description,
     type: l.type,
@@ -85,6 +86,7 @@ router.post("/courses/:courseId/lessons", async (req, res): Promise<void> => {
     const { title, description, type, videoUrl, content, duration, order, isFree, dripDays } = req.body;
     if (!title) { res.status(400).json({ error: "title required" }); return; }
 
+    const { sectionId } = req.body;
     const inserted = await db.insert(lessonsTable).values({
       courseId,
       title,
@@ -96,6 +98,7 @@ router.post("/courses/:courseId/lessons", async (req, res): Promise<void> => {
       order: order ?? 0,
       isFree: isFree ?? false,
       dripDays: dripDays ?? 0,
+      sectionId: sectionId ?? null,
     }).returning();
 
     res.status(201).json(buildLessonResponse(inserted[0]));
@@ -157,7 +160,7 @@ router.patch("/lessons/:lessonId", async (req, res): Promise<void> => {
     if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
     if (!(await ownsCourse(clerkId, lesson.courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-    const { title, description, type, videoUrl, content, duration, order, isFree, dripDays } = req.body;
+    const { title, description, type, videoUrl, content, duration, order, isFree, dripDays, sectionId } = req.body;
     const updated = await db.update(lessonsTable).set({
       ...(title !== undefined && { title }),
       ...(description !== undefined && { description }),
@@ -168,6 +171,7 @@ router.patch("/lessons/:lessonId", async (req, res): Promise<void> => {
       ...(order !== undefined && { order }),
       ...(isFree !== undefined && { isFree }),
       ...(dripDays !== undefined && { dripDays }),
+      ...(sectionId !== undefined && { sectionId: sectionId === null ? null : sectionId }),
     }).where(eq(lessonsTable.id, id)).returning();
 
     if (!updated[0]) { res.status(404).json({ error: "Lesson not found" }); return; }
@@ -285,6 +289,35 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
     });
   } catch (err) {
     req.log.error({ err }, "Error updating lesson progress");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/courses/:courseId/lessons/reorder
+router.post("/courses/:courseId/lessons/reorder", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const courseId = parseInt(req.params.courseId);
+    if (isNaN(courseId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    if (!(await ownsCourse(clerkId, courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { updates } = req.body as { updates: { id: number; order: number; sectionId?: number | null }[] };
+    if (!Array.isArray(updates)) { res.status(400).json({ error: "updates array required" }); return; }
+
+    await Promise.all(
+      updates.map(({ id, order, sectionId }) =>
+        db.update(lessonsTable).set({
+          order,
+          ...(sectionId !== undefined && { sectionId: sectionId === null ? null : sectionId }),
+        }).where(and(eq(lessonsTable.id, id), eq(lessonsTable.courseId, courseId)))
+      )
+    );
+
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Error reordering lessons");
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -16,4 +16,6 @@ export interface LessonUpdate {
   order?: number;
   isFree?: boolean;
   dripDays?: number;
+  /** @nullable */
+  sectionId?: number | null;
 }

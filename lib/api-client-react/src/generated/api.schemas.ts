@@ -84,9 +84,54 @@ export interface CourseUpdate {
   isFeatured?: boolean;
 }
 
+export interface CourseSection {
+  id: number;
+  courseId: number;
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  position: number;
+  createdAt?: string;
+}
+
+export interface CourseSectionInput {
+  /** @minLength 1 */
+  title: string;
+  description?: string;
+  position?: number;
+}
+
+export interface CourseSectionUpdate {
+  title?: string;
+  description?: string;
+  position?: number;
+}
+
+export type SectionReorderInputPositionsItem = {
+  id: number;
+  position: number;
+};
+
+export interface SectionReorderInput {
+  positions: SectionReorderInputPositionsItem[];
+}
+
+export interface LessonReorderItem {
+  id: number;
+  order: number;
+  /** @nullable */
+  sectionId?: number | null;
+}
+
+export interface LessonReorderInput {
+  updates: LessonReorderItem[];
+}
+
 export interface Lesson {
   id: number;
   courseId: number;
+  /** @nullable */
+  sectionId?: number | null;
   title: string;
   /** @nullable */
   description?: string | null;
@@ -115,6 +160,7 @@ export interface LessonInput {
   order: number;
   isFree?: boolean;
   dripDays?: number;
+  sectionId?: number;
 }
 
 export interface LessonUpdate {
@@ -127,6 +173,8 @@ export interface LessonUpdate {
   order?: number;
   isFree?: boolean;
   dripDays?: number;
+  /** @nullable */
+  sectionId?: number | null;
 }
 
 export interface LessonProgressUpdate {
