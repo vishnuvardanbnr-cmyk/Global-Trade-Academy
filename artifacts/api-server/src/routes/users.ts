@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { getAuth, clerkClient } from "@clerk/express";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -41,10 +41,21 @@ router.get("/users/me", async (req, res): Promise<void> => {
       .then((r) => r[0]);
 
     if (!user) {
+      // Fetch real name + email from Clerk so we never store a raw user ID as display name
+      const clerkUser = await clerkClient.users.getUser(clerkId);
+      const firstName = clerkUser.firstName ?? "";
+      const lastName = clerkUser.lastName ?? "";
+      const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+      const realEmail =
+        clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
+        clerkUser.emailAddresses[0]?.emailAddress ??
+        `${clerkId}@edu.app`;
+
       const newUser = insertUserSchema.parse({
         id: clerkId,
         clerkId,
-        email: (req as any).auth?.sessionClaims?.email ?? `${clerkId}@edu.app`,
+        email: realEmail,
+        displayName: fullName || clerkUser.username || null,
         role: "student",
         xp: 0,
         badges: [],

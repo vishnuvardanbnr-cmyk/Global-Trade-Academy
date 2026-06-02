@@ -3,12 +3,14 @@ import { useUser, useClerk } from "@clerk/react";
 import {
   LayoutDashboard, BookOpen, LineChart, Users, Video, MessageSquare,
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
-  ChevronRight, MessageCircle, GraduationCap, Zap, Award,
+  ChevronRight, MessageCircle, GraduationCap, Zap, Award, UserCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { useGetMe, useGetInstructorReviewCount, getGetInstructorReviewCountQueryKey } from "@workspace/api-client-react";
+import { useState, useEffect } from "react";
+import { useGetMe, useGetInstructorReviewCount, getGetInstructorReviewCountQueryKey, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 const mainNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -23,16 +25,92 @@ const mainNav = [
 
 const XP_PER_LEVEL = 500;
 
+/* ─── Complete Profile Dialog ──────────────────────────────────── */
+function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
+  const { user: clerkUser } = useUser();
+  const { mutateAsync: updateMe } = useUpdateMe();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firstName.trim()) return;
+    setSaving(true);
+    try {
+      const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+      // Update DB
+      await updateMe({ data: { displayName } });
+      await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+      // Update Clerk profile so the name appears immediately everywhere
+      await clerkUser?.update({ firstName: firstName.trim(), lastName: lastName.trim() });
+      toast({ title: "Profile updated!", description: `Welcome, ${displayName}!` });
+      onDone();
+    } catch {
+      toast({ title: "Could not save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
+          <UserCircle2 className="h-6 w-6 text-blue-600" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 text-center mb-1">Complete your profile</h2>
+        <p className="text-sm text-slate-500 text-center mb-5">Tell us your name so we can personalise your experience.</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">First name *</label>
+            <input
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="e.g. Alex"
+              required
+              className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Last name</label>
+            <input
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="e.g. Johnson"
+              className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving || !firstName.trim()}
+            className="w-full mt-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-colors"
+          >
+            {saving ? "Saving…" : "Continue →"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useUser();
   const { signOut } = useClerk();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileDismissed, setProfileDismissed] = useState(false);
   const { data: me } = useGetMe();
 
   const role = me?.role;
   const isInstructor = role === "instructor";
   const initials = (user?.firstName?.charAt(0) ?? "") + (user?.lastName?.charAt(0) ?? "");
+
+  // Show profile dialog once when user has no name in Clerk AND no displayName in DB
+  const hasName = !!(user?.firstName || user?.fullName || me?.displayName);
+  const showProfileDialog = me !== undefined && !hasName && !profileDismissed;
 
   const xp = me?.xp ?? 0;
   const level = Math.floor(xp / XP_PER_LEVEL) + 1;
@@ -165,6 +243,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 
   return (
+    <>
+    {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-white flex-col h-screen">
@@ -234,5 +314,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </main>
       </div>
     </div>
+    </>
   );
 }

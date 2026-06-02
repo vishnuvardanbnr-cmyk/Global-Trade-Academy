@@ -1,2 +1,4 @@
 - [Sections reorder naming fix](sections-codegen-naming.md) — inline request body objects in OpenAPI cause duplicate Zod names; always use named $ref schemas for request bodies.
 - [Course sections architecture](course-sections-arch.md) — sections are optional; course-detail.tsx falls back to flat single-group when no sections exist.
+- [Clerk name vs DB displayName](clerk-name-display.md) — greeting/sidebar must source name from useUser() not DB email; DB stores real name after CompleteProfileDialog.
+- [Quiz gate flow](quiz-gate-flow.md) — quiz submit → advanceGateOnPass → pending_review → instructor approves/rejects → next lesson unlocked; rejection creates per-student replacement quiz.
