@@ -73,13 +73,14 @@ router.post("/live-classes", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { title, description, scheduledAt, duration, meetingUrl, category, maxAttendees, thumbnailUrl, courseId, agenda } = req.body;
+    const { title, description, scheduledAt, duration, meetingUrl, category, maxAttendees, thumbnailUrl, courseId, agenda, batchId } = req.body;
     if (!title || !scheduledAt) { res.status(400).json({ error: "title and scheduledAt required" }); return; }
 
     const inserted = await db.insert(liveClassesTable).values({
       title, description, instructorId: clerkId,
       scheduledAt: new Date(scheduledAt), duration, meetingUrl, category, maxAttendees, thumbnailUrl, agenda,
       courseId: courseId ? parseInt(courseId) : null,
+      batchId: batchId ? parseInt(batchId) : null,
       roomName: generateRoomName(),
       status: "scheduled",
     }).returning();
@@ -110,7 +111,7 @@ router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.classId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { title, description, scheduledAt, duration, status, meetingUrl, replayUrl, category, maxAttendees, courseId, agenda } = req.body;
+    const { title, description, scheduledAt, duration, status, meetingUrl, replayUrl, category, maxAttendees, courseId, agenda, batchId } = req.body;
     const updated = await db.update(liveClassesTable).set({
       ...(title !== undefined && { title }),
       ...(description !== undefined && { description }),
@@ -122,6 +123,7 @@ router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
       ...(category !== undefined && { category }),
       ...(maxAttendees !== undefined && { maxAttendees }),
       ...(courseId !== undefined && { courseId: courseId ? parseInt(courseId) : null }),
+      ...(batchId !== undefined && { batchId: batchId ? parseInt(batchId) : null }),
       ...(agenda !== undefined && { agenda }),
     }).where(eq(liveClassesTable.id, id)).returning();
     if (!updated[0]) { res.status(404).json({ error: "Live class not found" }); return; }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useListCourses, useCreateCourse, useUpdateCourse, useDeleteCourse,
   useListLiveClasses, useCreateLiveClass, useListAttendance,
@@ -991,6 +991,450 @@ function EnrollmentsTab() {
 }
 
 /* ════════════════════════════════════════════
+   BATCHES TAB
+════════════════════════════════════════════ */
+type Batch = { id: number; courseId: number; name: string; description: string | null; startDate: string | null; endDate: string | null; maxStudents: number | null; status: string; createdAt: string; studentCount: number };
+type BatchStudent = { id: number; batchId: number; userId: string; displayName: string | null; email: string | null; addedAt: string };
+type BatchLiveClass = { id: number; title: string; scheduledAt: string; status: string; batchId: number | null };
+type AvailableStudent = { id: string; displayName: string | null; email: string | null };
+
+function BatchesTab({ courses }: { courses: { id: number; title: string }[] }) {
+  const { toast } = useToast();
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0] ? String(courses[0].id) : "");
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [openBatch, setOpenBatch] = useState<Batch | null>(null);
+
+  // Create batch form
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createStart, setCreateStart] = useState("");
+  const [createEnd, setCreateEnd] = useState("");
+  const [createMax, setCreateMax] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const loadBatches = useCallback(async (courseId: string) => {
+    if (!courseId) return;
+    setLoadingBatches(true);
+    try {
+      const r = await fetch(`/api/instructor/courses/${courseId}/batches`);
+      if (r.ok) setBatches(await r.json());
+    } finally { setLoadingBatches(false); }
+  }, []);
+
+  useEffect(() => { if (selectedCourseId) loadBatches(selectedCourseId); }, [selectedCourseId, loadBatches]);
+
+  const createBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createName.trim() || !selectedCourseId) return;
+    setCreating(true);
+    try {
+      const r = await fetch(`/api/instructor/courses/${selectedCourseId}/batches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: createName.trim(), description: createDesc.trim() || undefined, startDate: createStart || undefined, endDate: createEnd || undefined, maxStudents: createMax || undefined }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Batch created!" });
+      setShowCreate(false); setCreateName(""); setCreateDesc(""); setCreateStart(""); setCreateEnd(""); setCreateMax("");
+      loadBatches(selectedCourseId);
+    } catch { toast({ title: "Failed to create batch", variant: "destructive" }); }
+    finally { setCreating(false); }
+  };
+
+  const deleteBatch = async (id: number) => {
+    if (!confirm("Delete this batch? Students and sessions will be unassigned.")) return;
+    try {
+      await fetch(`/api/instructor/batches/${id}`, { method: "DELETE" });
+      toast({ title: "Batch deleted" });
+      if (openBatch?.id === id) setOpenBatch(null);
+      loadBatches(selectedCourseId);
+    } catch { toast({ title: "Failed to delete", variant: "destructive" }); }
+  };
+
+  if (openBatch) {
+    return (
+      <BatchDetail
+        batch={openBatch}
+        courses={courses}
+        onBack={() => { setOpenBatch(null); loadBatches(selectedCourseId); }}
+        onDelete={() => deleteBatch(openBatch.id)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <select
+          value={selectedCourseId}
+          onChange={(e) => { setSelectedCourseId(e.target.value); setOpenBatch(null); }}
+          className="h-9 px-3 rounded-lg border border-border text-sm bg-background focus:outline-none focus:border-primary min-w-[220px]"
+        >
+          {courses.map((c) => <option key={c.id} value={String(c.id)}>{c.title}</option>)}
+        </select>
+        <Button size="sm" onClick={() => setShowCreate(!showCreate)} className="gap-1.5 ml-auto">
+          <Plus className="h-3.5 w-3.5" /> New Batch
+        </Button>
+      </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <Card className="border-primary/30 bg-primary/3">
+          <CardContent className="pt-4">
+            <form onSubmit={createBatch} className="space-y-3">
+              <p className="text-sm font-semibold text-foreground mb-2">Create New Batch</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Batch Name *</label>
+                  <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="e.g. Jan 2026 Cohort" required />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Max Students</label>
+                  <Input type="number" min="1" value={createMax} onChange={(e) => setCreateMax(e.target.value)} placeholder="Unlimited" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Start Date</label>
+                  <Input type="date" value={createStart} onChange={(e) => setCreateStart(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">End Date</label>
+                  <Input type="date" value={createEnd} onChange={(e) => setCreateEnd(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+                <Textarea value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} rows={2} placeholder="Optional batch description…" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+                <Button type="submit" size="sm" disabled={creating || !createName.trim()}>{creating ? "Creating…" : "Create Batch"}</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Batch list */}
+      {loadingBatches ? (
+        <div className="space-y-3">{[1,2,3].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
+      ) : batches.length === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="py-12 text-center">
+            <Users className="h-10 w-10 mx-auto mb-3 opacity-25" />
+            <p className="font-medium text-foreground">No batches yet</p>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">Create your first batch to group students and schedule batch live sessions.</p>
+            <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5"><Plus className="h-3.5 w-3.5" /> New Batch</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {batches.map((b) => (
+            <Card key={b.id} className="cursor-pointer hover:border-primary/40 transition-colors group" onClick={() => setOpenBatch(b)}>
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <CardTitle className="text-sm font-semibold truncate">{b.name}</CardTitle>
+                    <Badge variant="outline" className={`mt-1 text-[10px] ${b.status === "active" ? "text-green-500 border-green-500/30" : b.status === "completed" ? "text-muted-foreground" : "text-amber-500 border-amber-500/30"}`}>{b.status}</Badge>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    onClick={(e) => { e.stopPropagation(); deleteBatch(b.id); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <span>{b.studentCount} student{b.studentCount !== 1 ? "s" : ""}{b.maxStudents ? ` / ${b.maxStudents}` : ""}</span>
+                </div>
+                {(b.startDate || b.endDate) && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {b.startDate ? new Date(b.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}
+                      {" → "}
+                      {b.endDate ? new Date(b.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "ongoing"}
+                    </span>
+                  </div>
+                )}
+                {b.description && <p className="text-xs text-muted-foreground line-clamp-2">{b.description}</p>}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Batch Detail ─── */
+function BatchDetail({ batch, courses, onBack, onDelete }: { batch: Batch; courses: { id: number; title: string }[]; onBack: () => void; onDelete: () => void }) {
+  const { toast } = useToast();
+  const [students, setStudents] = useState<BatchStudent[]>([]);
+  const [available, setAvailable] = useState<AvailableStudent[]>([]);
+  const [liveClasses, setLiveClasses] = useState<BatchLiveClass[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(true);
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+
+  const loadAll = useCallback(async () => {
+    setLoadingStudents(true); setLoadingClasses(true);
+    const [s, a, l] = await Promise.all([
+      fetch(`/api/instructor/batches/${batch.id}/students`).then((r) => r.ok ? r.json() : []),
+      fetch(`/api/instructor/batches/${batch.id}/available-students`).then((r) => r.ok ? r.json() : []),
+      fetch(`/api/instructor/batches/${batch.id}/live-classes`).then((r) => r.ok ? r.json() : []),
+    ]);
+    setStudents(s); setAvailable(a); setLoadingStudents(false);
+    setLiveClasses(l); setLoadingClasses(false);
+  }, [batch.id]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const addStudent = async (userId: string) => {
+    setAddingId(userId);
+    try {
+      const r = await fetch(`/api/instructor/batches/${batch.id}/students`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Student added to batch" });
+      loadAll();
+    } catch { toast({ title: "Failed to add student", variant: "destructive" }); }
+    finally { setAddingId(null); }
+  };
+
+  const removeStudent = async (userId: string) => {
+    setRemovingId(userId);
+    try {
+      await fetch(`/api/instructor/batches/${batch.id}/students/${userId}`, { method: "DELETE" });
+      toast({ title: "Student removed from batch" });
+      loadAll();
+    } catch { toast({ title: "Failed to remove student", variant: "destructive" }); }
+    finally { setRemovingId(null); }
+  };
+
+  const filteredAvailable = available.filter((u) =>
+    !studentSearch ||
+    (u.displayName ?? "").toLowerCase().includes(studentSearch.toLowerCase()) ||
+    (u.email ?? "").toLowerCase().includes(studentSearch.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Back + header */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" className="gap-1.5 -ml-1" onClick={onBack}>
+          <ChevronRight className="h-4 w-4 rotate-180" /> All Batches
+        </Button>
+        <div className="h-4 w-px bg-border" />
+        <div className="flex-1 min-w-0">
+          <h2 className="font-semibold text-lg truncate">{batch.name}</h2>
+          {batch.description && <p className="text-sm text-muted-foreground truncate">{batch.description}</p>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant="outline" className={`text-xs ${batch.status === "active" ? "text-green-500 border-green-500/30" : "text-muted-foreground"}`}>{batch.status}</Badge>
+          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-8 px-2" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Batch
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Students", value: students.length, icon: Users },
+          { label: "Available Seats", value: batch.maxStudents ? batch.maxStudents - students.length : "∞", icon: UserCheck },
+          { label: "Live Sessions", value: liveClasses.length, icon: Video },
+          { label: "Dates", value: batch.startDate ? new Date(batch.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—", icon: Clock },
+        ].map(({ label, value, icon: Icon }) => (
+          <Card key={label} className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">{label}</span>
+            </div>
+            <p className="text-xl font-bold">{value}</p>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* Current students */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Enrolled Students ({students.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {loadingStudents ? (
+              <div className="space-y-2">{[1,2,3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            ) : students.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No students in this batch yet.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {students.map((s) => (
+                  <div key={s.userId} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-secondary/40 transition-colors group">
+                    <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                      {(s.displayName ?? s.email ?? "U").charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{s.displayName ?? "—"}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{s.email}</p>
+                    </div>
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive opacity-0 group-hover:opacity-100 shrink-0" disabled={removingId === s.userId}
+                      onClick={() => removeStudent(s.userId)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Add students */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2"><UserCheck className="h-4 w-4 text-emerald-500" /> Add Students ({filteredAvailable.length} available)</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            <Input
+              placeholder="Search enrolled students…"
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              className="h-8 text-sm"
+            />
+            {loadingStudents ? (
+              <div className="space-y-2">{[1,2,3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            ) : filteredAvailable.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                {available.length === 0 ? "All enrolled students are already in this batch." : "No students match your search."}
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {filteredAvailable.map((u) => (
+                  <div key={u.id} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-secondary/40 transition-colors">
+                    <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-xs font-semibold shrink-0">
+                      {(u.displayName ?? u.email ?? "U").charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{u.displayName ?? "—"}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-6 px-2 text-xs shrink-0 gap-1"
+                      disabled={addingId === u.id} onClick={() => addStudent(u.id)}>
+                      <Plus className="h-2.5 w-2.5" /> Add
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Live classes for this batch */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="text-sm flex items-center gap-2"><Video className="h-4 w-4 text-purple-500" /> Batch Live Sessions</CardTitle>
+          <BatchScheduleDialog batchId={batch.id} courseId={batch.courseId} courses={courses} onSuccess={loadAll} />
+        </CardHeader>
+        <CardContent className="pt-0">
+          {loadingClasses ? (
+            <div className="space-y-2">{[1,2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+          ) : liveClasses.length === 0 ? (
+            <div className="text-center py-6">
+              <Video className="h-8 w-8 mx-auto mb-2 opacity-25" />
+              <p className="text-sm text-muted-foreground">No live sessions scheduled for this batch yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {liveClasses.map((cls) => (
+                <div key={cls.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-secondary/20">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
+                    <Video className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{cls.title}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(cls.scheduledAt).toLocaleString()}</p>
+                  </div>
+                  <Badge variant={cls.status === "live" ? "destructive" : cls.status === "completed" ? "secondary" : "outline"}>{cls.status}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/* ─── Batch Schedule Live Class Dialog ─── */
+function BatchScheduleDialog({ batchId, courseId, courses, onSuccess }: { batchId: number; courseId: number; courses: { id: number; title: string }[]; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, maxAttendees: "" as string } });
+
+  const handleSubmit = form.handleSubmit(async (d) => {
+    try {
+      const r = await fetch("/api/live-classes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: d.title, description: d.description || undefined,
+          scheduledAt: new Date(d.scheduledAt).toISOString(),
+          duration: d.duration || undefined,
+          maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined,
+          courseId, batchId,
+        }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Live class scheduled for batch!" });
+      setOpen(false); form.reset(); onSuccess();
+    } catch { toast({ title: "Failed to schedule", variant: "destructive" }); }
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="gap-1.5"><CalendarPlus className="h-3.5 w-3.5" /> Schedule Session</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Schedule Batch Live Session</DialogTitle></DialogHeader>
+        <Form {...form}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <FormField control={form.control} name="title" rules={{ required: "Title is required" }} render={({ field }) => (
+              <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g. Week 3 Live Q&A" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl></FormItem>
+            )} />
+            <FormField control={form.control} name="scheduledAt" rules={{ required: "Date & time required" }} render={({ field }) => (
+              <FormItem><FormLabel>Date & Time</FormLabel><FormControl><Input type="datetime-local" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="duration" render={({ field }) => (
+                <FormItem><FormLabel>Duration (min)</FormLabel><FormControl><Input type="number" min="15" step="15" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)} /></FormControl></FormItem>
+              )} />
+              <FormField control={form.control} name="maxAttendees" render={({ field }) => (
+                <FormItem><FormLabel>Max Attendees</FormLabel><FormControl><Input type="number" min="1" placeholder="Unlimited" {...field} /></FormControl></FormItem>
+              )} />
+            </div>
+            <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Scheduling…" : "Schedule for Batch"}</Button>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ════════════════════════════════════════════
    MAIN INSTRUCTOR PANEL
 ════════════════════════════════════════════ */
 export default function InstructorPanel() {
@@ -1039,6 +1483,7 @@ export default function InstructorPanel() {
           <TabsTrigger value="students">Students</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
+          <TabsTrigger value="batches">Batches</TabsTrigger>
           <TabsTrigger value="reviews" className="relative">
             Reviews
             {pendingCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold">{pendingCount}</span>}
@@ -1171,6 +1616,22 @@ export default function InstructorPanel() {
         {/* ── Enrollments ── */}
         <TabsContent value="enrollments" className="mt-6">
           <EnrollmentsTab />
+        </TabsContent>
+
+        {/* ── Batches ── */}
+        <TabsContent value="batches" className="mt-6">
+          {courses && courses.length > 0
+            ? <BatchesTab courses={courses.map((c) => ({ id: c.id, title: c.title }))} />
+            : (
+              <Card className="border-dashed">
+                <CardContent className="py-12 text-center">
+                  <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-25" />
+                  <p className="font-medium text-foreground">No courses yet</p>
+                  <p className="text-sm text-muted-foreground mt-1">Create a course first to start managing batches.</p>
+                </CardContent>
+              </Card>
+            )
+          }
         </TabsContent>
 
         {/* ── Reviews ── */}

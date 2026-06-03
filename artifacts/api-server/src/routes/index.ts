@@ -18,6 +18,7 @@ import uploadRouter from "./upload";
 import instructorRouter from "./instructor";
 import adminRouter from "./admin";
 import notificationsRouter from "./notifications";
+import batchesRouter from "./batches";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(uploadRouter);
 router.use(instructorRouter);
 router.use(adminRouter);
 router.use(notificationsRouter);
+router.use(batchesRouter);
 
 export default router;
