@@ -175,6 +175,39 @@ router.get("/admin/enrollments", async (req, res): Promise<void> => {
   }
 });
 
+/* ── POST /api/admin/enroll — grant a user access to any course ─── */
+router.post("/admin/enroll", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { userId, courseId } = req.body;
+    if (!userId || !courseId) { res.status(400).json({ error: "userId and courseId are required" }); return; }
+
+    const course = await db.select({ id: coursesTable.id, title: coursesTable.title })
+      .from(coursesTable).where(eq(coursesTable.id, parseInt(courseId))).limit(1).then((r) => r[0]);
+    if (!course) { res.status(404).json({ error: "Course not found" }); return; }
+
+    const existing = await db.select({ id: enrollmentsTable.id })
+      .from(enrollmentsTable)
+      .where(and(eq(enrollmentsTable.courseId, parseInt(courseId)), eq(enrollmentsTable.userId, userId)))
+      .limit(1).then((r) => r[0]);
+
+    if (existing) { res.status(409).json({ error: "User is already enrolled in this course" }); return; }
+
+    const inserted = await db.insert(enrollmentsTable).values({
+      courseId: parseInt(courseId),
+      userId,
+      status: "active",
+    }).returning();
+
+    res.status(201).json({ success: true, enrollment: inserted[0] });
+  } catch (err) {
+    req.log.error({ err }, "Error granting course access");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── DELETE /api/admin/enrollments/:id ──────────────────────────── */
 router.delete("/admin/enrollments/:id", async (req, res): Promise<void> => {
   try {

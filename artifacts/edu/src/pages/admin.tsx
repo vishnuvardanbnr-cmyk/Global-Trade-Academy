@@ -16,7 +16,7 @@ import {
   GraduationCap, Award, Zap, BarChart3, Trash2, ShieldCheck,
   ShieldAlert, RefreshCw, Star, StarOff, CheckCircle, XCircle,
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
-  MessageSquare, Pin, PinOff, MessageCircle,
+  MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -42,6 +42,189 @@ function EnrollBadge({ status }: { status: string }) {
     status === "active" ? "text-blue-400 border-blue-400/30" :
     "text-muted-foreground";
   return <Badge variant="outline" className={cls}>{status}</Badge>;
+}
+
+/* ─── Grant Access Dialog ─── */
+type CourseOption = { id: number; title: string; price: string | null; status: string };
+type UserOption  = { id: string; displayName: string | null; email: string | null };
+
+function GrantAccessDialog({
+  open, onOpenChange, prefilledUser, onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  prefilledUser?: UserOption | null;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const { data: allUsers } = useListUsers({});
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [userSearch, setUserSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Load courses when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/admin/courses")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: CourseOption[]) => setCourses(data.filter((c) => c.status === "published")))
+      .catch(() => {});
+  }, [open]);
+
+  // Reset when dialog closes
+  useEffect(() => {
+    if (!open) { setSelectedUserId(""); setSelectedCourseId(""); setUserSearch(""); }
+  }, [open]);
+
+  const effectiveUserId = prefilledUser ? prefilledUser.id : selectedUserId;
+  const effectiveUserName = prefilledUser
+    ? (prefilledUser.displayName ?? prefilledUser.email ?? prefilledUser.id)
+    : (allUsers?.find((u) => u.id === selectedUserId)?.displayName ?? allUsers?.find((u) => u.id === selectedUserId)?.email ?? "");
+
+  const filteredUsers = (allUsers ?? []).filter((u) =>
+    !userSearch ||
+    (u.displayName ?? "").toLowerCase().includes(userSearch.toLowerCase()) ||
+    (u.email ?? "").toLowerCase().includes(userSearch.toLowerCase())
+  ).slice(0, 50);
+
+  const selectedCourse = courses.find((c) => String(c.id) === selectedCourseId);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!effectiveUserId || !selectedCourseId) return;
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/admin/enroll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: effectiveUserId, courseId: parseInt(selectedCourseId) }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast({ title: data.error ?? "Failed to grant access", variant: "destructive" });
+        return;
+      }
+      toast({
+        title: "Access granted!",
+        description: `${effectiveUserName} can now access "${selectedCourse?.title}".`,
+      });
+      onSuccess();
+      onOpenChange(false);
+    } catch {
+      toast({ title: "Failed to grant access", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-primary" /> Grant Course Access
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          {/* User selector — hidden when prefilledUser is set */}
+          {prefilledUser ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
+              <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                {(prefilledUser.displayName ?? prefilledUser.email ?? "U").charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{prefilledUser.displayName ?? "—"}</p>
+                <p className="text-xs text-muted-foreground">{prefilledUser.email}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Select Student</label>
+              <Input
+                placeholder="Search by name or email…"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="mb-1"
+              />
+              <div className="max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                {filteredUsers.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No users found</p>
+                ) : filteredUsers.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => setSelectedUserId(u.id)}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 transition-colors flex items-center gap-2 ${selectedUserId === u.id ? "bg-primary/10 font-semibold" : ""}`}
+                  >
+                    <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                      {(u.displayName ?? u.email ?? "U").charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate">{u.displayName ?? "—"}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
+                    </div>
+                    {selectedUserId === u.id && <CheckCircle className="h-3.5 w-3.5 text-primary ml-auto shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Course selector */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Select Course</label>
+            {courses.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">Loading courses…</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                {courses.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setSelectedCourseId(String(c.id))}
+                    className={`w-full text-left px-3 py-2.5 text-sm hover:bg-secondary/50 transition-colors flex items-center gap-2.5 ${selectedCourseId === String(c.id) ? "bg-primary/10 font-semibold" : ""}`}
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="flex-1 truncate">{c.title}</span>
+                    {c.price && parseFloat(c.price) > 0 ? (
+                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 shrink-0 flex items-center gap-0.5">
+                        <DollarSign className="h-2.5 w-2.5" />{parseFloat(c.price).toFixed(0)}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground shrink-0">Free</span>
+                    )}
+                    {selectedCourseId === String(c.id) && <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedCourse && parseFloat(selectedCourse.price ?? "0") > 0 && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+              <DollarSign className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>This is a paid course (${parseFloat(selectedCourse.price!).toFixed(2)}). Granting access bypasses payment for this user.</span>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              type="submit"
+              className="flex-1 gap-1.5"
+              disabled={submitting || !effectiveUserId || !selectedCourseId}
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              {submitting ? "Granting…" : "Grant Access"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /* ─── types ─── */
@@ -145,6 +328,7 @@ function UsersTab() {
   const [editXpUser, setEditXpUser] = useState<AdminUser | null>(null);
   const [xpValue, setXpValue] = useState("");
   const [acting, setActing] = useState<string | null>(null);
+  const [grantUser, setGrantUser] = useState<UserOption | null>(null);
 
   const changeRole = async (userId: string, role: string) => {
     setActing(userId);
@@ -246,9 +430,20 @@ function UsersTab() {
                     {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 px-2" onClick={() => deleteUser(user.id, user.displayName ?? user.email ?? user.id)} disabled={acting === user.id}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-7 px-2 gap-1 text-xs text-primary border-primary/30 hover:bg-primary/5"
+                        title="Grant course access"
+                        onClick={() => setGrantUser({ id: user.id, displayName: user.displayName ?? null, email: user.email ?? null })}
+                        disabled={acting === user.id}
+                      >
+                        <KeyRound className="h-3 w-3" /> Access
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 px-2" onClick={() => deleteUser(user.id, user.displayName ?? user.email ?? user.id)} disabled={acting === user.id}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -273,6 +468,14 @@ function UsersTab() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Grant Access Dialog */}
+      <GrantAccessDialog
+        open={!!grantUser}
+        onOpenChange={(v) => !v && setGrantUser(null)}
+        prefilledUser={grantUser}
+        onSuccess={() => qc.invalidateQueries({ queryKey: ["listUsers"] })}
+      />
     </div>
   );
 }
@@ -405,6 +608,7 @@ function EnrollmentsTab() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [acting, setActing] = useState<number | null>(null);
+  const [grantOpen, setGrantOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -435,7 +639,12 @@ function EnrollmentsTab() {
       <div className="flex items-center gap-3">
         <Input placeholder="Search by student or course…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
         <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh</Button>
-        <Badge variant="outline" className="ml-auto">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</Badge>
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
+            <KeyRound className="h-3.5 w-3.5" /> Grant Access
+          </Button>
+          <Badge variant="outline">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</Badge>
+        </div>
       </div>
 
       {loading ? (
@@ -477,6 +686,12 @@ function EnrollmentsTab() {
           </table>
         </div>
       )}
+
+      <GrantAccessDialog
+        open={grantOpen}
+        onOpenChange={setGrantOpen}
+        onSuccess={load}
+      />
     </div>
   );
 }
