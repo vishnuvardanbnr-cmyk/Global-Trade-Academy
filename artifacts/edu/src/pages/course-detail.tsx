@@ -28,7 +28,7 @@ import {
   StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
-  Radio, Calendar, ExternalLink, PanelRight, X,
+  Radio, Calendar, ExternalLink, X,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -443,7 +443,6 @@ export default function CourseDetail() {
   });
 
   const [tab, setTab] = useState<Tab>("overview");
-  const [showPanel, setShowPanel] = useState(false);
   const [showTabPanel, setShowTabPanel] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [expanded, setExpanded] = useState<number>(1);
@@ -698,33 +697,21 @@ export default function CourseDetail() {
                   )}
                 </button>
               ))}
-              <div className="ml-auto shrink-0">
-                <button
-                  onClick={() => setShowPanel(p => !p)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
-                    showPanel
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
-                  )}>
-                  <PanelRight className="h-3.5 w-3.5" />
-                  Course
-                </button>
-              </div>
             </div>
           </div>
 
         </div>
 
-        {/* RIGHT: Course panel (drawer) ──────────────────────────── */}
-        {showPanel && (
+        {/* RIGHT: Overview panel */}
+        {showTabPanel && tab === "overview" && (
         <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
-          <button
-            onClick={() => setShowPanel(false)}
-            className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-lg bg-white/95 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors border border-slate-200/60"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
+            <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">Overview</span>
+            <button onClick={() => setShowTabPanel(false)}
+              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
           {/* Course thumbnail */}
           {course.thumbnailUrl && (
@@ -914,8 +901,8 @@ export default function CourseDetail() {
         </div>
         )}
 
-        {/* RIGHT: Tab content panel */}
-        {showTabPanel && (
+        {/* RIGHT: Tab content panel (non-overview tabs) */}
+        {showTabPanel && tab !== "overview" && (
           <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
@@ -952,7 +939,7 @@ export default function CourseDetail() {
     {/* ── Floating bottom tab bar ──────────────────────────────── */}
     <div className={cn(
       "fixed bottom-4 z-50 pointer-events-none flex justify-center transition-all duration-200",
-      showTabPanel || showPanel ? "left-0 right-[404px]" : "left-0 right-0"
+      showTabPanel ? "left-0 right-[404px]" : "left-0 right-0"
     )}>
       <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto">
         {[
@@ -967,7 +954,6 @@ export default function CourseDetail() {
             onClick={() => {
               if (tab === k) { setShowTabPanel(v => !v); }
               else { setTab(k); setShowTabPanel(true); }
-              setShowPanel(false);
             }}
             className={cn(
               "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
@@ -982,16 +968,6 @@ export default function CourseDetail() {
             )}
           </button>
         ))}
-        <div className="w-px h-5 bg-slate-200 mx-1 shrink-0" />
-        <button
-          onClick={() => { setShowPanel(s => !s); setShowTabPanel(false); }}
-          className={cn(
-            "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
-            showPanel ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
-          )}>
-          <PanelRight className="h-3.5 w-3.5" />
-          Course
-        </button>
       </div>
     </div>
     </div>
