@@ -1,22 +1,27 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useGetAdminStats, useListUsers, getGetAdminStatsQueryKey } from "@workspace/api-client-react";
+import { useGetAdminStats, useListUsers, getGetAdminStatsQueryKey, useListLiveClasses, useCreateLiveClass, getListLiveClassesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useForm } from "react-hook-form";
+import { cn } from "@/lib/utils";
 import {
   Users, BookOpen, TrendingUp, Calendar, UserPlus, Activity,
   GraduationCap, Award, Zap, BarChart3, Trash2, ShieldCheck,
   ShieldAlert, RefreshCw, Star, StarOff, CheckCircle, XCircle,
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
+  Video, CalendarPlus,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -921,6 +926,188 @@ function CommunityTab() {
 }
 
 /* ════════════════════════════════════════════
+   ADMIN LIVE CLASSES TAB
+════════════════════════════════════════════ */
+function AdminScheduleDialog({ onSuccess }: { onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [courses, setCourses] = useState<{ id: number; title: string }[]>([]);
+  const [batches, setBatches] = useState<{ id: number; name: string }[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [audienceType, setAudienceType] = useState<"all" | "batch">("all");
+  const { toast } = useToast();
+  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, courseId: "" as string, batchId: "" as string, maxAttendees: "" as string } });
+  const selectedCourseId = form.watch("courseId");
+  const create = useCreateLiveClass({
+    mutation: {
+      onSuccess: () => { setOpen(false); form.reset(); setAudienceType("all"); setBatches([]); onSuccess(); toast({ title: "Live class scheduled" }); },
+      onError: () => toast({ title: "Failed to schedule", variant: "destructive" }),
+    },
+  });
+
+  useEffect(() => {
+    fetch("/api/courses").then((r) => r.ok ? r.json() : []).then((d) => setCourses(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setBatches([]); form.setValue("batchId", ""); setAudienceType("all");
+    if (!selectedCourseId || selectedCourseId === "none") return;
+    setLoadingBatches(true);
+    fetch(`/api/instructor/courses/${selectedCourseId}/batches`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => setBatches(Array.isArray(d) ? d.map((b: { id: number; name: string }) => ({ id: b.id, name: b.name })) : []))
+      .catch(() => {})
+      .finally(() => setLoadingBatches(false));
+  }, [selectedCourseId]);
+
+  const handleSubmit = form.handleSubmit((d) => {
+    create.mutate({ data: {
+      title: d.title, description: d.description || undefined,
+      scheduledAt: new Date(d.scheduledAt).toISOString(),
+      duration: d.duration || undefined,
+      courseId: d.courseId && d.courseId !== "none" ? parseInt(d.courseId) : undefined,
+      batchId: audienceType === "batch" && d.batchId ? parseInt(d.batchId) : undefined,
+      maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined,
+    }});
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm"><CalendarPlus className="h-4 w-4 mr-2" />Schedule Live Class</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Schedule a Live Class</DialogTitle></DialogHeader>
+        <Form {...form}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <FormField control={form.control} name="title" rules={{ required: "Title required" }} render={({ field }) => (
+              <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g. Weekly Market Analysis" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl></FormItem>
+            )} />
+            <FormField control={form.control} name="scheduledAt" rules={{ required: "Date & time required" }} render={({ field }) => (
+              <FormItem><FormLabel>Date & Time</FormLabel><FormControl><Input type="datetime-local" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="duration" render={({ field }) => (
+                <FormItem><FormLabel>Duration (min)</FormLabel><FormControl><Input type="number" min="15" step="15" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)} /></FormControl></FormItem>
+              )} />
+              <FormField control={form.control} name="maxAttendees" render={({ field }) => (
+                <FormItem><FormLabel>Max Attendees</FormLabel><FormControl><Input type="number" min="1" placeholder="Unlimited" {...field} /></FormControl></FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name="courseId" render={({ field }) => (
+              <FormItem><FormLabel>Course</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="None (open session)" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">None (open to all)</SelectItem>
+                    {courses.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
+            {selectedCourseId && selectedCourseId !== "none" && (
+              <FormItem>
+                <FormLabel>Who can join?</FormLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => { setAudienceType("all"); form.setValue("batchId", ""); }}
+                    className={cn("rounded-lg border px-3 py-2.5 text-sm text-left transition-colors", audienceType === "all" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:bg-secondary/50")}>
+                    <Users className="h-4 w-4 mb-1" />
+                    All enrolled students
+                    <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Everyone enrolled in the course</p>
+                  </button>
+                  <button type="button" onClick={() => setAudienceType("batch")}
+                    className={cn("rounded-lg border px-3 py-2.5 text-sm text-left transition-colors", audienceType === "batch" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:bg-secondary/50")}>
+                    <GraduationCap className="h-4 w-4 mb-1" />
+                    Specific batch
+                    <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Only students in one batch</p>
+                  </button>
+                </div>
+              </FormItem>
+            )}
+            {audienceType === "batch" && selectedCourseId && selectedCourseId !== "none" && (
+              <FormField control={form.control} name="batchId" rules={{ required: "Select a batch" }} render={({ field }) => (
+                <FormItem><FormLabel>Select Batch</FormLabel>
+                  {loadingBatches ? <div className="h-9 rounded-md border animate-pulse bg-secondary/30" /> :
+                    batches.length === 0 ? <p className="text-sm text-muted-foreground bg-secondary/30 rounded-md px-3 py-2">No batches for this course.</p> : (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Choose a batch…" /></SelectTrigger></FormControl>
+                        <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    )}
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+            <Button type="submit" className="w-full" disabled={create.isPending}>{create.isPending ? "Scheduling..." : "Schedule"}</Button>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdminLiveClassesTab() {
+  const qc = useQueryClient();
+  const { data: classes, isLoading } = useListLiveClasses({});
+  const refresh = () => qc.invalidateQueries({ queryKey: getListLiveClassesQueryKey() });
+
+  const statusColor = (s: string) => s === "live" ? "destructive" : s === "completed" ? "secondary" : "outline";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Live Classes</h2>
+          <p className="text-sm text-muted-foreground">Schedule and manage all live sessions across the platform.</p>
+        </div>
+        <AdminScheduleDialog onSuccess={refresh} />
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+      ) : !classes?.length ? (
+        <Card className="border-dashed">
+          <CardContent className="py-12 text-center">
+            <Video className="h-10 w-10 mx-auto mb-3 opacity-25" />
+            <p className="text-muted-foreground mb-4">No live sessions scheduled yet.</p>
+            <AdminScheduleDialog onSuccess={refresh} />
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {classes.map((cls) => (
+            <Card key={cls.id} className="hover:bg-secondary/20 transition-colors">
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
+                    <Video className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{cls.title}</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                      <span>{new Date(cls.scheduledAt).toLocaleString()}</span>
+                      {cls.courseName && <><span>·</span><span className="truncate max-w-[160px]">{cls.courseName}</span></>}
+                      {(cls as { batchName?: string | null }).batchName && <><span>·</span><Badge variant="outline" className="text-[10px] py-0 h-4">{(cls as { batchName?: string | null }).batchName}</Badge></>}
+                      {!cls.courseName && !(cls as { batchName?: string | null }).batchName && <span>· Open session</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs text-muted-foreground">{cls.registrationCount} joined</span>
+                    <Badge variant={statusColor(cls.status)}>{cls.status}</Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
 export default function AdminPanel() {
@@ -942,6 +1129,7 @@ export default function AdminPanel() {
             {users && <span className="ml-1.5 text-[10px] bg-primary/20 text-primary rounded-full px-1.5 py-0.5">{users.length}</span>}
           </TabsTrigger>
           <TabsTrigger value="courses">Courses</TabsTrigger>
+          <TabsTrigger value="live-classes">Live Classes</TabsTrigger>
           <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
           <TabsTrigger value="community">Community</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -950,6 +1138,7 @@ export default function AdminPanel() {
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
         <TabsContent value="users" className="mt-6"><UsersTab /></TabsContent>
         <TabsContent value="courses" className="mt-6"><CoursesTab /></TabsContent>
+        <TabsContent value="live-classes" className="mt-6"><AdminLiveClassesTab /></TabsContent>
         <TabsContent value="enrollments" className="mt-6"><EnrollmentsTab /></TabsContent>
         <TabsContent value="community" className="mt-6"><CommunityTab /></TabsContent>
         <TabsContent value="activity" className="mt-6"><ActivityTab /></TabsContent>

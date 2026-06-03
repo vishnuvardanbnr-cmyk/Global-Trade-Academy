@@ -286,14 +286,47 @@ function EditCourseDialog({ course, onSuccess }: {
 /* ─── Schedule Live Class Dialog ─── */
 function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: number; title: string }[]; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
+  const [audienceType, setAudienceType] = useState<"all" | "batch">("all");
+  const [batches, setBatches] = useState<{ id: number; name: string }[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
   const { toast } = useToast();
-  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, courseId: "" as string, maxAttendees: "" as string } });
+  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, courseId: "" as string, batchId: "" as string, maxAttendees: "" as string } });
+
+  const selectedCourseId = form.watch("courseId");
+
+  useEffect(() => {
+    setBatches([]);
+    form.setValue("batchId", "");
+    setAudienceType("all");
+    if (!selectedCourseId) return;
+    setLoadingBatches(true);
+    fetch(`/api/instructor/courses/${selectedCourseId}/batches`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setBatches(Array.isArray(data) ? data.map((b: { id: number; name: string }) => ({ id: b.id, name: b.name })) : []))
+      .catch(() => setBatches([]))
+      .finally(() => setLoadingBatches(false));
+  }, [selectedCourseId]);
+
   const create = useCreateLiveClass({
     mutation: {
-      onSuccess: () => { setOpen(false); form.reset(); onSuccess(); toast({ title: "Live class scheduled" }); },
+      onSuccess: () => { setOpen(false); form.reset(); setAudienceType("all"); setBatches([]); onSuccess(); toast({ title: "Live class scheduled" }); },
       onError: () => toast({ title: "Failed to schedule live class", variant: "destructive" }),
     },
   });
+
+  const handleSubmit = form.handleSubmit((d) => {
+    const batchId = audienceType === "batch" && d.batchId ? parseInt(d.batchId) : undefined;
+    create.mutate({ data: {
+      title: d.title,
+      description: d.description || undefined,
+      scheduledAt: new Date(d.scheduledAt).toISOString(),
+      duration: d.duration || undefined,
+      courseId: d.courseId ? parseInt(d.courseId) : undefined,
+      batchId,
+      maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined,
+    }});
+  });
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -302,7 +335,7 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Schedule a Live Class</DialogTitle></DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((d) => create.mutate({ data: { title: d.title, description: d.description || undefined, scheduledAt: new Date(d.scheduledAt).toISOString(), duration: d.duration || undefined, courseId: d.courseId ? parseInt(d.courseId) : undefined, maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined } }))} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <FormField control={form.control} name="title" rules={{ required: "Title is required" }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g. Weekly Market Analysis" {...field} /></FormControl><FormMessage /></FormItem>
             )} />
@@ -320,16 +353,80 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
                 <FormItem><FormLabel>Max Attendees</FormLabel><FormControl><Input type="number" min="1" placeholder="Unlimited" {...field} /></FormControl></FormItem>
               )} />
             </div>
+
+            {/* Course selector */}
             {courses && courses.length > 0 && (
               <FormField control={form.control} name="courseId" render={({ field }) => (
-                <FormItem><FormLabel>Link to Course (optional)</FormLabel>
+                <FormItem>
+                  <FormLabel>Course</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger></FormControl>
-                    <SelectContent>{courses.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>)}</SelectContent>
+                    <FormControl><SelectTrigger><SelectValue placeholder="None (open session)" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">None (open to all)</SelectItem>
+                      {courses.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                 </FormItem>
               )} />
             )}
+
+            {/* Audience type selector — only shown when a course is selected */}
+            {selectedCourseId && selectedCourseId !== "none" && (
+              <FormItem>
+                <FormLabel>Who can join?</FormLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setAudienceType("all"); form.setValue("batchId", ""); }}
+                    className={cn(
+                      "rounded-lg border px-3 py-2.5 text-sm text-left transition-colors",
+                      audienceType === "all"
+                        ? "border-primary bg-primary/10 text-primary font-medium"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <Users className="h-4 w-4 mb-1" />
+                    All enrolled students
+                    <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Everyone enrolled in the course</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAudienceType("batch")}
+                    className={cn(
+                      "rounded-lg border px-3 py-2.5 text-sm text-left transition-colors",
+                      audienceType === "batch"
+                        ? "border-primary bg-primary/10 text-primary font-medium"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <GraduationCap className="h-4 w-4 mb-1" />
+                    Specific batch
+                    <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Only students in one batch</p>
+                  </button>
+                </div>
+              </FormItem>
+            )}
+
+            {/* Batch dropdown — only shown when audienceType === "batch" */}
+            {audienceType === "batch" && selectedCourseId && selectedCourseId !== "none" && (
+              <FormField control={form.control} name="batchId" rules={{ required: "Select a batch" }} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Select Batch</FormLabel>
+                  {loadingBatches ? (
+                    <div className="h-9 rounded-md border border-border animate-pulse bg-secondary/30" />
+                  ) : batches.length === 0 ? (
+                    <p className="text-sm text-muted-foreground bg-secondary/30 rounded-md px-3 py-2">No batches found for this course. <button type="button" className="underline" onClick={() => setAudienceType("all")}>Switch to all students</button></p>
+                  ) : (
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Choose a batch…" /></SelectTrigger></FormControl>
+                      <SelectContent>{batches.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
             <Button type="submit" className="w-full" disabled={create.isPending}>{create.isPending ? "Scheduling..." : "Schedule"}</Button>
           </form>
         </Form>

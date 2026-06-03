@@ -5,7 +5,7 @@ import {
   liveClassesTable, liveClassRegistrationsTable,
   liveClassMessagesTable, liveClassQuestionsTable, liveClassQuestionUpvotesTable,
   liveClassPollsTable, liveClassPollOptionsTable, liveClassPollVotesTable,
-  usersTable, coursesTable,
+  usersTable, coursesTable, enrollmentsTable, batchesTable, batchStudentsTable,
 } from "@workspace/db";
 import { eq, and, gte, sql, desc, gt } from "drizzle-orm";
 
@@ -18,17 +18,22 @@ function generateRoomName(): string {
 }
 
 async function buildClassResponse(cls: typeof liveClassesTable.$inferSelect) {
-  const [regCount, instructor, course] = await Promise.all([
+  const [regCount, instructor, course, batch] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(liveClassRegistrationsTable).where(eq(liveClassRegistrationsTable.classId, cls.id)),
     db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, cls.instructorId)).limit(1),
     cls.courseId
       ? db.select({ id: coursesTable.id, title: coursesTable.title }).from(coursesTable).where(eq(coursesTable.id, cls.courseId)).limit(1)
+      : Promise.resolve([]),
+    cls.batchId
+      ? db.select({ id: batchesTable.id, name: batchesTable.name }).from(batchesTable).where(eq(batchesTable.id, cls.batchId)).limit(1)
       : Promise.resolve([]),
   ]);
   return {
     id: cls.id,
     courseId: cls.courseId ?? null,
     courseName: (course as { id: number; title: string }[])[0]?.title ?? null,
+    batchId: cls.batchId ?? null,
+    batchName: (batch as { id: number; name: string }[])[0]?.name ?? null,
     title: cls.title,
     description: cls.description,
     instructorId: cls.instructorId,
@@ -479,9 +484,44 @@ router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
 
     if (!cls.roomName) { res.status(400).json({ error: "Room name not set" }); return; }
 
+    const isInstructor = cls.instructorId === clerkId;
+
+    // Access control: instructors always get in; students must be in the right batch/course
+    if (!isInstructor) {
+      const user = await db.select({ role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, clerkId))
+        .limit(1).then((r) => r[0]);
+
+      const isAdmin = user?.role === "admin";
+
+      if (!isAdmin) {
+        if (cls.batchId) {
+          // Batch-restricted session: student must be in this batch
+          const inBatch = await db.select({ id: batchStudentsTable.id })
+            .from(batchStudentsTable)
+            .where(and(eq(batchStudentsTable.batchId, cls.batchId), eq(batchStudentsTable.userId, clerkId)))
+            .limit(1).then((r) => r[0]);
+          if (!inBatch) {
+            res.status(403).json({ error: "You are not part of the batch for this session." });
+            return;
+          }
+        } else if (cls.courseId) {
+          // Course-wide session: student must be enrolled
+          const enrolled = await db.select({ id: enrollmentsTable.id })
+            .from(enrollmentsTable)
+            .where(and(eq(enrollmentsTable.courseId, cls.courseId), eq(enrollmentsTable.userId, clerkId), eq(enrollmentsTable.status, "active")))
+            .limit(1).then((r) => r[0]);
+          if (!enrolled) {
+            res.status(403).json({ error: "You are not enrolled in the course for this session." });
+            return;
+          }
+        }
+      }
+    }
+
     const users = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1);
     const displayName = users[0]?.displayName ?? clerkId;
-    const isInstructor = cls.instructorId === clerkId;
 
     const { AccessToken } = await import("livekit-server-sdk");
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
