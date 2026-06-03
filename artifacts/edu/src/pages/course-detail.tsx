@@ -557,7 +557,7 @@ export default function CourseDetail() {
   );
 
   return (
-    <div className="-mx-4 -mt-4 md:-mx-6 md:-mt-6 lg:-mx-8 lg:-mt-8 flex flex-col">
+    <div className="flex flex-col h-full">
 
       {/* ── Top navigation bar ───────────────────────────── */}
       <div className="bg-slate-900 border-b border-slate-700/60 px-5 py-2.5 flex items-center gap-3 shrink-0">

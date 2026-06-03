@@ -140,8 +140,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
   const pendingReviews = reviewCount?.pending ?? 0;
 
-  /* Trading chat uses full-bleed layout with no padding */
-  const isFullBleed = location.startsWith("/trading-chat");
+  /* Trading chat and course player use full-bleed layout with no padding */
+  const isFullBleed = location.startsWith("/trading-chat") || location.startsWith("/courses/");
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
