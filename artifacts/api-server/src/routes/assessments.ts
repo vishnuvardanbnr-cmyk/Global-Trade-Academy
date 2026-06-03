@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, desc, inArray, isNull, or } from "drizzle-orm";
 import { awardXp, ownsCourse, recordLearningDay, isEnrolled, advanceGateOnPass } from "../lib/lms";
+import { notifyUser } from "../lib/notify";
 
 const router = Router();
 
@@ -592,6 +593,15 @@ router.post("/instructor/task-submissions/:completionId/approve", async (req, re
     await awardXp(completion.userId, "task_complete", `task:${task.id}`, task.xpReward);
     await recordLearningDay(completion.userId);
 
+    // Notify student
+    await notifyUser(
+      completion.userId,
+      "task_approved",
+      "Task approved ✅",
+      `Your submission for "${task.title}" has been approved. +${task.xpReward} XP awarded!`,
+      String(task.courseId),
+    );
+
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Error approving task submission");
@@ -625,6 +635,15 @@ router.post("/instructor/task-submissions/:completionId/reject", async (req, res
     await db.update(taskCompletionsTable)
       .set({ status: "rejected", reviewNote: reviewNote.trim(), reviewedBy: clerkId, reviewedAt: new Date() })
       .where(eq(taskCompletionsTable.id, completionId));
+
+    // Notify student
+    await notifyUser(
+      completion.userId,
+      "task_rejected",
+      "Task needs revision 📝",
+      `Instructor feedback on "${task.title}": ${reviewNote.trim()}`,
+      String(task.courseId),
+    );
 
     res.json({ success: true });
   } catch (err) {

@@ -5,6 +5,7 @@ import {
   usersTable, coursesTable, enrollmentsTable, lessonsTable,
   lessonProgressTable, quizAttemptsTable, taskCompletionsTable,
   xpEventsTable, activityTable, liveClassesTable, certificatesTable,
+  postsTable, commentsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not } from "drizzle-orm";
 
@@ -314,6 +315,115 @@ router.get("/admin/activity", async (req, res): Promise<void> => {
     })));
   } catch (err) {
     req.log.error({ err }, "Error getting admin activity");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/admin/posts ───────────────────────────────────────── */
+router.get("/admin/posts", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const posts = await db
+      .select()
+      .from(postsTable)
+      .orderBy(desc(postsTable.createdAt))
+      .limit(200);
+
+    const authorIds = [...new Set(posts.map((p) => p.authorId).filter(Boolean))];
+    const authors = authorIds.length
+      ? await db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email })
+          .from(usersTable).where(inArray(usersTable.id, authorIds as string[]))
+      : [];
+    const authorMap = Object.fromEntries(authors.map((u) => [u.id, u.displayName ?? u.email]));
+
+    const commentCounts = await db
+      .select({ postId: commentsTable.postId, cnt: sql<number>`count(*)::int` })
+      .from(commentsTable)
+      .groupBy(commentsTable.postId);
+    const commentMap = Object.fromEntries(commentCounts.map((c) => [c.postId, c.cnt]));
+
+    res.json(posts.map((p) => ({
+      ...p,
+      authorName: p.authorId ? (authorMap[p.authorId] ?? p.authorId) : null,
+      commentCount: commentMap[p.id] ?? 0,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing admin posts");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── DELETE /api/admin/posts/:id ────────────────────────────────── */
+router.delete("/admin/posts/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    await db.delete(commentsTable).where(eq(commentsTable.postId, id));
+    await db.delete(postsTable).where(eq(postsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting post");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── PATCH /api/admin/posts/:id/pin ─────────────────────────────── */
+router.patch("/admin/posts/:id/pin", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    const { pinned } = req.body ?? {};
+    await db.update(postsTable).set({ isPinned: !!pinned }).where(eq(postsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error pinning post");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── DELETE /api/admin/comments/:id ─────────────────────────────── */
+router.delete("/admin/comments/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    await db.delete(commentsTable).where(eq(commentsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting comment");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/admin/comments ─────────────────────────────────────── */
+router.get("/admin/comments", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const comments = await db
+      .select()
+      .from(commentsTable)
+      .orderBy(desc(commentsTable.createdAt))
+      .limit(200);
+
+    const authorIds = [...new Set(comments.map((c) => c.authorId).filter(Boolean))];
+    const authors = authorIds.length
+      ? await db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email })
+          .from(usersTable).where(inArray(usersTable.id, authorIds as string[]))
+      : [];
+    const authorMap = Object.fromEntries(authors.map((u) => [u.id, u.displayName ?? u.email]));
+
+    res.json(comments.map((c) => ({
+      ...c,
+      authorName: c.authorId ? (authorMap[c.authorId] ?? c.authorId) : null,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing admin comments");
     res.status(500).json({ error: "Internal server error" });
   }
 });

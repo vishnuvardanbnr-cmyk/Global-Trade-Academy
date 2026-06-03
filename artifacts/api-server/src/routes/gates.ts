@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import { ownsCourse, syncCourseCompletion } from "../lib/lms";
+import { notifyUser } from "../lib/notify";
 
 const router = Router();
 
@@ -316,6 +317,15 @@ router.post("/instructor/reviews/:gateId/approve", async (req, res): Promise<voi
     // this approval is the last gate needed to earn their certificate.
     const completion = await syncCourseCompletion(gate.userId, gate.courseId);
 
+    // Notify student
+    await notifyUser(
+      gate.userId,
+      "gate_approved",
+      "Quiz approved ✅",
+      "Your quiz submission has been reviewed and approved. You may continue to the next lesson.",
+      String(gate.courseId),
+    );
+
     res.json({
       id: updated.id,
       userId: updated.userId,
@@ -410,6 +420,15 @@ router.post("/instructor/reviews/:gateId/reject", async (req, res): Promise<void
       .where(eq(lessonGatesTable.id, gateId))
       .returning()
       .then((r) => r[0]);
+
+    // Notify student
+    await notifyUser(
+      gate.userId,
+      "gate_rejected",
+      "Quiz needs revision 📝",
+      `Instructor feedback: ${reviewNote.trim()}`,
+      String(gate.courseId),
+    );
 
     res.json({
       id: updated.id,

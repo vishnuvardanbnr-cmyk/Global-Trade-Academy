@@ -7,8 +7,10 @@ import {
   taskCompletionsTable, tasksTable, lessonGatesTable,
   xpEventsTable, liveClassesTable, certificatesTable,
 } from "@workspace/db";
-import { eq, and, inArray, sql, desc, count } from "drizzle-orm";
+import { eq, and, inArray, sql, desc, count, avg } from "drizzle-orm";
 import { ownsCourse } from "../lib/lms";
+import { notifyUsers } from "../lib/notify";
+import { reviewsTable } from "@workspace/db";
 
 const router = Router();
 
@@ -256,6 +258,83 @@ router.delete("/instructor/enrollments/:id", async (req, res): Promise<void> => 
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Error removing enrollment");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/instructor/announce ──────────────────────────────── */
+router.post("/instructor/announce", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const { courseId, title, message } = req.body ?? {};
+    if (!title?.trim() || !message?.trim()) {
+      res.status(400).json({ error: "title and message are required" }); return;
+    }
+
+    if (courseId) {
+      if (!(await ownsCourse(clerkId, courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
+      const enrollments = await db
+        .select({ userId: enrollmentsTable.userId })
+        .from(enrollmentsTable)
+        .where(eq(enrollmentsTable.courseId, courseId));
+      const studentIds = enrollments.map((e) => e.userId).filter((id) => id !== clerkId);
+      await notifyUsers(studentIds, "announcement", title.trim(), message.trim(), String(courseId));
+    } else {
+      // Announce to all students enrolled in any of instructor's courses
+      const courseIds = await getInstructorCourseIds(clerkId);
+      if (!courseIds.length) { res.json({ sent: 0 }); return; }
+      const enrollments = await db
+        .select({ userId: enrollmentsTable.userId })
+        .from(enrollmentsTable)
+        .where(inArray(enrollmentsTable.courseId, courseIds));
+      const studentIds = [...new Set(enrollments.map((e) => e.userId).filter((id) => id !== clerkId))];
+      await notifyUsers(studentIds, "announcement", title.trim(), message.trim());
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error sending announcement");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/instructor/reviews ─────────────────────────────────── */
+router.get("/instructor/reviews", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const courseIds = await getInstructorCourseIds(clerkId);
+    if (!courseIds.length) { res.json([]); return; }
+
+    const reviews = await db
+      .select()
+      .from(reviewsTable)
+      .where(inArray(reviewsTable.courseId, courseIds))
+      .orderBy(desc(reviewsTable.createdAt));
+
+    const userIds = [...new Set(reviews.map((r) => r.userId))];
+    const users = userIds.length
+      ? await db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email })
+          .from(usersTable).where(inArray(usersTable.id, userIds))
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u.displayName ?? u.email]));
+
+    const courses = await db
+      .select({ id: coursesTable.id, title: coursesTable.title })
+      .from(coursesTable)
+      .where(inArray(coursesTable.id, courseIds));
+    const courseMap = Object.fromEntries(courses.map((c) => [c.id, c.title]));
+
+    res.json(reviews.map((r) => ({
+      ...r,
+      userName: userMap[r.userId] ?? r.userId,
+      courseTitle: courseMap[r.courseId] ?? `Course #${r.courseId}`,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing instructor reviews");
     res.status(500).json({ error: "Internal server error" });
   }
 });

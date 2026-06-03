@@ -1,46 +1,37 @@
 import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses, useListLiveClasses } from "@workspace/api-client-react";
 import type { LiveClass } from "@workspace/api-client-react";
 import { useUser } from "@clerk/react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BookOpen, Trophy, TrendingUp, Video, ArrowUpRight,
   Star, Clock, CheckCircle2, Target, Zap, BarChart3, Activity,
-  Users, GraduationCap, Radio, Calendar, Megaphone, Pin, Info,
+  Users, GraduationCap, Radio, Calendar, Megaphone, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 
-const ANNOUNCEMENTS = [
-  {
-    id: 1,
-    icon: Pin,
-    color: "bg-blue-50 text-blue-600",
-    pinned: true,
-    title: "New Course: Advanced Forex Strategies",
-    body: "Our most-requested course is now live. Master institutional order flow, supply & demand zones, and high-probability setups.",
-    date: "Jun 2, 2026",
-  },
-  {
-    id: 2,
-    icon: Video,
-    color: "bg-violet-50 text-violet-600",
-    pinned: false,
-    title: "Weekly Live Session — Every Friday 8 PM UTC",
-    body: "Join our lead instructor for a live market analysis session covering key levels and upcoming week opportunities.",
-    date: "Jun 1, 2026",
-  },
-  {
-    id: 3,
-    icon: Info,
-    color: "bg-amber-50 text-amber-600",
-    pinned: false,
-    title: "Platform Update: Live Room Q&A & Polls",
-    body: "You can now ask questions and participate in polls during live sessions. Look for the sidebar inside any live room.",
-    date: "May 30, 2026",
-  },
-];
+interface AppNotification {
+  id: number; type: string; title: string; message?: string | null; read: boolean; createdAt: string;
+}
+
+function useAnnouncements() {
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/api/notifications")
+      .then((r) => r.ok ? r.json() : { notifications: [] })
+      .then((d) => {
+        const all: AppNotification[] = d.notifications ?? [];
+        setItems(all.filter((n) => n.type === "announcement").slice(0, 5));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  return { items, loading };
+}
 
 const ACTIVITY_META: Record<string, { icon: typeof CheckCircle2; color: string; xp: string }> = {
   enrollment:      { icon: GraduationCap, color: "text-blue-500 bg-blue-50",    xp: "+25 XP" },
@@ -65,6 +56,7 @@ function timeAgo(date: string | Date) {
 export default function Dashboard() {
   const { user: clerkUser } = useUser();
   const { data: user, isLoading: userLoading } = useGetMe();
+  const { items: announcements, loading: announcementsLoading } = useAnnouncements();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
   const { data: leaderboard, isLoading: leaderLoading } = useGetLeaderboard();
   const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
@@ -206,19 +198,27 @@ export default function Dashboard() {
             <Megaphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="flex-1 space-y-3 pb-4">
-            {ANNOUNCEMENTS.map((a) => (
-              <div key={a.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${a.color}`}>
-                  <a.icon className="h-4 w-4" />
+            {announcementsLoading ? (
+              <div className="space-y-2">
+                {[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+              </div>
+            ) : announcements.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">No announcements yet.</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">Instructor announcements will appear here.</p>
+              </div>
+            ) : announcements.map((a) => (
+              <div key={a.id} className={cn("flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border", !a.read && "border-primary/30 bg-primary/5")}>
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <Megaphone className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    {a.pinned && <Pin className="h-3 w-3 text-primary shrink-0" />}
-                    <p className="text-sm font-semibold text-foreground leading-tight truncate">{a.title}</p>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-snug line-clamp-2">{a.body}</p>
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">{a.date}</p>
+                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{a.title}</p>
+                  {a.message && <p className="text-xs text-muted-foreground leading-snug line-clamp-2 mt-0.5">{a.message}</p>}
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{new Date(a.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
                 </div>
+                {!a.read && <span className="w-2 h-2 bg-primary rounded-full shrink-0 mt-1.5" />}
               </div>
             ))}
           </CardContent>

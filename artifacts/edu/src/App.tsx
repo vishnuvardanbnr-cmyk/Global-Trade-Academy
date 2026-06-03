@@ -20,6 +20,8 @@ import LiveClasses from "@/pages/live-classes";
 import LiveRoom from "@/pages/live-room";
 import InstructorPanel from "@/pages/instructor";
 import AdminPanel from "@/pages/admin";
+import Settings from "@/pages/settings";
+import VerifyCertificate from "@/pages/verify";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -154,6 +156,8 @@ function ClerkProviderWithRoutes() {
             <Route path="/live"><ProtectedRoute component={LiveClasses} /></Route>
             <Route path="/instructor"><ProtectedRoute component={InstructorPanel} /></Route>
             <Route path="/admin"><ProtectedRoute component={AdminPanel} /></Route>
+            <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
+            <Route path="/verify/:serial" component={VerifyCertificate} />
 
             <Route component={NotFound} />
           </Switch>

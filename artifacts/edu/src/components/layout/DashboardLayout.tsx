@@ -4,14 +4,46 @@ import {
   LayoutDashboard, BookOpen, LineChart, Users, Video, MessageSquare,
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
   ChevronRight, MessageCircle, GraduationCap, Zap, Award, UserCircle2,
-  Settings, User,
+  Settings, User, CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useGetMe, useGetInstructorReviewCount, getGetInstructorReviewCountQueryKey, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+
+interface AppNotification {
+  id: number;
+  type: string;
+  title: string;
+  message?: string | null;
+  relatedId?: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
+function timeAgo(d: string) {
+  const diff = Date.now() - new Date(d).getTime();
+  const h = Math.floor(diff / 3600000);
+  if (h < 1) return "Just now";
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
+const NOTIF_ICON: Record<string, string> = {
+  gate_approved: "✅",
+  gate_rejected: "📝",
+  task_approved: "✅",
+  task_rejected: "📝",
+  announcement: "📣",
+  new_lesson: "🎓",
+  live_class: "🎥",
+  default: "🔔",
+};
 
 const mainNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -106,6 +138,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const bellRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { data: me } = useGetMe();
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const r = await fetch("/api/notifications");
+      if (!r.ok) return;
+      const data = await r.json();
+      setNotifications(data.notifications ?? []);
+      setUnreadCount(data.unreadCount ?? 0);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  const markRead = async (id: number) => {
+    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    setUnreadCount((c) => Math.max(0, c - 1));
+  };
+
+  const markAllRead = async () => {
+    await fetch("/api/notifications/read-all", { method: "POST" });
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setUnreadCount(0);
+  };
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -300,33 +362,49 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className="relative p-2 rounded-lg hover:bg-secondary transition-colors"
               >
                 <Bell className="h-5 w-5 text-muted-foreground" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center bg-red-500 rounded-full ring-2 ring-white text-[9px] font-bold text-white px-0.5">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
               </button>
               {bellOpen && (
                 <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
                   <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                     <p className="text-sm font-semibold text-foreground">Notifications</p>
-                    <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">3 new</span>
+                    {unreadCount > 0 && (
+                      <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">{unreadCount} new</span>
+                    )}
                   </div>
-                  <div className="divide-y divide-border max-h-72 overflow-y-auto">
-                    {[
-                      { icon: "📣", title: "New course added", sub: "Advanced Forex Strategies is now live", time: "2h ago", unread: true },
-                      { icon: "🎯", title: "Live session starting", sub: "Weekly market analysis begins in 1 hour", time: "5h ago", unread: true },
-                      { icon: "✅", title: "Platform update", sub: "Live room Q&A and polls are now available", time: "2d ago", unread: false },
-                    ].map((n, i) => (
-                      <div key={i} className={cn("flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 cursor-pointer transition-colors", n.unread && "bg-blue-50/40")}>
-                        <span className="text-lg leading-none mt-0.5">{n.icon}</span>
+                  <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                        <p className="text-xs text-muted-foreground">No notifications yet</p>
+                      </div>
+                    ) : notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        onClick={() => { if (!n.read) markRead(n.id); }}
+                        className={cn("flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 cursor-pointer transition-colors", !n.read && "bg-blue-50/40")}
+                      >
+                        <span className="text-lg leading-none mt-0.5">{NOTIF_ICON[n.type] ?? NOTIF_ICON.default}</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground leading-tight">{n.title}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.sub}</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-1">{n.time}</p>
+                          {n.message && <p className="text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-2">{n.message}</p>}
+                          <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
                         </div>
-                        {n.unread && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1.5" />}
+                        {!n.read && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1.5" />}
                       </div>
                     ))}
                   </div>
-                  <div className="px-4 py-2.5 border-t border-border">
-                    <button className="text-xs font-medium text-primary hover:underline">Mark all as read</button>
+                  <div className="px-4 py-2.5 border-t border-border flex items-center justify-between">
+                    {unreadCount > 0 ? (
+                      <button onClick={markAllRead} className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                        <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                      </button>
+                    ) : <span />}
+                    <span className="text-[10px] text-muted-foreground">{notifications.length} total</span>
                   </div>
                 </div>
               )}
@@ -353,6 +431,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     >
                       <User className="h-4 w-4 text-muted-foreground" /> My Profile
                     </button>
+                    <Link href="/settings" onClick={() => setMenuOpen(false)}>
+                      <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors">
+                        <Settings className="h-4 w-4 text-muted-foreground" /> Settings
+                      </button>
+                    </Link>
                   </div>
                   <div className="border-t border-border py-1">
                     <button

@@ -16,6 +16,7 @@ import {
   GraduationCap, Award, Zap, BarChart3, Trash2, ShieldCheck,
   ShieldAlert, RefreshCw, Star, StarOff, CheckCircle, XCircle,
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
+  MessageSquare, Pin, PinOff, MessageCircle,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -553,6 +554,158 @@ function ActivityTab() {
 }
 
 /* ════════════════════════════════════════════
+   COMMUNITY MODERATION TAB
+════════════════════════════════════════════ */
+type CommunityView = "posts" | "comments";
+
+function CommunityTab() {
+  const { toast } = useToast();
+  const [view, setView] = useState<CommunityView>("posts");
+  const [posts, setPosts] = useState<any[]>([]);
+  const [comments, setComments] = useState<any[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const fetchPosts = useCallback(async () => {
+    setLoadingPosts(true);
+    try {
+      const r = await fetch("/api/admin/posts");
+      if (r.ok) setPosts(await r.json());
+    } finally { setLoadingPosts(false); }
+  }, []);
+
+  const fetchComments = useCallback(async () => {
+    setLoadingComments(true);
+    try {
+      const r = await fetch("/api/admin/comments");
+      if (r.ok) setComments(await r.json());
+    } finally { setLoadingComments(false); }
+  }, []);
+
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+  useEffect(() => { if (view === "comments") fetchComments(); }, [view, fetchComments]);
+
+  const deletePost = async (id: number) => {
+    if (!confirm("Delete this post and all its comments?")) return;
+    await fetch(`/api/admin/posts/${id}`, { method: "DELETE" });
+    setPosts((p) => p.filter((x) => x.id !== id));
+    toast({ title: "Post deleted" });
+  };
+
+  const pinPost = async (id: number, pinned: boolean) => {
+    await fetch(`/api/admin/posts/${id}/pin`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned }) });
+    setPosts((p) => p.map((x) => x.id === id ? { ...x, isPinned: pinned } : x));
+    toast({ title: pinned ? "Post pinned" : "Post unpinned" });
+  };
+
+  const deleteComment = async (id: number) => {
+    if (!confirm("Delete this comment?")) return;
+    await fetch(`/api/admin/comments/${id}`, { method: "DELETE" });
+    setComments((c) => c.filter((x) => x.id !== id));
+    toast({ title: "Comment deleted" });
+  };
+
+  const filteredPosts = posts.filter((p) =>
+    !search || p.title?.toLowerCase().includes(search.toLowerCase()) || p.content?.toLowerCase().includes(search.toLowerCase()) || p.authorName?.toLowerCase().includes(search.toLowerCase())
+  );
+  const filteredComments = comments.filter((c) =>
+    !search || c.content?.toLowerCase().includes(search.toLowerCase()) || c.authorName?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex gap-1 bg-secondary rounded-xl p-1">
+          {(["posts", "comments"] as CommunityView[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${view === v ? "bg-white shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {v === "posts" ? `Posts (${posts.length})` : `Comments (${comments.length})`}
+            </button>
+          ))}
+        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Search ${view}…`}
+          className="flex-1 min-w-[180px] h-9 px-3 rounded-lg border border-border text-sm bg-background focus:outline-none focus:border-primary"
+        />
+      </div>
+
+      {view === "posts" && (
+        <div className="space-y-2">
+          {loadingPosts ? (
+            Array(4).fill(0).map((_, i) => <div key={i} className="h-20 rounded-xl bg-secondary animate-pulse" />)
+          ) : filteredPosts.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No posts found.</p>
+            </div>
+          ) : filteredPosts.map((post) => (
+            <div key={post.id} className="flex items-start gap-3 p-4 rounded-xl border border-border bg-white hover:bg-secondary/30 transition-colors">
+              {post.isPinned && <Pin className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <span className="text-sm font-semibold text-foreground truncate">{post.title || "(no title)"}</span>
+                  {post.category && <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded-full capitalize text-muted-foreground">{post.category}</span>}
+                </div>
+                <p className="text-xs text-muted-foreground line-clamp-2">{post.content}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">by {post.authorName ?? "—"} · {new Date(post.createdAt).toLocaleDateString()} · {post.likes ?? 0} likes · {post.commentCount ?? 0} comments</p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => pinPost(post.id, !post.isPinned)}
+                  title={post.isPinned ? "Unpin" : "Pin"}
+                  className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-amber-600"
+                >
+                  {post.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                </button>
+                <button
+                  onClick={() => deletePost(post.id)}
+                  className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === "comments" && (
+        <div className="space-y-2">
+          {loadingComments ? (
+            Array(4).fill(0).map((_, i) => <div key={i} className="h-16 rounded-xl bg-secondary animate-pulse" />)
+          ) : filteredComments.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <MessageCircle className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No comments found.</p>
+            </div>
+          ) : filteredComments.map((comment) => (
+            <div key={comment.id} className="flex items-start gap-3 p-4 rounded-xl border border-border bg-white hover:bg-secondary/30 transition-colors">
+              <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-foreground line-clamp-2">{comment.content}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">by {comment.authorName ?? "—"} · {new Date(comment.createdAt).toLocaleDateString()} · {comment.likes ?? 0} likes</p>
+              </div>
+              <button
+                onClick={() => deleteComment(comment.id)}
+                className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600 shrink-0"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
 export default function AdminPanel() {
@@ -575,6 +728,7 @@ export default function AdminPanel() {
           </TabsTrigger>
           <TabsTrigger value="courses">Courses</TabsTrigger>
           <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
+          <TabsTrigger value="community">Community</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -582,6 +736,7 @@ export default function AdminPanel() {
         <TabsContent value="users" className="mt-6"><UsersTab /></TabsContent>
         <TabsContent value="courses" className="mt-6"><CoursesTab /></TabsContent>
         <TabsContent value="enrollments" className="mt-6"><EnrollmentsTab /></TabsContent>
+        <TabsContent value="community" className="mt-6"><CommunityTab /></TabsContent>
         <TabsContent value="activity" className="mt-6"><ActivityTab /></TabsContent>
       </Tabs>
     </div>

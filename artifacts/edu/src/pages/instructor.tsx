@@ -28,10 +28,103 @@ import {
   ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
   FileQuestion, Clock, BarChart3, Pencil, ImageIcon, CalendarPlus,
   ListTodo, ExternalLink, GraduationCap, TrendingUp, Award,
-  UserCheck, ChevronRight, RefreshCw, Star,
+  UserCheck, ChevronRight, RefreshCw, Star, Megaphone, Send,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
+
+/* ─── Announcement Card ─── */
+function AnnouncementCard({ courses }: { courses: { id: number; title: string }[] }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [courseId, setCourseId] = useState<string>("all");
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !message.trim()) return;
+    setSending(true);
+    try {
+      const body: any = { title: title.trim(), message: message.trim() };
+      if (courseId !== "all") body.courseId = Number(courseId);
+      const r = await fetch("/api/instructor/announce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Announcement sent!", description: "Your students have been notified." });
+      setTitle(""); setMessage(""); setCourseId("all"); setOpen(false);
+    } catch {
+      toast({ title: "Failed to send", variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Megaphone className="h-4 w-4 text-amber-500" /> Send Announcement
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">Notify your enrolled students directly.</p>
+        </div>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+          <Send className="h-3.5 w-3.5" /> Announce
+        </Button>
+      </CardHeader>
+
+      {open && (
+        <CardContent className="pt-0">
+          <form onSubmit={handleSend} className="space-y-3 border border-border rounded-xl p-4 bg-secondary/30">
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Target Course</label>
+              <select
+                value={courseId}
+                onChange={(e) => setCourseId(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg border border-border text-sm bg-background focus:outline-none focus:border-primary"
+              >
+                <option value="all">All my courses (all enrolled students)</option>
+                {courses.map((c) => <option key={c.id} value={String(c.id)}>{c.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Title *</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                placeholder="e.g. New lesson released!"
+                className="w-full h-9 px-3 rounded-lg border border-border text-sm bg-background focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Message *</label>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                required
+                rows={3}
+                placeholder="Write your announcement here…"
+                className="text-sm"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit" size="sm" disabled={sending || !title.trim() || !message.trim()} className="gap-1.5">
+                <Send className="h-3.5 w-3.5" /> {sending ? "Sending…" : "Send to Students"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 /* ─── helpers ─── */
 function ThumbnailPreview({ url }: { url: string }) {
@@ -1009,6 +1102,9 @@ export default function InstructorPanel() {
               </CardContent>
             </Card>
           )}
+
+          {/* Announcements */}
+          <AnnouncementCard courses={courses?.map((c) => ({ id: c.id, title: c.title })) ?? []} />
         </TabsContent>
 
         {/* ── Courses ── */}

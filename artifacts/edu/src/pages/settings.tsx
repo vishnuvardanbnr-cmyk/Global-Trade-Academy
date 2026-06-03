@@ -1,0 +1,234 @@
+import { useState } from "react";
+import { useUser } from "@clerk/react";
+import { useGetMe, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const MARKET_OPTIONS = ["Forex", "Crypto", "Stocks", "Futures", "Options", "Indices"];
+const SKILL_OPTIONS = ["beginner", "intermediate", "advanced", "expert"];
+const SKILL_LABELS: Record<string, string> = {
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+  expert: "Expert",
+};
+
+const XP_PER_LEVEL = 500;
+
+export default function Settings() {
+  const { user: clerkUser } = useUser();
+  const { data: me, isLoading } = useGetMe();
+  const { mutateAsync: updateMe } = useUpdateMe();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const [saving, setSaving] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [marketFocus, setMarketFocus] = useState("");
+  const [skillLevel, setSkillLevel] = useState("");
+  const [initialized, setInitialized] = useState(false);
+
+  if (me && !initialized) {
+    setDisplayName(me.displayName ?? clerkUser?.fullName ?? "");
+    setBio((me as any).bio ?? "");
+    setMarketFocus((me as any).marketFocus ?? "");
+    setSkillLevel((me as any).skillLevel ?? "beginner");
+    setInitialized(true);
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateMe({ data: { displayName: displayName.trim() || undefined } });
+      await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+      toast({ title: "Settings saved", description: "Your profile has been updated." });
+    } catch {
+      toast({ title: "Could not save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const xp = me?.xp ?? 0;
+  const level = Math.floor(xp / XP_PER_LEVEL) + 1;
+  const xpIntoLevel = xp % XP_PER_LEVEL;
+  const progressPct = Math.round((xpIntoLevel / XP_PER_LEVEL) * 100);
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <p className="text-sm text-muted-foreground">Manage your profile and platform preferences.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-4">
+          {Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-32 w-full rounded-2xl" />)}
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {/* XP / Level card */}
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md shrink-0">
+                  <Zap className="h-7 w-7 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-foreground">Level {level} Trader</span>
+                    <Badge variant="secondary" className="text-[10px]">{xp.toLocaleString()} XP total</Badge>
+                  </div>
+                  <div className="w-full bg-secondary rounded-full h-2 mb-1">
+                    <div className="bg-amber-400 h-2 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{xpIntoLevel.toLocaleString()} / {XP_PER_LEVEL.toLocaleString()} XP to Level {level + 1}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
+                {[
+                  { label: "Role", value: me?.role ?? "student", icon: Shield },
+                  { label: "Email", value: clerkUser?.primaryEmailAddress?.emailAddress ?? "—", icon: User },
+                  { label: "Member since", value: me?.createdAt ? new Date(me.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—", icon: Award },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="text-center p-3 rounded-xl bg-secondary/50">
+                    <Icon className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+                    <p className="text-xs font-semibold text-foreground truncate mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Profile form */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <User className="h-4 w-4" /> Profile Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Display Name</label>
+                  <input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your full name"
+                    className="w-full h-10 px-3 rounded-lg border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all bg-background"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Email</label>
+                  <input
+                    value={clerkUser?.primaryEmailAddress?.emailAddress ?? ""}
+                    disabled
+                    className="w-full h-10 px-3 rounded-lg border border-border text-sm bg-secondary text-muted-foreground cursor-not-allowed"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">Managed by your account provider.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                    <Target className="inline h-3 w-3 mr-1" />Market Focus
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {MARKET_OPTIONS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMarketFocus(m === marketFocus ? "" : m)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
+                          marketFocus === m
+                            ? "bg-primary text-white border-primary"
+                            : "bg-background border-border text-foreground hover:border-primary/50"
+                        )}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                    <BookOpen className="inline h-3 w-3 mr-1" />Skill Level
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {SKILL_OPTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSkillLevel(s)}
+                        className={cn(
+                          "px-3 py-2 rounded-lg text-xs font-medium border transition-all",
+                          skillLevel === s
+                            ? "bg-primary text-white border-primary"
+                            : "bg-background border-border text-foreground hover:border-primary/50"
+                        )}
+                      >
+                        {SKILL_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="h-10 px-6 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {saving ? "Saving…" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Account actions */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Shield className="h-4 w-4" /> Account & Security
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {[
+                { label: "Change password", sub: "Update your login credentials", icon: Shield },
+                { label: "Notification preferences", sub: "Control which alerts you receive", icon: Bell },
+                { label: "Appearance", sub: "Theme and display settings", icon: Palette },
+              ].map(({ label, sub, icon: Icon }) => (
+                <button
+                  key={label}
+                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-secondary transition-colors text-left border-b border-border last:border-0"
+                  onClick={() => toast({ title: "Coming soon", description: `${label} settings will be available shortly.` })}
+                >
+                  <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{label}</p>
+                    <p className="text-xs text-muted-foreground">{sub}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
