@@ -20,9 +20,141 @@ import {
   Plus, Trash2, Pencil, Video, FileText, GripVertical, Lock, Unlock,
   HelpCircle, CheckCircle2, X, Clock, Link2, ChevronDown, ChevronUp,
   FolderOpen, FolderClosed, MoveVertical, ArrowUp, ArrowDown, LayoutList,
-  AlertTriangle,
+  AlertTriangle, UploadCloud, Link, CheckCircle, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRef } from "react";
+
+/* ─── R2 Video Uploader ─────────────────────────────────────────── */
+function VideoUrlField({
+  value, onChange,
+}: { value: string; onChange: (url: string) => void }) {
+  const [mode, setMode] = useState<"url" | "upload">("url");
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [r2Available, setR2Available] = useState<boolean | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const checkR2 = async () => {
+    try {
+      const res = await fetch("/api/upload/presign?filename=test.mp4&contentType=video/mp4");
+      const data = await res.json();
+      setR2Available(!data.notConfigured);
+    } catch {
+      setR2Available(false);
+    }
+  };
+
+  const handleModeSwitch = (m: "url" | "upload") => {
+    setMode(m);
+    if (m === "upload" && r2Available === null) checkR2();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("video/")) {
+      toast({ title: "Please select a video file", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    setProgress(0);
+    setUploadedUrl(null);
+    try {
+      const presignRes = await fetch(
+        `/api/upload/presign?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
+      );
+      if (!presignRes.ok) throw new Error("Failed to get upload URL");
+      const { presignedUrl, publicUrl } = await presignRes.json();
+
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100));
+        };
+        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.open("PUT", presignedUrl);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.send(file);
+      });
+
+      setUploadedUrl(publicUrl);
+      onChange(publicUrl);
+      toast({ title: "Video uploaded successfully" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+        <button type="button"
+          onClick={() => handleModeSwitch("url")}
+          className={cn("flex-1 flex items-center justify-center gap-1.5 py-2 transition-colors",
+            mode === "url" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+          <Link className="h-3.5 w-3.5" /> Paste URL
+        </button>
+        <button type="button"
+          onClick={() => handleModeSwitch("upload")}
+          className={cn("flex-1 flex items-center justify-center gap-1.5 py-2 transition-colors",
+            mode === "upload" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+          <UploadCloud className="h-3.5 w-3.5" /> Upload to R2
+        </button>
+      </div>
+
+      {mode === "url" ? (
+        <Input placeholder="https://… or YouTube/Vimeo URL" value={value} onChange={(e) => onChange(e.target.value)} />
+      ) : r2Available === false ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-1">
+          <p className="font-semibold">Cloudflare R2 not configured yet.</p>
+          <p>Add your R2 credentials in Secrets to enable direct video uploads. Until then, paste a video URL above.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
+          {uploading ? (
+            <div className="rounded-lg border border-border bg-muted p-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Uploading… {progress}%</span>
+              </div>
+              <div className="w-full bg-border rounded-full h-1.5">
+                <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          ) : uploadedUrl ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 flex items-start gap-2 text-xs text-emerald-800">
+              <CheckCircle className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
+              <div className="min-w-0">
+                <p className="font-semibold">Uploaded successfully</p>
+                <p className="truncate text-emerald-700 mt-0.5">{uploadedUrl}</p>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => fileRef.current?.click()}
+              className="w-full rounded-lg border-2 border-dashed border-border hover:border-primary/50 hover:bg-muted/50 transition-colors p-6 flex flex-col items-center gap-2 text-muted-foreground">
+              <UploadCloud className="h-8 w-8" />
+              <span className="text-sm font-medium">Click to choose a video file</span>
+              <span className="text-xs">MP4, WebM, MOV — uploads directly to your R2 bucket</span>
+            </button>
+          )}
+          {!uploading && uploadedUrl && (
+            <button type="button" onClick={() => { setUploadedUrl(null); setProgress(0); fileRef.current?.click(); }}
+              className="text-xs text-muted-foreground hover:text-foreground underline">
+              Upload a different file
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const LESSON_TYPES = ["video", "article", "exercise"];
 
@@ -246,7 +378,7 @@ function LessonsManager({ courseId }: { courseId: number }) {
           <Input type="number" min="0" placeholder="Duration (min)" value={lessonForm.duration} onChange={(e) => setLessonForm(f => ({ ...f, duration: e.target.value }))} />
         </div>
         {lessonForm.type === "video" ? (
-          <Input placeholder="Video URL" value={lessonForm.videoUrl} onChange={(e) => setLessonForm(f => ({ ...f, videoUrl: e.target.value }))} />
+          <VideoUrlField value={lessonForm.videoUrl} onChange={(url) => setLessonForm(f => ({ ...f, videoUrl: url }))} />
         ) : (
           <Textarea placeholder="Lesson content (markdown supported)" rows={4} value={lessonForm.content} onChange={(e) => setLessonForm(f => ({ ...f, content: e.target.value }))} />
         )}

@@ -14,6 +14,7 @@ import engagementRouter from "./engagement";
 import gatesRouter from "./gates";
 import sectionsRouter from "./sections";
 import marketRouter from "./market";
+import uploadRouter from "./upload";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(engagementRouter);
 router.use(gatesRouter);
 router.use(sectionsRouter);
 router.use(marketRouter);
+router.use(uploadRouter);
 
 export default router;
