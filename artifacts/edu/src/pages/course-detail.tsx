@@ -915,7 +915,7 @@ export default function CourseDetail() {
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className={cn("flex-1 min-h-0", tab === "notes" ? "flex flex-col" : "overflow-y-auto p-3")}>
               {tab === "overview" && (
                 <OverviewTab
                   cur={cur} chIdx={chIdx} totalL={totalL}
@@ -1474,12 +1474,32 @@ function NotesTab({ lesson, isEnrolled }: { lesson: DbLesson | undefined; isEnro
   };
 
   return (
-    <div className="space-y-3">
-      <div>
-        <h3 className="text-[15px] font-bold text-slate-800">My Notes</h3>
-        <p className="text-[12px] text-slate-400">For: {lesson.title}</p>
+    <div className="flex flex-col h-full">
+      {/* Notes list — scrollable */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <div>
+          <h3 className="text-[15px] font-bold text-slate-800">My Notes</h3>
+          <p className="text-[12px] text-slate-400">For: {lesson.title}</p>
+        </div>
+        {isLoading ? <Skeleton className="h-16 rounded-lg" /> : (
+          (notes ?? []).length === 0
+            ? <p className="text-[12px] text-slate-400 text-center py-6">No notes yet for this lesson.</p>
+            : <div className="space-y-2">
+                {(notes ?? []).map((n) => (
+                  <div key={n.id} className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-100 group">
+                    <StickyNote className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="flex-1 text-[12.5px] text-slate-600 whitespace-pre-wrap">{n.content}</p>
+                    <button onClick={() => onDelete(n.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all shrink-0">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+        )}
       </div>
-      <div className="flex gap-2">
+
+      {/* Input — pinned to bottom */}
+      <div className="shrink-0 border-t border-slate-100 p-3 flex gap-2">
         <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={2}
           placeholder="Write a note for this lesson…"
           className="flex-1 p-2.5 text-[12.5px] rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none resize-none" />
@@ -1488,21 +1508,6 @@ function NotesTab({ lesson, isEnrolled }: { lesson: DbLesson | undefined; isEnro
           {creating ? "…" : "Add"}
         </button>
       </div>
-      {isLoading ? <Skeleton className="h-16 rounded-lg" /> : (
-        (notes ?? []).length === 0
-          ? <p className="text-[12px] text-slate-400 text-center py-6">No notes yet for this lesson.</p>
-          : <div className="space-y-2">
-              {(notes ?? []).map((n) => (
-                <div key={n.id} className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-100 group">
-                  <StickyNote className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="flex-1 text-[12.5px] text-slate-600 whitespace-pre-wrap">{n.content}</p>
-                  <button onClick={() => onDelete(n.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all shrink-0">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-      )}
     </div>
   );
 }
