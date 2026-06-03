@@ -950,8 +950,11 @@ export default function CourseDetail() {
       </div>
 
     {/* ── Floating bottom tab bar ──────────────────────────────── */}
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
-      <div className="flex items-center gap-0.5 bg-slate-900/96 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-2xl ring-1 ring-white/10 pointer-events-auto">
+    <div className={cn(
+      "fixed bottom-4 z-50 pointer-events-none flex justify-center transition-all duration-200",
+      showTabPanel || showPanel ? "left-0 right-[404px]" : "left-0 right-0"
+    )}>
+      <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto">
         {[
           { k: "overview" as Tab, label: "Overview", Icon: BookOpen },
           { k: "quiz"     as Tab, label: "Quizzes",  Icon: FileQuestion },
@@ -969,8 +972,8 @@ export default function CourseDetail() {
             className={cn(
               "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
               tab === k && showTabPanel
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-400 hover:text-white hover:bg-white/10",
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
             )}>
             <Icon className="h-3.5 w-3.5" />
             {label}
@@ -979,12 +982,12 @@ export default function CourseDetail() {
             )}
           </button>
         ))}
-        <div className="w-px h-5 bg-white/20 mx-1 shrink-0" />
+        <div className="w-px h-5 bg-slate-200 mx-1 shrink-0" />
         <button
           onClick={() => { setShowPanel(s => !s); setShowTabPanel(false); }}
           className={cn(
             "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
-            showPanel ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/10",
+            showPanel ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
           )}>
           <PanelRight className="h-3.5 w-3.5" />
           Course
