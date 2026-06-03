@@ -99,7 +99,7 @@ function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useUser();
-  const { signOut } = useClerk();
+  const { signOut, openUserProfile } = useClerk();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileDismissed, setProfileDismissed] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -359,11 +359,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
                   </div>
                   <div className="py-1">
-                    <Link href="/dashboard" onClick={() => setMenuOpen(false)}>
-                      <div className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors">
-                        <User className="h-4 w-4 text-muted-foreground" /> My Profile
-                      </div>
-                    </Link>
+                    <button
+                      onClick={() => { setMenuOpen(false); openUserProfile(); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors"
+                    >
+                      <User className="h-4 w-4 text-muted-foreground" /> My Profile
+                    </button>
                   </div>
                   <div className="border-t border-border py-1">
                     <button
