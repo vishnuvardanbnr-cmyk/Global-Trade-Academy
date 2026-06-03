@@ -24,7 +24,7 @@ import { useForm } from "react-hook-form";
 import {
   Plus, BookOpen, Video, Users, Trash2, Settings2,
   ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  FileQuestion, Clock, BarChart3, Pencil, ImageIcon,
+  FileQuestion, Clock, BarChart3, Pencil, ImageIcon, CalendarPlus, Radio,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
@@ -190,6 +190,90 @@ function EditCourseDialog({ course, onSuccess }: {
             )} />
             <Button type="submit" className="w-full" disabled={update.isPending}>
               {update.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: number; title: string }[]; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const form = useForm({
+    defaultValues: {
+      title: "",
+      description: "",
+      scheduledAt: "",
+      duration: 60 as number | undefined,
+      courseId: "" as string,
+      maxAttendees: "" as string,
+    },
+  });
+  const create = useCreateLiveClass({
+    mutation: {
+      onSuccess: () => {
+        setOpen(false);
+        form.reset();
+        onSuccess();
+        toast({ title: "Live class scheduled" });
+      },
+      onError: () => toast({ title: "Failed to schedule live class", variant: "destructive" }),
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" data-testid="button-schedule-live-class">
+          <CalendarPlus className="h-4 w-4 mr-2" />Schedule Live Class
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Schedule a Live Class</DialogTitle></DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((d) => create.mutate({
+            data: {
+              title: d.title,
+              description: d.description || undefined,
+              scheduledAt: new Date(d.scheduledAt).toISOString(),
+              duration: d.duration || undefined,
+              courseId: d.courseId ? parseInt(d.courseId) : undefined,
+              maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined,
+            },
+          }))} className="space-y-4">
+            <FormField control={form.control} name="title" rules={{ required: "Title is required" }} render={({ field }) => (
+              <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g. Weekly Market Analysis" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={2} placeholder="What will you cover?" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="scheduledAt" rules={{ required: "Date & time is required" }} render={({ field }) => (
+              <FormItem><FormLabel>Date & Time</FormLabel><FormControl><Input type="datetime-local" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="duration" render={({ field }) => (
+                <FormItem><FormLabel>Duration (minutes)</FormLabel><FormControl><Input type="number" min="15" step="15" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="maxAttendees" render={({ field }) => (
+                <FormItem><FormLabel>Max Attendees</FormLabel><FormControl><Input type="number" min="1" placeholder="Unlimited" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            {courses && courses.length > 0 && (
+              <FormField control={form.control} name="courseId" render={({ field }) => (
+                <FormItem><FormLabel>Link to Course (optional)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {courses.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            )}
+            <Button type="submit" className="w-full" disabled={create.isPending}>
+              {create.isPending ? "Scheduling..." : "Schedule Live Class"}
             </Button>
           </form>
         </Form>
@@ -702,6 +786,10 @@ export default function InstructorPanel() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Live Sessions</CardTitle>
+          <ScheduleLiveClassDialog
+            courses={courses?.map((c) => ({ id: c.id, title: c.title }))}
+            onSuccess={() => qc.invalidateQueries({ queryKey: getListLiveClassesQueryKey() })}
+          />
         </CardHeader>
         <CardContent>
           {liveLoading ? (
