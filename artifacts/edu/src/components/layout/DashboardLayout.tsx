@@ -41,13 +41,12 @@ function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
     setSaving(true);
     try {
       const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
-      // Update DB
       await updateMe({ data: { displayName } });
       await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
-      // Update Clerk profile so the name appears immediately everywhere
-      await clerkUser?.update({ firstName: firstName.trim(), lastName: lastName.trim() });
       toast({ title: "Profile updated!", description: `Welcome, ${displayName}!` });
       onDone();
+      // Update Clerk profile in the background — non-critical, ignore errors
+      clerkUser?.update({ firstName: firstName.trim(), lastName: lastName.trim() }).catch(() => {});
     } catch {
       toast({ title: "Could not save", variant: "destructive" });
     } finally {
