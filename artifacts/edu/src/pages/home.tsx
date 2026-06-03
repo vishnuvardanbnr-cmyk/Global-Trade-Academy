@@ -88,7 +88,7 @@ const demoAccounts = [
 ];
 
 export default function Home() {
-  const { signIn, isLoaded: signInLoaded } = useSignIn();
+  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
   const [, navigate] = useLocation();
   const [demoLoggingIn, setDemoLoggingIn] = useState<string | null>(null);
   const [demoError, setDemoError] = useState<string | null>(null);
@@ -106,8 +106,10 @@ export default function Home() {
       if (!res.ok) { setDemoError("Could not create demo session. Try again."); return; }
       const { token } = await res.json() as { token: string };
       const result = await signIn.create({ strategy: "ticket", ticket: token });
-      if (result.status === "complete") navigate("/dashboard");
-      else setDemoError("Sign-in incomplete.");
+      if (result.status === "complete") {
+        await setActive!({ session: result.createdSessionId });
+        navigate("/dashboard");
+      } else setDemoError("Sign-in incomplete.");
     } catch {
       setDemoError("Demo login failed. Please try again.");
     } finally {

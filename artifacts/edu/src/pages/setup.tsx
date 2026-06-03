@@ -27,7 +27,7 @@ function RoleBadge({ role }: { role: string }) {
 
 export default function SetupPage() {
   const { user } = useUser();
-  const { signIn, isLoaded: signInLoaded } = useSignIn();
+  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
   const { signOut } = useClerk();
   const { data: me, refetch: refetchMe } = useGetMe();
   const qc = useQueryClient();
@@ -58,6 +58,7 @@ export default function SetupPage() {
 
       const result = await signIn.create({ strategy: "ticket", ticket: token });
       if (result.status === "complete") {
+        await setActive!({ session: result.createdSessionId });
         await qc.invalidateQueries();
         navigate("/dashboard");
       } else {
