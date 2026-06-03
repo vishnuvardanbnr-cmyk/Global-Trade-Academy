@@ -718,10 +718,10 @@ export default function CourseDetail() {
 
         {/* RIGHT: Course panel (drawer) ──────────────────────────── */}
         {showPanel && (
-        <div className="fixed right-3 top-[4.5rem] w-[380px] max-h-[calc(100vh-5rem)] flex flex-col bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden z-40">
+        <div className="fixed right-0 top-[41px] bottom-0 w-[320px] flex flex-col bg-white shadow-[-8px_0_32px_rgba(0,0,0,0.12)] border-l border-slate-200 overflow-hidden z-40">
           <button
             onClick={() => setShowPanel(false)}
-            className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-lg bg-white/95 hover:bg-slate-100 text-slate-400 hover:text-slate-700 shadow-sm transition-colors border border-slate-200/60"
+            className="absolute top-3 right-3 z-10 p-1.5 rounded-lg bg-white/95 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors border border-slate-200/60"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -916,19 +916,19 @@ export default function CourseDetail() {
 
         {/* ── Tab content panel (right drawer) ──────────────────── */}
         {showTabPanel && (
-          <div className="fixed right-3 top-[4.5rem] w-[420px] max-h-[calc(100vh-5rem)] flex flex-col bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden z-40">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0 bg-slate-50">
-              <span className="text-[13px] font-bold text-slate-900">
+          <div className="fixed right-0 top-[41px] bottom-0 w-[320px] flex flex-col bg-white shadow-[-8px_0_32px_rgba(0,0,0,0.12)] border-l border-slate-200 overflow-hidden z-40">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-white">
+              <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
                 {tab === "quiz" ? "Quizzes"
                   : tab === "live" ? "Live Sessions"
                   : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </span>
               <button onClick={() => setShowTabPanel(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors">
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 overflow-y-auto p-4">
               {tab === "overview" && (
                 <OverviewTab
                   cur={cur} chIdx={chIdx} totalL={totalL}
