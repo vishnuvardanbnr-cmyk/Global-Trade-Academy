@@ -426,8 +426,6 @@ export default function CourseDetail() {
   const courseId = params?.id ? parseInt(params.id) : 0;
   const validId = courseId > 0 ? courseId : -1;
 
-  const leftColRef = useRef<HTMLDivElement>(null);
-
   const { data: course, isLoading } = useGetCourse(validId);
   const { data: lessons } = useListLessons(validId);
   const { data: sections } = useListCourseSections(validId, {
@@ -584,10 +582,10 @@ export default function CourseDetail() {
       <div className="flex-1 min-h-0 bg-slate-100 flex flex-col lg:grid lg:grid-cols-[1fr_360px] gap-3 p-3">
 
         {/* LEFT: player + lesson content */}
-        <div ref={leftColRef} className="flex flex-col min-w-0 bg-white rounded-2xl overflow-y-auto shadow-sm ring-1 ring-black/10">
+        <div className="flex flex-col min-w-0 bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
 
           {/* Video player */}
-          <div className="w-full overflow-hidden rounded-t-2xl bg-slate-950">
+          <div className="w-full">
             <VideoPlayer
               url={cur?.videoUrl}
               title={cur?.title}
@@ -766,7 +764,7 @@ export default function CourseDetail() {
                 {/* Start / Continue Learning button */}
                 {!progress?.courseCompleted && (
                   <button
-                    onClick={() => { setActiveIdx(firstUncompletedIdx); setTab("overview"); leftColRef.current?.scrollTo({ top: 0, behavior: "smooth" }); }}
+                    onClick={() => { setActiveIdx(firstUncompletedIdx); setTab("overview"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
                     className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.98] flex items-center justify-center gap-2"
                   >
                     <Play className="h-4 w-4 fill-white" />
