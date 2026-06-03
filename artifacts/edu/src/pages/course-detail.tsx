@@ -444,6 +444,7 @@ export default function CourseDetail() {
 
   const [tab, setTab] = useState<Tab>("overview");
   const [showPanel, setShowPanel] = useState(false);
+  const [showTabPanel, setShowTabPanel] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [expanded, setExpanded] = useState<number>(1);
 
@@ -713,24 +714,6 @@ export default function CourseDetail() {
             </div>
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 bg-white p-6 pb-24">
-            {tab === "overview" && (
-              <OverviewTab
-                cur={cur} chIdx={chIdx} totalL={totalL}
-                isEnrolled={isEnrolled} curDone={curDone}
-                doEnroll={doEnroll} enrolling={enrolling}
-                gate={gate} onGoToQuiz={() => setTab("quiz")}
-              />
-            )}
-            {tab === "quiz" && (
-              <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} gate={gate} />
-            )}
-            {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} />}
-            {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
-            {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
-            {tab === "live" && <LiveSessionsTab courseId={courseId} />}
-          </div>
         </div>
 
         {/* RIGHT: Course panel (drawer) ──────────────────────────── */}
@@ -930,6 +913,40 @@ export default function CourseDetail() {
           </div>
         </div>
         )}
+
+        {/* ── Tab content panel (right drawer) ──────────────────── */}
+        {showTabPanel && (
+          <div className="fixed right-3 top-[4.5rem] w-[420px] max-h-[calc(100vh-5rem)] flex flex-col bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden z-40">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0 bg-slate-50">
+              <span className="text-[13px] font-bold text-slate-900">
+                {tab === "quiz" ? "Quizzes"
+                  : tab === "live" ? "Live Sessions"
+                  : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </span>
+              <button onClick={() => setShowTabPanel(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {tab === "overview" && (
+                <OverviewTab
+                  cur={cur} chIdx={chIdx} totalL={totalL}
+                  isEnrolled={isEnrolled} curDone={curDone}
+                  doEnroll={doEnroll} enrolling={enrolling}
+                  gate={gate} onGoToQuiz={() => setTab("quiz")}
+                />
+              )}
+              {tab === "quiz" && (
+                <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} gate={gate} />
+              )}
+              {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} />}
+              {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
+              {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
+              {tab === "live" && <LiveSessionsTab courseId={courseId} />}
+            </div>
+          </div>
+        )}
       </div>
 
     {/* ── Floating bottom tab bar ──────────────────────────────── */}
@@ -943,10 +960,15 @@ export default function CourseDetail() {
           { k: "reviews"  as Tab, label: "Reviews",  Icon: Star },
           { k: "live"     as Tab, label: "Live",     Icon: Radio },
         ].map(({ k, label, Icon }) => (
-          <button key={k} onClick={() => setTab(k)}
+          <button key={k}
+            onClick={() => {
+              if (tab === k) { setShowTabPanel(v => !v); }
+              else { setTab(k); setShowTabPanel(true); }
+              setShowPanel(false);
+            }}
             className={cn(
               "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
-              tab === k
+              tab === k && showTabPanel
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-400 hover:text-white hover:bg-white/10",
             )}>
@@ -959,7 +981,7 @@ export default function CourseDetail() {
         ))}
         <div className="w-px h-5 bg-white/20 mx-1 shrink-0" />
         <button
-          onClick={() => setShowPanel(p => !p)}
+          onClick={() => { setShowPanel(s => !s); setShowTabPanel(false); }}
           className={cn(
             "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
             showPanel ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/10",
