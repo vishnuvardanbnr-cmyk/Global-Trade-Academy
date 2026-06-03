@@ -15,6 +15,8 @@ import gatesRouter from "./gates";
 import sectionsRouter from "./sections";
 import marketRouter from "./market";
 import uploadRouter from "./upload";
+import instructorRouter from "./instructor";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -34,5 +36,7 @@ router.use(gatesRouter);
 router.use(sectionsRouter);
 router.use(marketRouter);
 router.use(uploadRouter);
+router.use(instructorRouter);
+router.use(adminRouter);
 
 export default router;
