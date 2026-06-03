@@ -612,7 +612,7 @@ export default function CourseDetail() {
           {/* Lesson header — white card */}
           <div className="bg-white border-b border-slate-100 shrink-0">
             {/* Top meta row */}
-            <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-3">
+            <div className="hidden flex items-center justify-between gap-3 px-6 pt-5 pb-3">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 {curChapter && (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full shrink-0">
@@ -659,7 +659,7 @@ export default function CourseDetail() {
             </div>
 
             {/* Lesson title */}
-            <div className="px-6 pb-4">
+            <div className="hidden px-6 pb-4">
               <h1 className="text-[22px] font-extrabold text-slate-900 leading-tight tracking-tight">
                 {cur?.title ?? course.title}
               </h1>
