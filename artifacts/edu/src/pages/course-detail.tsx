@@ -463,6 +463,11 @@ export default function CourseDetail() {
   const pct = progress?.percent ?? 0;
   const completedCount = progress?.completedLessons ?? completedSet.size;
 
+  const firstUncompletedIdx = useMemo(() => {
+    const idx = dbLessons.findIndex((l) => !completedSet.has(l.id));
+    return idx >= 0 ? idx : 0;
+  }, [dbLessons, completedSet]);
+
   const cur = dbLessons[activeIdx];
   const curChapter = chapterGroups.find((ch) => ch.lessons.some((l) => l.id === cur?.id));
   const chIdx = curChapter ? chapterGroups.indexOf(curChapter) : 0;
@@ -698,7 +703,7 @@ export default function CourseDetail() {
           <div className="flex-1 bg-white p-6 pb-12">
             {tab === "overview" && (
               <OverviewTab
-                cur={cur} chIdx={chIdx}
+                cur={cur} chIdx={chIdx} totalL={totalL}
                 isEnrolled={isEnrolled} curDone={curDone}
                 doEnroll={doEnroll} enrolling={enrolling}
                 gate={gate} onGoToQuiz={() => setTab("quiz")}
@@ -773,6 +778,17 @@ export default function CourseDetail() {
 
             {isEnrolled ? (
               <div className="space-y-2.5">
+                {/* Start / Continue Learning button */}
+                {!progress?.courseCompleted && (
+                  <button
+                    onClick={() => { setActiveIdx(firstUncompletedIdx); setTab("overview"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    <Play className="h-4 w-4 fill-white" />
+                    {completedCount === 0 ? "Start Learning" : "Continue Learning"}
+                  </button>
+                )}
+
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
                   <div className="flex justify-between text-[12px] mb-2 text-slate-600">
                     <span className="font-semibold">Your progress</span>
@@ -999,9 +1015,9 @@ function LessonGateBanner({ gate, onGoToQuiz }: { gate: LessonGate; onGoToQuiz: 
 
 /* ════════════════════ Overview Tab ════════════════════ */
 function OverviewTab({
-  cur, chIdx, isEnrolled, curDone, doEnroll, enrolling, gate, onGoToQuiz,
+  cur, chIdx, totalL, isEnrolled, curDone, doEnroll, enrolling, gate, onGoToQuiz,
 }: {
-  cur: DbLesson | undefined; chIdx: number;
+  cur: DbLesson | undefined; chIdx: number; totalL: number;
   isEnrolled: boolean; curDone: boolean;
   doEnroll: () => void; enrolling: boolean;
   gate?: LessonGate; onGoToQuiz: () => void;
