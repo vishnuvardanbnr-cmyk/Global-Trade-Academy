@@ -718,7 +718,7 @@ export default function CourseDetail() {
 
         {/* RIGHT: Course panel (drawer) ──────────────────────────── */}
         {showPanel && (
-        <div className="w-[240px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+        <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
           <button
             onClick={() => setShowPanel(false)}
             className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-lg bg-white/95 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors border border-slate-200/60"
@@ -916,7 +916,7 @@ export default function CourseDetail() {
 
         {/* RIGHT: Tab content panel */}
         {showTabPanel && (
-          <div className="w-[240px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+          <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
                 {tab === "quiz" ? "Quizzes"
