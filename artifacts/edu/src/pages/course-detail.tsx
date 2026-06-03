@@ -110,12 +110,26 @@ function loadYTApi(onReady: () => void) {
 }
 
 /* ─── YouTube sub-player (IFrame API → accurate ended event) ───── */
+const WATCH_THRESHOLD = 0.90; // must watch 90% to count as complete
+
 function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+
+  // Accumulated genuine watch time (seconds) — only increments while PLAYING
+  const watchedSecsRef = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopTick = () => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+  };
+  const startTick = () => {
+    stopTick();
+    intervalRef.current = setInterval(() => { watchedSecsRef.current += 1; }, 1000);
+  };
 
   useEffect(() => {
     if (!divRef.current) return;
@@ -129,16 +143,31 @@ function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void 
         playerVars: { rel: 0, modestbranding: 1, autoplay: 0 },
         events: {
           onStateChange: (e: { data: number }) => {
-            if (e.data === 0) onEndedRef.current?.(); // 0 = ENDED
+            if (e.data === 1) {
+              // PLAYING — start accumulating
+              startTick();
+            } else if (e.data === 0) {
+              // ENDED — check if enough was watched
+              stopTick();
+              const duration = playerRef.current?.getDuration?.() ?? 0;
+              if (duration > 0 && watchedSecsRef.current / duration >= WATCH_THRESHOLD) {
+                onEndedRef.current?.();
+              }
+            } else {
+              // PAUSED / BUFFERING / etc.
+              stopTick();
+            }
           },
         },
       });
     });
     return () => {
       destroyed = true;
+      stopTick();
       playerRef.current?.destroy();
       playerRef.current = null;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
 
   return <div className="w-full aspect-video bg-black"><div ref={divRef} className="w-full h-full" /></div>;
