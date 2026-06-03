@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useUser, useSignIn, useClerk } from "@clerk/react";
+import { useUser } from "@clerk/react";
 import { useGetMe } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,49 +27,12 @@ function RoleBadge({ role }: { role: string }) {
 
 export default function SetupPage() {
   const { user } = useUser();
-  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
-  const { signOut } = useClerk();
   const { data: me, refetch: refetchMe } = useGetMe();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [bootstrapStatus, setBootstrapStatus] = useState<{ bootstrapped: boolean; adminCount: number } | null>(null);
   const [bootstrapping, setBootstrapping] = useState(false);
-  const [demoLoggingIn, setDemoLoggingIn] = useState<string | null>(null);
-
-  const handleDemoLogin = async (email: string) => {
-    if (!signInLoaded) return;
-    setDemoLoggingIn(email);
-    try {
-      // If already signed in as someone else, sign out first
-      if (user) await signOut();
-
-      const res = await fetch("/api/setup/demo-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast({ title: err.error || "Demo login failed", variant: "destructive" });
-        return;
-      }
-      const { token } = await res.json() as { token: string };
-
-      const result = await signIn.create({ strategy: "ticket", ticket: token });
-      if (result.status === "complete") {
-        await setActive!({ session: result.createdSessionId });
-        await qc.invalidateQueries();
-        navigate("/dashboard");
-      } else {
-        toast({ title: "Sign-in incomplete — unexpected state", variant: "destructive" });
-      }
-    } catch (err) {
-      toast({ title: "Demo login error", variant: "destructive" });
-    } finally {
-      setDemoLoggingIn(null);
-    }
-  };
 
   useEffect(() => {
     fetch("/api/setup/status").then((r) => r.json()).then(setBootstrapStatus).catch(() => {});
@@ -235,13 +198,9 @@ export default function SetupPage() {
                         a.label === "Instructor" ? "bg-purple-600 hover:bg-purple-700" :
                         "bg-blue-600 hover:bg-blue-700"
                       } text-white`}
-                      disabled={demoLoggingIn !== null}
-                      onClick={() => handleDemoLogin(a.email)}
+                      onClick={() => navigate(`/demo-login?role=${a.label.toLowerCase()}`)}
                     >
-                      {demoLoggingIn === a.email
-                        ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Signing in…</>
-                        : <><LogIn className="h-3.5 w-3.5" /> Login as {a.label}</>
-                      }
+                      <LogIn className="h-3.5 w-3.5" /> Login as {a.label}
                     </Button>
                   </div>
                 </div>

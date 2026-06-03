@@ -1,11 +1,9 @@
-import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useSignIn } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, BarChart3, BookOpen, Globe2, ShieldCheck,
   TrendingUp, Star, Users, CheckCircle2, PlayCircle, Award,
-  Shield, ShieldAlert, GraduationCap, LogIn, RefreshCw,
+  Shield, ShieldAlert, GraduationCap, LogIn,
 } from "lucide-react";
 
 const stats = [
@@ -88,34 +86,7 @@ const demoAccounts = [
 ];
 
 export default function Home() {
-  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
   const [, navigate] = useLocation();
-  const [demoLoggingIn, setDemoLoggingIn] = useState<string | null>(null);
-  const [demoError, setDemoError] = useState<string | null>(null);
-
-  const handleDemoLogin = async (email: string) => {
-    if (!signInLoaded) return;
-    setDemoLoggingIn(email);
-    setDemoError(null);
-    try {
-      const res = await fetch("/api/setup/demo-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!res.ok) { setDemoError("Could not create demo session. Try again."); return; }
-      const { token } = await res.json() as { token: string };
-      const result = await signIn.create({ strategy: "ticket", ticket: token });
-      if (result.status === "complete") {
-        await setActive!({ session: result.createdSessionId });
-        navigate("/dashboard");
-      } else setDemoError("Sign-in incomplete.");
-    } catch {
-      setDemoError("Demo login failed. Please try again.");
-    } finally {
-      setDemoLoggingIn(null);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-white text-foreground flex flex-col font-sans">
@@ -276,29 +247,23 @@ export default function Home() {
               Click any role below to log in as a demo account — no email, no OTP, no waiting.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {demoAccounts.map((a) => (
                 <button
                   key={a.label}
-                  disabled={demoLoggingIn !== null}
-                  onClick={() => handleDemoLogin(a.email)}
-                  className={`flex flex-col items-center gap-3 p-5 rounded-2xl border transition-all ${a.bg} disabled:opacity-60 disabled:cursor-not-allowed`}
+                  onClick={() => navigate(`/demo-login?role=${a.label.toLowerCase()}`)}
+                  className={`flex flex-col items-center gap-3 p-5 rounded-2xl border transition-all ${a.bg}`}
                 >
                   <div className="w-11 h-11 rounded-xl bg-white border border-border flex items-center justify-center">
                     <a.icon className={`h-5 w-5 ${a.color}`} />
                   </div>
                   <div className="text-sm font-semibold text-foreground">{a.label}</div>
-                  {demoLoggingIn === a.email
-                    ? <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" /> Signing in…</span>
-                    : <span className={`flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1 rounded-full ${a.btn}`}><LogIn className="h-3 w-3" /> Login as {a.label}</span>
-                  }
+                  <span className={`flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1 rounded-full ${a.btn}`}>
+                    <LogIn className="h-3 w-3" /> Login as {a.label}
+                  </span>
                 </button>
               ))}
             </div>
-
-            {demoError && (
-              <p className="text-sm text-red-500 mt-2">{demoError}</p>
-            )}
           </div>
         </section>
 

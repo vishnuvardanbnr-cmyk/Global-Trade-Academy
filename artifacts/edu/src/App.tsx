@@ -24,6 +24,7 @@ import AdminPanel from "@/pages/admin";
 import Settings from "@/pages/settings";
 import VerifyCertificate from "@/pages/verify";
 import SetupPage from "@/pages/setup";
+import DemoLoginPage from "@/pages/demo-login";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -172,6 +173,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/admin"><RoleProtectedRoute component={AdminPanel} allowedRoles={["admin"]} /></Route>
             <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
             <Route path="/setup"><ProtectedRoute component={SetupPage} /></Route>
+            <Route path="/demo-login" component={DemoLoginPage} />
             <Route path="/verify/:serial" component={VerifyCertificate} />
 
             <Route component={NotFound} />
