@@ -14,7 +14,6 @@ import Courses from "@/pages/courses";
 import CourseDetail from "@/pages/course-detail";
 import Certificates from "@/pages/certificates";
 import Trading from "@/pages/trading";
-import TradingChat from "@/pages/trading-chat";
 import CopyTrading from "@/pages/copy-trading";
 import Community from "@/pages/community";
 import LiveClasses from "@/pages/live-classes";
@@ -149,7 +148,6 @@ function ClerkProviderWithRoutes() {
             <Route path="/courses"><ProtectedRoute component={Courses} /></Route>
             <Route path="/certificates"><ProtectedRoute component={Certificates} /></Route>
             <Route path="/trading"><ProtectedRoute component={Trading} /></Route>
-            <Route path="/trading-chat"><ProtectedRoute component={TradingChat} /></Route>
             <Route path="/copy-trading"><ProtectedRoute component={CopyTrading} /></Route>
             <Route path="/community"><ProtectedRoute component={Community} /></Route>
             <Route path="/live/:classId/room"><ProtectedRouteFullScreen component={LiveRoom} /></Route>

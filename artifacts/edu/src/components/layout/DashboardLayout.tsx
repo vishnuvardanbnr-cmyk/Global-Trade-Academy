@@ -16,7 +16,6 @@ import { useToast } from "@/hooks/use-toast";
 const mainNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trading", label: "Markets", icon: LineChart },
-  { href: "/trading-chat", label: "Trading Chat", icon: MessageCircle },
   { href: "/courses", label: "Academy", icon: BookOpen },
   { href: "/certificates", label: "Certificates", icon: Award },
   { href: "/live", label: "Live Sessions", icon: Video },
@@ -140,8 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
   const pendingReviews = reviewCount?.pending ?? 0;
 
-  /* Trading chat and course player use full-bleed layout with no padding */
-  const isFullBleed = location.startsWith("/trading-chat") || location.startsWith("/courses/");
+  const isFullBleed = location.startsWith("/courses/");
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -173,9 +171,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}>
                 <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-muted-foreground group-hover:text-foreground")} />
                 <span className="flex-1">{item.label}</span>
-                {item.href === "/trading-chat" && !isActive && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                )}
                 {isActive && <ChevronRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
               </div>
             </Link>
@@ -299,12 +294,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Right side actions */}
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/trading-chat">
-              <button className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors border border-emerald-100">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Chat
-              </button>
-            </Link>
             {/* Bell */}
             <div ref={bellRef} className="relative">
               <button
