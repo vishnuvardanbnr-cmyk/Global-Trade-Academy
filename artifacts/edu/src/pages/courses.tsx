@@ -1,4 +1,4 @@
-import { useListCourses } from "@workspace/api-client-react";
+import { useListCourses, useListEnrollments } from "@workspace/api-client-react";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,8 @@ const levelColors: Record<string, string> = {
 
 export default function Courses() {
   const { data: courses, isLoading } = useListCourses({});
+  const { data: enrollments } = useListEnrollments();
+  const enrolledIds = new Set((enrollments ?? []).map((e) => e.courseId));
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeLevel, setActiveLevel] = useState("All Levels");
@@ -180,7 +182,13 @@ export default function Courses() {
                   )}
                 </div>
                 <Link href={`/courses/${course.id}`}>
-                  <Button size="sm" className="font-semibold">Enroll Now</Button>
+                  {enrolledIds.has(course.id) ? (
+                    <Button size="sm" variant="outline" className="font-semibold border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300">
+                      View Course
+                    </Button>
+                  ) : (
+                    <Button size="sm" className="font-semibold">Enroll Now</Button>
+                  )}
                 </Link>
               </CardFooter>
             </Card>
