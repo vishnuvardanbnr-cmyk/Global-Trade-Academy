@@ -28,7 +28,7 @@ import {
   StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
-  Radio, Calendar, ExternalLink,
+  Radio, Calendar, ExternalLink, PanelRight, X,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -443,6 +443,7 @@ export default function CourseDetail() {
   });
 
   const [tab, setTab] = useState<Tab>("overview");
+  const [showPanel, setShowPanel] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [expanded, setExpanded] = useState<number>(1);
 
@@ -579,7 +580,7 @@ export default function CourseDetail() {
       </div>
 
       {/* ── Two-column main area ──────────────────────────── */}
-      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col lg:grid lg:grid-cols-[1fr_360px] gap-3 p-3">
+      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col p-3 relative">
 
         {/* LEFT: player + lesson content */}
         <div className="flex flex-col min-w-0 bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
@@ -696,6 +697,19 @@ export default function CourseDetail() {
                   )}
                 </button>
               ))}
+              <div className="ml-auto shrink-0">
+                <button
+                  onClick={() => setShowPanel(p => !p)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
+                    showPanel
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
+                  )}>
+                  <PanelRight className="h-3.5 w-3.5" />
+                  Course
+                </button>
+              </div>
             </div>
           </div>
 
@@ -719,8 +733,15 @@ export default function CourseDetail() {
           </div>
         </div>
 
-        {/* RIGHT: Sticky sidebar ──────────────────────────── */}
-        <div className="lg:sticky lg:top-0 lg:max-h-[calc(100vh-4.5rem)] lg:overflow-y-auto flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+        {/* RIGHT: Course panel (drawer) ──────────────────────────── */}
+        {showPanel && (
+        <div className="fixed right-3 top-[4.5rem] w-[380px] max-h-[calc(100vh-5rem)] flex flex-col bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden z-40">
+          <button
+            onClick={() => setShowPanel(false)}
+            className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-lg bg-white/95 hover:bg-slate-100 text-slate-400 hover:text-slate-700 shadow-sm transition-colors border border-slate-200/60"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
 
           {/* Course thumbnail */}
           {course.thumbnailUrl && (
@@ -745,7 +766,18 @@ export default function CourseDetail() {
           {/* Course info card */}
           <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shrink-0">
             <h2 className="text-[14px] font-bold text-slate-900 leading-snug mb-1">{course.title}</h2>
+            <p className="text-[12px] text-slate-500 leading-relaxed mb-4 line-clamp-2">{course.description}</p>
 
+            {/* Instructor row */}
+            <div className="flex items-center gap-2.5 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[12px] font-bold text-white shrink-0">
+                {(course.instructorName ?? "I").charAt(0)}
+              </div>
+              <div>
+                <p className="text-[12.5px] font-semibold text-slate-800 leading-none">{course.instructorName ?? "Instructor"}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Course Instructor</p>
+              </div>
+            </div>
 
             {isEnrolled ? (
               <div className="space-y-2.5">
@@ -897,6 +929,7 @@ export default function CourseDetail() {
             })}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
@@ -1004,32 +1037,6 @@ function OverviewTab({
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Lesson metadata pills */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { Icon: Clock, label: cur.duration ? `${cur.duration} min` : "—", color: "text-blue-600 bg-blue-50 border-blue-100" },
-          { Icon: Zap, label: "+50 XP", color: "text-amber-600 bg-amber-50 border-amber-100" },
-          { Icon: BarChart2, label: `Section ${chIdx + 1}`, color: "text-slate-600 bg-slate-50 border-slate-200" },
-          ...(cur.type && cur.type !== "video" ? [{ Icon: cur.type === "article" ? FileText : FileQuestion, label: cur.type === "article" ? "Reading" : cur.type.charAt(0).toUpperCase() + cur.type.slice(1), color: "text-violet-600 bg-violet-50 border-violet-100" }] : []),
-        ].map(({ Icon, label, color }) => (
-          <div key={label} className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-full text-[12px] font-medium", color)}>
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-          </div>
-        ))}
-      </div>
-
-      {/* About this lesson */}
-      <div>
-        <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-3">About this lesson</h3>
-        {cur.description ? (
-          <p className="text-[14px] text-slate-700 leading-relaxed">{cur.description}</p>
-        ) : (
-          <p className="text-[14px] text-slate-400 leading-relaxed italic">
-            Select the Overview tab after starting the lesson to see details here.
-          </p>
-        )}
-      </div>
 
       {/* Lesson content (markdown/article) */}
       {cur.content && (
