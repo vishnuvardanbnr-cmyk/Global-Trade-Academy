@@ -24,6 +24,10 @@ args = "API Server"
 task = "workflow.run"
 args = "EDU Frontend"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "LiveKit Server"
+
 [[workflows.workflow]]
 name = "API Server"
 author = "agent"
@@ -47,6 +51,17 @@ waitForPort = 8080
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow]]
+name = "LiveKit Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash /home/runner/workspace/scripts/start-livekit.sh"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -86,6 +101,6 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-LIVEKIT_URL = "wss://meet-os2r8n29.livekit.cloud"
-LIVEKIT_API_KEY = "APIkj3QyQu2FZCB"
-LIVEKIT_API_SECRET = "WvxE6GaNOI8XIQ7WrlC8hEHr5oZyGUCyF1yYCJSIL7N"
+LIVEKIT_URL = "wss://86f74125-ed21-4245-ac5b-583ee5362d6c-00-39ka2etdtz4o2.sisko.replit.dev/livekit"
+LIVEKIT_API_KEY = "brightinsight"
+LIVEKIT_API_SECRET = "47cfbfbfc2ed74584dda955c9f743b63d4111c71b761f076848987b0d8b7e88b"
