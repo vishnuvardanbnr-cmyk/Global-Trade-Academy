@@ -150,8 +150,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <LineChart className="h-4 w-4 text-white" strokeWidth={2.5} />
           </div>
           <div className="leading-none">
-            <span className="font-bold text-foreground text-[15px] tracking-tight">EDU</span>
-            <span className="font-medium text-muted-foreground text-[15px] tracking-tight"> Trading</span>
+            <span className="font-bold text-foreground text-[15px] tracking-tight">Bright Insight</span>
           </div>
         </Link>
       </div>

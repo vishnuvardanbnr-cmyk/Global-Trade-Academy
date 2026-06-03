@@ -251,9 +251,9 @@ export default function Home() {
             <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
               <BarChart3 className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
             </div>
-            <span className="font-bold text-sm text-foreground">EDU Trading</span>
+            <span className="font-bold text-sm text-foreground">Bright Insight</span>
           </div>
-          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} EDU Trading Platform. All rights reserved.</p>
+          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Bright Insight. All rights reserved.</p>
           <div className="flex gap-5 text-sm text-muted-foreground">
             <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
             <a href="#" className="hover:text-foreground transition-colors">Terms</a>
