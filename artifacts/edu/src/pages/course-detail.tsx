@@ -579,10 +579,10 @@ export default function CourseDetail() {
       </div>
 
       {/* ── Two-column main area ──────────────────────────── */}
-      <div className="flex flex-col lg:grid lg:grid-cols-[1fr_360px] min-h-0">
+      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col lg:grid lg:grid-cols-[1fr_360px] gap-3 p-3">
 
         {/* LEFT: player + lesson content */}
-        <div className="flex flex-col min-w-0 border-r border-slate-100 bg-slate-950">
+        <div className="flex flex-col min-w-0 bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
 
           {/* Video player */}
           <div className="w-full">
@@ -720,7 +720,7 @@ export default function CourseDetail() {
         </div>
 
         {/* RIGHT: Sticky sidebar ──────────────────────────── */}
-        <div className="lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto flex flex-col bg-white border-l border-slate-100">
+        <div className="lg:sticky lg:top-0 lg:max-h-[calc(100vh-4.5rem)] lg:overflow-y-auto flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
 
           {/* Course thumbnail */}
           {course.thumbnailUrl && (
