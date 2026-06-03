@@ -17,4 +17,5 @@ export interface LiveClassInput {
   category?: string;
   maxAttendees?: number;
   thumbnailUrl?: string;
+  agenda?: string;
 }

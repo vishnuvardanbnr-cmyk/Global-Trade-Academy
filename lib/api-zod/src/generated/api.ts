@@ -480,6 +480,7 @@ export const ListLiveClassesResponseItem = zod.object({
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
   "maxAttendees": zod.number().nullish(),
+  "agenda": zod.string().nullish(),
   "registrationCount": zod.number().optional(),
   "thumbnailUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
@@ -502,7 +503,8 @@ export const CreateLiveClassBody = zod.object({
   "meetingUrl": zod.string().optional(),
   "category": zod.string().optional(),
   "maxAttendees": zod.number().optional(),
-  "thumbnailUrl": zod.string().optional()
+  "thumbnailUrl": zod.string().optional(),
+  "agenda": zod.string().optional()
 })
 
 
@@ -529,6 +531,7 @@ export const GetLiveClassResponse = zod.object({
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
   "maxAttendees": zod.number().nullish(),
+  "agenda": zod.string().nullish(),
   "registrationCount": zod.number().optional(),
   "thumbnailUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
@@ -552,7 +555,8 @@ export const UpdateLiveClassBody = zod.object({
   "meetingUrl": zod.string().optional(),
   "replayUrl": zod.string().optional(),
   "category": zod.string().optional(),
-  "maxAttendees": zod.number().optional()
+  "maxAttendees": zod.number().optional(),
+  "agenda": zod.string().optional()
 })
 
 export const UpdateLiveClassResponse = zod.object({
@@ -571,6 +575,7 @@ export const UpdateLiveClassResponse = zod.object({
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
   "maxAttendees": zod.number().nullish(),
+  "agenda": zod.string().nullish(),
   "registrationCount": zod.number().optional(),
   "thumbnailUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
@@ -616,6 +621,7 @@ export const StartLiveClassResponse = zod.object({
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
   "maxAttendees": zod.number().nullish(),
+  "agenda": zod.string().nullish(),
   "registrationCount": zod.number().optional(),
   "thumbnailUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
@@ -645,9 +651,221 @@ export const EndLiveClassResponse = zod.object({
   "replayUrl": zod.string().nullish(),
   "category": zod.string().nullish(),
   "maxAttendees": zod.number().nullish(),
+  "agenda": zod.string().nullish(),
   "registrationCount": zod.number().optional(),
   "thumbnailUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
+})
+
+
+/**
+ * @summary List messages for a live class
+ */
+export const ListLiveClassMessagesParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+export const ListLiveClassMessagesResponseItem = zod.object({
+  "id": zod.number(),
+  "classId": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "message": zod.string(),
+  "createdAt": zod.string()
+})
+export const ListLiveClassMessagesResponse = zod.array(ListLiveClassMessagesResponseItem)
+
+
+/**
+ * @summary Post a chat message
+ */
+export const CreateLiveClassMessageParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+
+
+
+export const CreateLiveClassMessageBody = zod.object({
+  "message": zod.string().min(1)
+})
+
+
+/**
+ * @summary List Q&A questions
+ */
+export const ListLiveClassQuestionsParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+export const ListLiveClassQuestionsResponseItem = zod.object({
+  "id": zod.number(),
+  "classId": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "question": zod.string(),
+  "isAnswered": zod.boolean(),
+  "isPinned": zod.boolean(),
+  "upvoteCount": zod.number(),
+  "answer": zod.string().nullish(),
+  "hasUpvoted": zod.boolean().optional(),
+  "createdAt": zod.string()
+})
+export const ListLiveClassQuestionsResponse = zod.array(ListLiveClassQuestionsResponseItem)
+
+
+/**
+ * @summary Ask a question
+ */
+export const CreateLiveClassQuestionParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+
+
+
+export const CreateLiveClassQuestionBody = zod.object({
+  "question": zod.string().min(1)
+})
+
+
+/**
+ * @summary Answer or pin a question (instructor only)
+ */
+export const UpdateLiveClassQuestionParams = zod.object({
+  "classId": zod.coerce.number(),
+  "questionId": zod.coerce.number()
+})
+
+export const UpdateLiveClassQuestionBody = zod.object({
+  "isAnswered": zod.boolean().optional(),
+  "isPinned": zod.boolean().optional(),
+  "answer": zod.string().optional()
+})
+
+export const UpdateLiveClassQuestionResponse = zod.object({
+  "id": zod.number(),
+  "classId": zod.number(),
+  "userId": zod.string(),
+  "userName": zod.string().nullish(),
+  "question": zod.string(),
+  "isAnswered": zod.boolean(),
+  "isPinned": zod.boolean(),
+  "upvoteCount": zod.number(),
+  "answer": zod.string().nullish(),
+  "hasUpvoted": zod.boolean().optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Toggle upvote on a question
+ */
+export const UpvoteLiveClassQuestionParams = zod.object({
+  "classId": zod.coerce.number(),
+  "questionId": zod.coerce.number()
+})
+
+export const UpvoteLiveClassQuestionResponse = zod.object({
+  "upvoted": zod.boolean().optional()
+})
+
+
+/**
+ * @summary List polls for a live class
+ */
+export const ListLiveClassPollsParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+export const ListLiveClassPollsResponseItem = zod.object({
+  "id": zod.number(),
+  "classId": zod.number(),
+  "question": zod.string(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "options": zod.array(zod.object({
+  "id": zod.number(),
+  "pollId": zod.number(),
+  "text": zod.string(),
+  "voteCount": zod.number()
+})),
+  "myVoteOptionId": zod.number().nullish()
+})
+export const ListLiveClassPollsResponse = zod.array(ListLiveClassPollsResponseItem)
+
+
+/**
+ * @summary Create a poll (instructor only)
+ */
+export const CreateLiveClassPollParams = zod.object({
+  "classId": zod.coerce.number()
+})
+
+
+export const createLiveClassPollBodyOptionsMin = 2;
+
+
+
+export const CreateLiveClassPollBody = zod.object({
+  "question": zod.string().min(1),
+  "options": zod.array(zod.string()).min(createLiveClassPollBodyOptionsMin)
+})
+
+
+/**
+ * @summary Open or close a poll (instructor only)
+ */
+export const UpdateLiveClassPollParams = zod.object({
+  "classId": zod.coerce.number(),
+  "pollId": zod.coerce.number()
+})
+
+export const UpdateLiveClassPollBody = zod.object({
+  "isActive": zod.boolean().optional()
+})
+
+export const UpdateLiveClassPollResponse = zod.object({
+  "id": zod.number(),
+  "classId": zod.number(),
+  "question": zod.string(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "options": zod.array(zod.object({
+  "id": zod.number(),
+  "pollId": zod.number(),
+  "text": zod.string(),
+  "voteCount": zod.number()
+})),
+  "myVoteOptionId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Vote on a poll option
+ */
+export const VoteLiveClassPollParams = zod.object({
+  "classId": zod.coerce.number(),
+  "pollId": zod.coerce.number()
+})
+
+export const VoteLiveClassPollBody = zod.object({
+  "optionId": zod.number()
+})
+
+export const VoteLiveClassPollResponse = zod.object({
+  "id": zod.number(),
+  "classId": zod.number(),
+  "question": zod.string(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "options": zod.array(zod.object({
+  "id": zod.number(),
+  "pollId": zod.number(),
+  "text": zod.string(),
+  "voteCount": zod.number()
+})),
+  "myVoteOptionId": zod.number().nullish()
 })
 
 

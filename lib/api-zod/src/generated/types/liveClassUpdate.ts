@@ -17,4 +17,5 @@ export interface LiveClassUpdate {
   replayUrl?: string;
   category?: string;
   maxAttendees?: number;
+  agenda?: string;
 }

@@ -13,8 +13,10 @@ import {
   useListBookmarks, useToggleBookmark, getListBookmarksQueryKey,
   getGetDashboardSummaryQueryKey,
   useGetLessonGate, getGetLessonGateQueryKey,
+  useListLiveClasses, useRegisterLiveClass, getListLiveClassesQueryKey,
   type QuizAttemptResult,
   type LessonGate,
+  type LiveClass,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +28,7 @@ import {
   StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
+  Radio, Calendar, ExternalLink,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -249,7 +252,174 @@ function VideoPlayer({
   );
 }
 
-type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews";
+/* ─── Live Sessions Tab ─────────────────────────────────────── */
+function LiveSessionsTab({ courseId }: { courseId: number }) {
+  const { toast } = useToast();
+  const { data: sessions = [], isLoading } = useListLiveClasses({ courseId }, {
+    query: { queryKey: getListLiveClassesQueryKey({ courseId }), refetchInterval: 30_000 },
+  });
+
+  const { mutate: register, isPending: registering } = useRegisterLiveClass({
+    mutation: {
+      onSuccess: () => toast({ title: "Registered for session!" }),
+      onError: () => toast({ title: "Could not register", variant: "destructive" }),
+    },
+  });
+
+  function formatSessionTime(d: string | Date) {
+    return new Date(d).toLocaleString("en-US", {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  }
+  function durStr(mins: number) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return h > 0 ? `${h}h ${m > 0 ? `${m}m` : ""}` : `${m}m`;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2].map((i) => (
+          <div key={i} className="h-24 bg-slate-100 rounded-xl animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  const allSessions = sessions as LiveClass[];
+  const liveSessions = allSessions.filter((s) => s.status === "live");
+  const upcoming = allSessions.filter((s) => s.status === "scheduled");
+  const past = allSessions.filter((s) => s.status === "completed");
+
+  if (allSessions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+        <Radio className="h-10 w-10 text-slate-300" />
+        <p className="text-slate-500 font-medium">No live sessions scheduled</p>
+        <p className="text-slate-400 text-[13px]">Check back later for upcoming live sessions.</p>
+      </div>
+    );
+  }
+
+  function SessionCard({ session }: { session: LiveClass }) {
+    const isLive = session.status === "live";
+    const isPast = session.status === "completed";
+    return (
+      <div className={cn(
+        "flex items-start gap-4 p-4 rounded-xl border transition-colors",
+        isLive ? "bg-red-50 border-red-200" : isPast ? "bg-slate-50 border-slate-200 opacity-70" : "bg-white border-slate-200 hover:border-blue-200",
+      )}>
+        <div className={cn(
+          "shrink-0 w-10 h-10 rounded-xl flex items-center justify-center mt-0.5",
+          isLive ? "bg-red-100 text-red-500" : isPast ? "bg-slate-200 text-slate-400" : "bg-blue-100 text-blue-500",
+        )}>
+          {isLive ? <Radio className="h-5 w-5 animate-pulse" /> : isPast ? <MonitorPlay className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2 justify-between">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-slate-800 text-[14px] leading-snug truncate">{session.title}</p>
+              {session.description && (
+                <p className="text-slate-500 text-[12px] mt-0.5 line-clamp-1">{session.description}</p>
+              )}
+            </div>
+            {isLive && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500 text-white text-[10.5px] font-bold uppercase shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                Live
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-[12px] text-slate-500">
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+              {formatSessionTime(session.scheduledAt)}
+            </span>
+            {session.duration && (
+              <span className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5 text-slate-400" />
+                {durStr(session.duration)}
+              </span>
+            )}
+            <span className="flex items-center gap-1">
+              <Users className="h-3.5 w-3.5 text-slate-400" />
+              {session.registrationCount} registered
+            </span>
+          </div>
+          {session.agenda && (
+            <p className="text-[11.5px] text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">{session.agenda}</p>
+          )}
+          <div className="flex items-center gap-2 mt-3">
+            {isLive ? (
+              <Link href={`/live/${session.id}/room`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[12.5px] font-bold transition-colors">
+                <Play className="h-3.5 w-3.5" />
+                Join Now
+              </Link>
+            ) : isPast ? (
+              session.replayUrl ? (
+                <a href={session.replayUrl} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[12.5px] font-bold transition-colors">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Watch Replay
+                </a>
+              ) : (
+                <span className="text-[12px] text-slate-400">Session ended</span>
+              )
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link href={`/live/${session.id}/room`}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors">
+                  <Video className="h-3.5 w-3.5" />
+                  Open Room
+                </Link>
+                <button onClick={() => register({ classId: session.id })} disabled={registering}
+                  className="px-3 py-2 rounded-lg text-[12px] font-semibold border border-slate-200 text-slate-600 hover:border-blue-200 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                  <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />Register</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {liveSessions.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-bold text-slate-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            Happening Now
+          </h3>
+          <div className="space-y-3">
+            {liveSessions.map((s) => <SessionCard key={s.id} session={s} />)}
+          </div>
+        </section>
+      )}
+      {upcoming.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-bold text-slate-700 uppercase tracking-wide mb-3">Upcoming Sessions</h3>
+          <div className="space-y-3">
+            {upcoming.map((s) => <SessionCard key={s.id} session={s} />)}
+          </div>
+        </section>
+      )}
+      {past.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wide mb-3">Past Sessions</h3>
+          <div className="space-y-3">
+            {past.map((s) => <SessionCard key={s.id} session={s} />)}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews" | "live";
 
 export default function CourseDetail() {
   const [, params] = useRoute<{ id: string }>("/courses/:id");
@@ -504,6 +674,7 @@ export default function CourseDetail() {
               { k: "tasks", label: "Tasks", Icon: ListTodo },
               { k: "notes", label: "Notes", Icon: StickyNote },
               { k: "reviews", label: "Reviews", Icon: Star },
+              { k: "live", label: "Live", Icon: Radio },
             ].map(({ k, label, Icon }) => (
               <button key={k} onClick={() => setTab(k as Tab)}
                 className={cn(
@@ -537,6 +708,7 @@ export default function CourseDetail() {
             {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} />}
             {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
             {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
+            {tab === "live" && <LiveSessionsTab courseId={courseId} />}
           </div>
         </div>
 

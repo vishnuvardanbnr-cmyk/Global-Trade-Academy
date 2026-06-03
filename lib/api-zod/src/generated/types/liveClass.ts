@@ -32,6 +32,8 @@ export interface LiveClass {
   category?: string | null;
   /** @nullable */
   maxAttendees?: number | null;
+  /** @nullable */
+  agenda?: string | null;
   registrationCount?: number;
   /** @nullable */
   thumbnailUrl?: string | null;

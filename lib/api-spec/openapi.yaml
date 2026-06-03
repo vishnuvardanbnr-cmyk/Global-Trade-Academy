@@ -586,6 +586,254 @@ paths:
               schema:
                 $ref: "#/components/schemas/LiveClass"
 
+  /live-classes/{classId}/messages:
+    get:
+      operationId: listLiveClassMessages
+      tags: [liveClasses]
+      summary: List messages for a live class
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LiveClassMessage"
+    post:
+      operationId: createLiveClassMessage
+      tags: [liveClasses]
+      summary: Post a chat message
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassMessageInput"
+      responses:
+        "201":
+          description: Created message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassMessage"
+
+  /live-classes/{classId}/questions:
+    get:
+      operationId: listLiveClassQuestions
+      tags: [liveClasses]
+      summary: List Q&A questions
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Questions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LiveClassQuestion"
+    post:
+      operationId: createLiveClassQuestion
+      tags: [liveClasses]
+      summary: Ask a question
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassQuestionInput"
+      responses:
+        "201":
+          description: Created question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassQuestion"
+
+  /live-classes/{classId}/questions/{questionId}:
+    patch:
+      operationId: updateLiveClassQuestion
+      tags: [liveClasses]
+      summary: Answer or pin a question (instructor only)
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassQuestionUpdate"
+      responses:
+        "200":
+          description: Updated question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassQuestion"
+
+  /live-classes/{classId}/questions/{questionId}/upvote:
+    post:
+      operationId: upvoteLiveClassQuestion
+      tags: [liveClasses]
+      summary: Toggle upvote on a question
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Upvote toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upvoted: { type: boolean }
+
+  /live-classes/{classId}/polls:
+    get:
+      operationId: listLiveClassPolls
+      tags: [liveClasses]
+      summary: List polls for a live class
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Polls
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LiveClassPoll"
+    post:
+      operationId: createLiveClassPoll
+      tags: [liveClasses]
+      summary: Create a poll (instructor only)
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassPollInput"
+      responses:
+        "201":
+          description: Created poll
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassPoll"
+
+  /live-classes/{classId}/polls/{pollId}:
+    patch:
+      operationId: updateLiveClassPoll
+      tags: [liveClasses]
+      summary: Open or close a poll (instructor only)
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: pollId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassPollToggle"
+      responses:
+        "200":
+          description: Updated poll
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassPoll"
+
+  /live-classes/{classId}/polls/{pollId}/vote:
+    post:
+      operationId: voteLiveClassPoll
+      tags: [liveClasses]
+      summary: Vote on a poll option
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: pollId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveClassVoteInput"
+      responses:
+        "200":
+          description: Poll after vote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveClassPoll"
+
   # ── ATTENDANCE ─────────────────────────────────────────────────────────────
   /attendance:
     get:
@@ -1832,6 +2080,7 @@ components:
         replayUrl: { type: ["string", "null"] }
         category: { type: ["string", "null"] }
         maxAttendees: { type: ["integer", "null"] }
+        agenda: { type: ["string", "null"] }
         registrationCount: { type: integer }
         thumbnailUrl: { type: ["string", "null"] }
         createdAt: { type: string }
@@ -1849,6 +2098,7 @@ components:
         category: { type: string }
         maxAttendees: { type: integer }
         thumbnailUrl: { type: string }
+        agenda: { type: string }
 
     LiveClassUpdate:
       type: object
@@ -1863,6 +2113,7 @@ components:
         replayUrl: { type: string }
         category: { type: string }
         maxAttendees: { type: integer }
+        agenda: { type: string }
 
     LiveClassRegistration:
       type: object
@@ -1871,6 +2122,97 @@ components:
         classId: { type: integer }
         userId: { type: string }
         registeredAt: { type: string }
+
+    LiveClassMessage:
+      type: object
+      required: [id, classId, userId, message, createdAt]
+      properties:
+        id: { type: integer }
+        classId: { type: integer }
+        userId: { type: string }
+        userName: { type: ["string", "null"] }
+        message: { type: string }
+        createdAt: { type: string }
+
+    LiveClassMessageInput:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1 }
+
+    LiveClassQuestion:
+      type: object
+      required: [id, classId, userId, question, isAnswered, isPinned, upvoteCount, createdAt]
+      properties:
+        id: { type: integer }
+        classId: { type: integer }
+        userId: { type: string }
+        userName: { type: ["string", "null"] }
+        question: { type: string }
+        isAnswered: { type: boolean }
+        isPinned: { type: boolean }
+        upvoteCount: { type: integer }
+        answer: { type: ["string", "null"] }
+        hasUpvoted: { type: boolean }
+        createdAt: { type: string }
+
+    LiveClassQuestionInput:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, minLength: 1 }
+
+    LiveClassQuestionUpdate:
+      type: object
+      properties:
+        isAnswered: { type: boolean }
+        isPinned: { type: boolean }
+        answer: { type: string }
+
+    LiveClassPollOption:
+      type: object
+      required: [id, pollId, text, voteCount]
+      properties:
+        id: { type: integer }
+        pollId: { type: integer }
+        text: { type: string }
+        voteCount: { type: integer }
+
+    LiveClassPoll:
+      type: object
+      required: [id, classId, question, isActive, createdAt, options]
+      properties:
+        id: { type: integer }
+        classId: { type: integer }
+        question: { type: string }
+        isActive: { type: boolean }
+        createdAt: { type: string }
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveClassPollOption"
+        myVoteOptionId: { type: ["integer", "null"] }
+
+    LiveClassPollInput:
+      type: object
+      required: [question, options]
+      properties:
+        question: { type: string, minLength: 1 }
+        options:
+          type: array
+          items: { type: string }
+          minItems: 2
+
+    LiveClassPollToggle:
+      type: object
+      properties:
+        isActive: { type: boolean }
+
+    LiveClassVoteInput:
+      type: object
+      required: [optionId]
+      properties:
+        optionId: { type: integer }
 
     Attendance:
       type: object

@@ -239,6 +239,8 @@ export interface LiveClass {
   category?: string | null;
   /** @nullable */
   maxAttendees?: number | null;
+  /** @nullable */
+  agenda?: string | null;
   registrationCount?: number;
   /** @nullable */
   thumbnailUrl?: string | null;
@@ -256,6 +258,7 @@ export interface LiveClassInput {
   category?: string;
   maxAttendees?: number;
   thumbnailUrl?: string;
+  agenda?: string;
 }
 
 export interface LiveClassUpdate {
@@ -269,12 +272,88 @@ export interface LiveClassUpdate {
   replayUrl?: string;
   category?: string;
   maxAttendees?: number;
+  agenda?: string;
 }
 
 export interface LiveClassRegistration {
   classId: number;
   userId: string;
   registeredAt?: string;
+}
+
+export interface LiveClassMessage {
+  id: number;
+  classId: number;
+  userId: string;
+  /** @nullable */
+  userName?: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface LiveClassMessageInput {
+  /** @minLength 1 */
+  message: string;
+}
+
+export interface LiveClassQuestion {
+  id: number;
+  classId: number;
+  userId: string;
+  /** @nullable */
+  userName?: string | null;
+  question: string;
+  isAnswered: boolean;
+  isPinned: boolean;
+  upvoteCount: number;
+  /** @nullable */
+  answer?: string | null;
+  hasUpvoted?: boolean;
+  createdAt: string;
+}
+
+export interface LiveClassQuestionInput {
+  /** @minLength 1 */
+  question: string;
+}
+
+export interface LiveClassQuestionUpdate {
+  isAnswered?: boolean;
+  isPinned?: boolean;
+  answer?: string;
+}
+
+export interface LiveClassPollOption {
+  id: number;
+  pollId: number;
+  text: string;
+  voteCount: number;
+}
+
+export interface LiveClassPoll {
+  id: number;
+  classId: number;
+  question: string;
+  isActive: boolean;
+  createdAt: string;
+  options: LiveClassPollOption[];
+  /** @nullable */
+  myVoteOptionId?: number | null;
+}
+
+export interface LiveClassPollInput {
+  /** @minLength 1 */
+  question: string;
+  /** @minItems 2 */
+  options: string[];
+}
+
+export interface LiveClassPollToggle {
+  isActive?: boolean;
+}
+
+export interface LiveClassVoteInput {
+  optionId: number;
 }
 
 export interface Attendance {
@@ -817,6 +896,10 @@ export type ListLiveClassesParams = {
 upcoming?: boolean;
 instructorId?: string;
 courseId?: number;
+};
+
+export type UpvoteLiveClassQuestion200 = {
+  upvoted?: boolean;
 };
 
 export type ListAttendanceParams = {

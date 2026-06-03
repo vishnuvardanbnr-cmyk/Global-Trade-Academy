@@ -1,8 +1,13 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
-import { liveClassesTable, liveClassRegistrationsTable, usersTable, coursesTable } from "@workspace/db";
-import { eq, and, gte, sql } from "drizzle-orm";
+import {
+  liveClassesTable, liveClassRegistrationsTable,
+  liveClassMessagesTable, liveClassQuestionsTable, liveClassQuestionUpvotesTable,
+  liveClassPollsTable, liveClassPollOptionsTable, liveClassPollVotesTable,
+  usersTable, coursesTable,
+} from "@workspace/db";
+import { eq, and, gte, sql, desc, gt } from "drizzle-orm";
 
 const router = Router();
 
@@ -36,6 +41,7 @@ async function buildClassResponse(cls: typeof liveClassesTable.$inferSelect) {
     replayUrl: cls.replayUrl,
     category: cls.category,
     maxAttendees: cls.maxAttendees,
+    agenda: cls.agenda ?? null,
     registrationCount: regCount[0]?.count ?? 0,
     thumbnailUrl: cls.thumbnailUrl,
     createdAt: cls.createdAt,
@@ -67,12 +73,12 @@ router.post("/live-classes", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { title, description, scheduledAt, duration, meetingUrl, category, maxAttendees, thumbnailUrl, courseId } = req.body;
+    const { title, description, scheduledAt, duration, meetingUrl, category, maxAttendees, thumbnailUrl, courseId, agenda } = req.body;
     if (!title || !scheduledAt) { res.status(400).json({ error: "title and scheduledAt required" }); return; }
 
     const inserted = await db.insert(liveClassesTable).values({
       title, description, instructorId: clerkId,
-      scheduledAt: new Date(scheduledAt), duration, meetingUrl, category, maxAttendees, thumbnailUrl,
+      scheduledAt: new Date(scheduledAt), duration, meetingUrl, category, maxAttendees, thumbnailUrl, agenda,
       courseId: courseId ? parseInt(courseId) : null,
       roomName: generateRoomName(),
       status: "scheduled",
@@ -104,7 +110,7 @@ router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.classId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { title, description, scheduledAt, duration, status, meetingUrl, replayUrl, category, maxAttendees, courseId } = req.body;
+    const { title, description, scheduledAt, duration, status, meetingUrl, replayUrl, category, maxAttendees, courseId, agenda } = req.body;
     const updated = await db.update(liveClassesTable).set({
       ...(title !== undefined && { title }),
       ...(description !== undefined && { description }),
@@ -116,6 +122,7 @@ router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
       ...(category !== undefined && { category }),
       ...(maxAttendees !== undefined && { maxAttendees }),
       ...(courseId !== undefined && { courseId: courseId ? parseInt(courseId) : null }),
+      ...(agenda !== undefined && { agenda }),
     }).where(eq(liveClassesTable.id, id)).returning();
     if (!updated[0]) { res.status(404).json({ error: "Live class not found" }); return; }
     res.json(await buildClassResponse(updated[0]));
@@ -210,6 +217,240 @@ router.post("/live-classes/:classId/end", async (req, res): Promise<void> => {
     res.json(await buildClassResponse(updated[0]));
   } catch (err) {
     req.log.error({ err }, "Error ending live class");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── MESSAGES ──────────────────────────────────────────────────────────────
+
+// GET /api/live-classes/:classId/messages?since=<iso>
+router.get("/live-classes/:classId/messages", async (req, res): Promise<void> => {
+  try {
+    const classId = parseInt(req.params.classId);
+    if (isNaN(classId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { since } = req.query as Record<string, string>;
+    let baseQuery = db.select().from(liveClassMessagesTable).$dynamic();
+    if (since) {
+      baseQuery = baseQuery.where(and(eq(liveClassMessagesTable.classId, classId), gt(liveClassMessagesTable.createdAt, new Date(since))));
+    } else {
+      baseQuery = baseQuery.where(eq(liveClassMessagesTable.classId, classId));
+    }
+    const messages = await baseQuery.orderBy(liveClassMessagesTable.createdAt).limit(200);
+    res.json(messages);
+  } catch (err) {
+    req.log.error({ err }, "Error listing messages");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/live-classes/:classId/messages
+router.post("/live-classes/:classId/messages", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    if (isNaN(classId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { message } = req.body;
+    if (!message?.trim()) { res.status(400).json({ error: "message required" }); return; }
+    const user = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    const inserted = await db.insert(liveClassMessagesTable).values({
+      classId, userId: clerkId, userName: user?.displayName ?? null, message: message.trim(),
+    }).returning();
+    res.status(201).json(inserted[0]);
+  } catch (err) {
+    req.log.error({ err }, "Error creating message");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── QUESTIONS ─────────────────────────────────────────────────────────────
+
+// GET /api/live-classes/:classId/questions
+router.get("/live-classes/:classId/questions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    const classId = parseInt(req.params.classId);
+    if (isNaN(classId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const questions = await db.select().from(liveClassQuestionsTable)
+      .where(eq(liveClassQuestionsTable.classId, classId))
+      .orderBy(desc(liveClassQuestionsTable.isPinned), desc(liveClassQuestionsTable.upvoteCount), desc(liveClassQuestionsTable.createdAt))
+      .limit(100);
+    let upvotedIds: Set<number> = new Set();
+    if (clerkId) {
+      const upvotes = await db.select({ questionId: liveClassQuestionUpvotesTable.questionId })
+        .from(liveClassQuestionUpvotesTable).where(eq(liveClassQuestionUpvotesTable.userId, clerkId));
+      upvotedIds = new Set(upvotes.map((u) => u.questionId));
+    }
+    res.json(questions.map((q) => ({ ...q, hasUpvoted: upvotedIds.has(q.id) })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing questions");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/live-classes/:classId/questions
+router.post("/live-classes/:classId/questions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    if (isNaN(classId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { question } = req.body;
+    if (!question?.trim()) { res.status(400).json({ error: "question required" }); return; }
+    const user = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    const inserted = await db.insert(liveClassQuestionsTable).values({
+      classId, userId: clerkId, userName: user?.displayName ?? null, question: question.trim(),
+    }).returning();
+    res.status(201).json({ ...inserted[0], hasUpvoted: false });
+  } catch (err) {
+    req.log.error({ err }, "Error creating question");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/live-classes/:classId/questions/:questionId (instructor: answer/pin)
+router.patch("/live-classes/:classId/questions/:questionId", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    const questionId = parseInt(req.params.questionId);
+    if (isNaN(classId) || isNaN(questionId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const cls = await db.select({ instructorId: liveClassesTable.instructorId }).from(liveClassesTable).where(eq(liveClassesTable.id, classId)).limit(1).then((r) => r[0]);
+    if (!cls || cls.instructorId !== clerkId) { res.status(403).json({ error: "Instructor only" }); return; }
+    const { isAnswered, isPinned, answer } = req.body;
+    const updated = await db.update(liveClassQuestionsTable).set({
+      ...(isAnswered !== undefined && { isAnswered }),
+      ...(isPinned !== undefined && { isPinned }),
+      ...(answer !== undefined && { answer, isAnswered: true }),
+    }).where(and(eq(liveClassQuestionsTable.id, questionId), eq(liveClassQuestionsTable.classId, classId))).returning();
+    if (!updated[0]) { res.status(404).json({ error: "Question not found" }); return; }
+    res.json({ ...updated[0], hasUpvoted: false });
+  } catch (err) {
+    req.log.error({ err }, "Error updating question");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/live-classes/:classId/questions/:questionId/upvote
+router.post("/live-classes/:classId/questions/:questionId/upvote", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    const questionId = parseInt(req.params.questionId);
+    if (isNaN(classId) || isNaN(questionId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const existing = await db.select().from(liveClassQuestionUpvotesTable)
+      .where(and(eq(liveClassQuestionUpvotesTable.questionId, questionId), eq(liveClassQuestionUpvotesTable.userId, clerkId)))
+      .limit(1).then((r) => r[0]);
+    if (existing) {
+      await db.delete(liveClassQuestionUpvotesTable).where(and(eq(liveClassQuestionUpvotesTable.questionId, questionId), eq(liveClassQuestionUpvotesTable.userId, clerkId)));
+      await db.update(liveClassQuestionsTable).set({ upvoteCount: sql`greatest(0, ${liveClassQuestionsTable.upvoteCount} - 1)` }).where(eq(liveClassQuestionsTable.id, questionId));
+      res.json({ upvoted: false });
+    } else {
+      await db.insert(liveClassQuestionUpvotesTable).values({ questionId, userId: clerkId });
+      await db.update(liveClassQuestionsTable).set({ upvoteCount: sql`${liveClassQuestionsTable.upvoteCount} + 1` }).where(eq(liveClassQuestionsTable.id, questionId));
+      res.json({ upvoted: true });
+    }
+  } catch (err) {
+    req.log.error({ err }, "Error upvoting question");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POLLS ─────────────────────────────────────────────────────────────────
+
+// GET /api/live-classes/:classId/polls
+router.get("/live-classes/:classId/polls", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    const classId = parseInt(req.params.classId);
+    if (isNaN(classId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const polls = await db.select().from(liveClassPollsTable).where(eq(liveClassPollsTable.classId, classId)).orderBy(desc(liveClassPollsTable.createdAt)).limit(20);
+    let votedMap: Map<number, number> = new Map();
+    if (clerkId) {
+      const votes = await db.select({ pollId: liveClassPollVotesTable.pollId, optionId: liveClassPollVotesTable.optionId })
+        .from(liveClassPollVotesTable).where(eq(liveClassPollVotesTable.userId, clerkId));
+      votes.forEach((v) => votedMap.set(v.pollId, v.optionId));
+    }
+    const result = await Promise.all(polls.map(async (poll) => {
+      const options = await db.select().from(liveClassPollOptionsTable).where(eq(liveClassPollOptionsTable.pollId, poll.id));
+      return { ...poll, options, myVoteOptionId: votedMap.get(poll.id) ?? null };
+    }));
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error listing polls");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/live-classes/:classId/polls (instructor only)
+router.post("/live-classes/:classId/polls", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    if (isNaN(classId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const cls = await db.select({ instructorId: liveClassesTable.instructorId }).from(liveClassesTable).where(eq(liveClassesTable.id, classId)).limit(1).then((r) => r[0]);
+    if (!cls || cls.instructorId !== clerkId) { res.status(403).json({ error: "Instructor only" }); return; }
+    const { question, options } = req.body as { question: string; options: string[] };
+    if (!question?.trim() || !Array.isArray(options) || options.length < 2) { res.status(400).json({ error: "question and at least 2 options required" }); return; }
+    await db.update(liveClassPollsTable).set({ isActive: false }).where(eq(liveClassPollsTable.classId, classId));
+    const poll = await db.insert(liveClassPollsTable).values({ classId, question: question.trim(), isActive: true }).returning().then((r) => r[0]);
+    const opts = await db.insert(liveClassPollOptionsTable).values(options.map((text) => ({ pollId: poll.id, text: text.trim() }))).returning();
+    res.status(201).json({ ...poll, options: opts, myVoteOptionId: null });
+  } catch (err) {
+    req.log.error({ err }, "Error creating poll");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/live-classes/:classId/polls/:pollId (instructor: open/close)
+router.patch("/live-classes/:classId/polls/:pollId", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    const pollId = parseInt(req.params.pollId);
+    if (isNaN(classId) || isNaN(pollId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const cls = await db.select({ instructorId: liveClassesTable.instructorId }).from(liveClassesTable).where(eq(liveClassesTable.id, classId)).limit(1).then((r) => r[0]);
+    if (!cls || cls.instructorId !== clerkId) { res.status(403).json({ error: "Instructor only" }); return; }
+    const { isActive } = req.body;
+    const updated = await db.update(liveClassPollsTable).set({ isActive: !!isActive }).where(and(eq(liveClassPollsTable.id, pollId), eq(liveClassPollsTable.classId, classId))).returning().then((r) => r[0]);
+    if (!updated) { res.status(404).json({ error: "Poll not found" }); return; }
+    const options = await db.select().from(liveClassPollOptionsTable).where(eq(liveClassPollOptionsTable.pollId, pollId));
+    res.json({ ...updated, options, myVoteOptionId: null });
+  } catch (err) {
+    req.log.error({ err }, "Error updating poll");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/live-classes/:classId/polls/:pollId/vote
+router.post("/live-classes/:classId/polls/:pollId/vote", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const classId = parseInt(req.params.classId);
+    const pollId = parseInt(req.params.pollId);
+    if (isNaN(classId) || isNaN(pollId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { optionId } = req.body as { optionId: number };
+    if (!optionId) { res.status(400).json({ error: "optionId required" }); return; }
+    const poll = await db.select().from(liveClassPollsTable).where(and(eq(liveClassPollsTable.id, pollId), eq(liveClassPollsTable.classId, classId))).limit(1).then((r) => r[0]);
+    if (!poll) { res.status(404).json({ error: "Poll not found" }); return; }
+    if (!poll.isActive) { res.status(400).json({ error: "Poll is closed" }); return; }
+    const existing = await db.select().from(liveClassPollVotesTable).where(and(eq(liveClassPollVotesTable.pollId, pollId), eq(liveClassPollVotesTable.userId, clerkId))).limit(1).then((r) => r[0]);
+    if (existing) {
+      await db.update(liveClassPollOptionsTable).set({ voteCount: sql`greatest(0, ${liveClassPollOptionsTable.voteCount} - 1)` }).where(eq(liveClassPollOptionsTable.id, existing.optionId));
+      await db.update(liveClassPollVotesTable).set({ optionId }).where(and(eq(liveClassPollVotesTable.pollId, pollId), eq(liveClassPollVotesTable.userId, clerkId)));
+    } else {
+      await db.insert(liveClassPollVotesTable).values({ pollId, optionId, userId: clerkId });
+    }
+    await db.update(liveClassPollOptionsTable).set({ voteCount: sql`${liveClassPollOptionsTable.voteCount} + 1` }).where(eq(liveClassPollOptionsTable.id, optionId));
+    const options = await db.select().from(liveClassPollOptionsTable).where(eq(liveClassPollOptionsTable.pollId, pollId));
+    res.json({ ...poll, options, myVoteOptionId: optionId });
+  } catch (err) {
+    req.log.error({ err }, "Error voting on poll");
     res.status(500).json({ error: "Internal server error" });
   }
 });
