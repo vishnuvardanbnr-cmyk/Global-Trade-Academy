@@ -610,8 +610,8 @@ export default function CourseDetail() {
             </div>
           )}
 
-          {/* Lesson header — white card */}
-          <div className="bg-white border-b border-slate-100 shrink-0">
+          {/* Lesson header — white card (hidden; tabs moved to floating pill) */}
+          <div className="hidden bg-white border-b border-slate-100 shrink-0">
             {/* Top meta row */}
             <div className="hidden flex items-center justify-between gap-3 px-6 pt-5 pb-3">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
@@ -714,7 +714,7 @@ export default function CourseDetail() {
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 bg-white p-6 pb-12">
+          <div className="flex-1 bg-white p-6 pb-24">
             {tab === "overview" && (
               <OverviewTab
                 cur={cur} chIdx={chIdx} totalL={totalL}
@@ -931,6 +931,44 @@ export default function CourseDetail() {
         </div>
         )}
       </div>
+
+    {/* ── Floating bottom tab bar ──────────────────────────────── */}
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+      <div className="flex items-center gap-0.5 bg-slate-900/96 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-2xl ring-1 ring-white/10 pointer-events-auto">
+        {[
+          { k: "overview" as Tab, label: "Overview", Icon: BookOpen },
+          { k: "quiz"     as Tab, label: "Quizzes",  Icon: FileQuestion },
+          { k: "tasks"    as Tab, label: "Tasks",    Icon: ListTodo },
+          { k: "notes"    as Tab, label: "Notes",    Icon: StickyNote },
+          { k: "reviews"  as Tab, label: "Reviews",  Icon: Star },
+          { k: "live"     as Tab, label: "Live",     Icon: Radio },
+        ].map(({ k, label, Icon }) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={cn(
+              "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
+              tab === k
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-white/10",
+            )}>
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+            {k === "quiz" && gate && (gate.status === "awaiting_quiz" || gate.status === "rejected") && (
+              <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            )}
+          </button>
+        ))}
+        <div className="w-px h-5 bg-white/20 mx-1 shrink-0" />
+        <button
+          onClick={() => setShowPanel(p => !p)}
+          className={cn(
+            "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
+            showPanel ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/10",
+          )}>
+          <PanelRight className="h-3.5 w-3.5" />
+          Course
+        </button>
+      </div>
+    </div>
     </div>
   );
 }
