@@ -581,10 +581,10 @@ export default function CourseDetail() {
       </div>
 
       {/* ── Two-column main area ──────────────────────────── */}
-      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col p-3 relative">
+      <div className="flex-1 min-h-0 bg-slate-100 flex flex-row gap-3 p-3">
 
-        {/* LEFT: player + lesson content */}
-        <div className="flex flex-col min-w-0 bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
+        {/* LEFT: player — takes remaining space */}
+        <div className="flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
 
           {/* Video player */}
           <div className="w-full">
@@ -718,7 +718,7 @@ export default function CourseDetail() {
 
         {/* RIGHT: Course panel (drawer) ──────────────────────────── */}
         {showPanel && (
-        <div className="fixed right-0 top-[41px] bottom-0 w-[200px] flex flex-col bg-white shadow-[-8px_0_32px_rgba(0,0,0,0.12)] border-l border-slate-200 overflow-hidden z-40">
+        <div className="w-[300px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
           <button
             onClick={() => setShowPanel(false)}
             className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-lg bg-white/95 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors border border-slate-200/60"
@@ -914,10 +914,10 @@ export default function CourseDetail() {
         </div>
         )}
 
-        {/* ── Tab content panel (right drawer) ──────────────────── */}
+        {/* RIGHT: Tab content panel */}
         {showTabPanel && (
-          <div className="fixed right-0 top-[41px] bottom-0 w-[200px] flex flex-col bg-white shadow-[-8px_0_32px_rgba(0,0,0,0.12)] border-l border-slate-200 overflow-hidden z-40">
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 shrink-0 bg-white">
+          <div className="w-[300px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
                 {tab === "quiz" ? "Quizzes"
                   : tab === "live" ? "Live Sessions"
