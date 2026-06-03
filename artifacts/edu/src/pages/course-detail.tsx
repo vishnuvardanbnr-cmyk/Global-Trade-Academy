@@ -445,6 +445,7 @@ export default function CourseDetail() {
   const [tab, setTab] = useState<Tab>("overview");
   const [showTabPanel, setShowTabPanel] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [learningStarted, setLearningStarted] = useState(false);
   const [expanded, setExpanded] = useState<number>(1);
 
   const dbLessons = (lessons ?? []) as DbLesson[];
@@ -721,8 +722,8 @@ export default function CourseDetail() {
             </button>
           </div>
 
-          {/* Course thumbnail */}
-          {course.thumbnailUrl && (
+          {/* Course thumbnail — hidden once learning starts */}
+          {course.thumbnailUrl && !learningStarted && (
             <div className="relative shrink-0 overflow-hidden h-44">
               <img
                 src={course.thumbnailUrl}
@@ -750,7 +751,7 @@ export default function CourseDetail() {
                 {/* Start / Continue Learning button */}
                 {!progress?.courseCompleted && (
                   <button
-                    onClick={() => setActiveIdx(firstUncompletedIdx)}
+                    onClick={() => { setActiveIdx(firstUncompletedIdx); setLearningStarted(true); }}
                     className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.98] flex items-center justify-center gap-2"
                   >
                     <Play className="h-4 w-4 fill-white" />
