@@ -24,17 +24,27 @@ import { useForm } from "react-hook-form";
 import {
   Plus, BookOpen, Video, Users, Trash2, Settings2,
   ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  FileQuestion, Clock, BarChart3,
+  FileQuestion, Clock, BarChart3, Pencil, ImageIcon,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
+
+function ThumbnailPreview({ url }: { url: string }) {
+  if (!url) return null;
+  return (
+    <div className="mt-2 rounded-lg overflow-hidden border border-slate-200 aspect-video bg-slate-100 relative">
+      <img src={url} alt="Thumbnail preview" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+    </div>
+  );
+}
 
 function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const form = useForm({
-    defaultValues: { title: "", description: "", category: "forex", level: "beginner", price: undefined as number | undefined },
+    defaultValues: { title: "", description: "", category: "forex", level: "beginner", price: undefined as number | undefined, thumbnailUrl: "" },
   });
+  const thumbnailUrl = form.watch("thumbnailUrl");
   const create = useCreateCourse({
     mutation: {
       onSuccess: () => { setOpen(false); form.reset(); onSuccess(); toast({ title: "Course created" }); },
@@ -46,15 +56,24 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
       <DialogTrigger asChild>
         <Button data-testid="button-create-course"><Plus className="h-4 w-4 mr-2" />Create Course</Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>New Course</DialogTitle></DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((d) => create.mutate({ data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price } }))} className="space-y-4">
+          <form onSubmit={form.handleSubmit((d) => create.mutate({ data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
             <FormField control={form.control} name="title" rules={{ required: true }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input data-testid="input-course-title" {...field} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={form.control} name="description" render={({ field }) => (
               <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea data-testid="input-course-description" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="thumbnailUrl" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Thumbnail Image URL</FormLabel>
+                <FormControl><Input placeholder="https://example.com/image.jpg" {...field} /></FormControl>
+                <p className="text-[11.5px] text-muted-foreground">Paste a direct image URL — shown on the course card and detail page.</p>
+                <FormMessage />
+                {thumbnailUrl && <ThumbnailPreview url={thumbnailUrl} />}
+              </FormItem>
             )} />
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="category" render={({ field }) => (
@@ -83,6 +102,94 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
             )} />
             <Button type="submit" className="w-full" data-testid="button-submit-course" disabled={create.isPending}>
               {create.isPending ? "Creating..." : "Create Course"}
+            </Button>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditCourseDialog({ course, onSuccess }: {
+  course: { id: number; title: string; description?: string | null; category?: string | null; level?: string | null; price?: string | null; thumbnailUrl?: string | null };
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const form = useForm({
+    defaultValues: {
+      title: course.title,
+      description: course.description ?? "",
+      category: course.category ?? "forex",
+      level: course.level ?? "beginner",
+      price: course.price ? parseFloat(course.price) : undefined as number | undefined,
+      thumbnailUrl: course.thumbnailUrl ?? "",
+    },
+  });
+  const thumbnailUrl = form.watch("thumbnailUrl");
+  const update = useUpdateCourse({
+    mutation: {
+      onSuccess: () => { setOpen(false); onSuccess(); toast({ title: "Course updated" }); },
+      onError: () => toast({ title: "Failed to update course", variant: "destructive" }),
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => {
+      setOpen(v);
+      if (v) form.reset({ title: course.title, description: course.description ?? "", category: course.category ?? "forex", level: course.level ?? "beginner", price: course.price ? parseFloat(course.price) : undefined, thumbnailUrl: course.thumbnailUrl ?? "" });
+    }}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" data-testid={`button-edit-course-${course.id}`}>
+          <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Edit Course</DialogTitle></DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((d) => update.mutate({ courseId: course.id, data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
+            <FormField control={form.control} name="title" rules={{ required: true }} render={({ field }) => (
+              <FormItem><FormLabel>Title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="thumbnailUrl" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Thumbnail Image URL</FormLabel>
+                <FormControl><Input placeholder="https://example.com/image.jpg" {...field} /></FormControl>
+                <p className="text-[11.5px] text-muted-foreground">Paste a direct image URL — shown on the course card and detail page.</p>
+                <FormMessage />
+                {thumbnailUrl && <ThumbnailPreview url={thumbnailUrl} />}
+              </FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="category" render={({ field }) => (
+                <FormItem><FormLabel>Category</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {["forex","crypto","futures","options","stocks"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="level" render={({ field }) => (
+                <FormItem><FormLabel>Level</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {["beginner","intermediate","advanced"].map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name="price" render={({ field }) => (
+              <FormItem><FormLabel>Price (USD, leave blank for free)</FormLabel><FormControl><Input type="number" min="0" step="0.01" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <Button type="submit" className="w-full" disabled={update.isPending}>
+              {update.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </form>
         </Form>
@@ -550,7 +657,7 @@ export default function InstructorPanel() {
                     <p>{course.enrollmentCount} students</p>
                     <p>{course.lessonCount} lessons</p>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex gap-2 shrink-0 flex-wrap">
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button size="sm" variant="outline" data-testid={`button-manage-course-${course.id}`}>
@@ -562,6 +669,10 @@ export default function InstructorPanel() {
                         <CourseContentManager courseId={course.id} />
                       </DialogContent>
                     </Dialog>
+                    <EditCourseDialog
+                      course={course}
+                      onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })}
+                    />
                     <Button
                       size="sm"
                       variant="outline"
