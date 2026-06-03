@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useListCourses, useCreateCourse, useUpdateCourse, useDeleteCourse,
   useListLiveClasses, useCreateLiveClass, useListAttendance,
@@ -25,6 +25,7 @@ import {
   Plus, BookOpen, Video, Users, Trash2, Settings2,
   ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
   FileQuestion, Clock, BarChart3, Pencil, ImageIcon, CalendarPlus, Radio,
+  ListTodo, ExternalLink, RotateCcw,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
@@ -279,6 +280,173 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ─── Task Submissions Review Card ─── */
+type TaskSubmission = {
+  id: number; taskId: number; taskTitle: string; courseTitle: string;
+  userId: string; userName: string; submission: string | null;
+  fileUrl: string | null; fileName: string | null;
+  status: string; reviewNote: string | null; submittedAt: string;
+};
+
+function TaskSubmissionsCard() {
+  const { toast } = useToast();
+  const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [rejectId, setRejectId] = useState<number | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const [acting, setActing] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/instructor/task-submissions?status=pending_review");
+      if (res.ok) setSubmissions(await res.json());
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const approve = async (id: number) => {
+    setActing(true);
+    try {
+      const res = await fetch(`/api/instructor/task-submissions/${id}/approve`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      toast({ title: "Task approved", description: "XP awarded to the student." });
+      load();
+    } catch { toast({ title: "Could not approve", variant: "destructive" }); }
+    finally { setActing(false); }
+  };
+
+  const reject = async (id: number) => {
+    if (!rejectNote.trim()) { toast({ title: "Feedback note is required", variant: "destructive" }); return; }
+    setActing(true);
+    try {
+      const res = await fetch(`/api/instructor/task-submissions/${id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewNote: rejectNote.trim() }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Task rejected", description: "Student will be asked to redo it." });
+      setRejectId(null);
+      setRejectNote("");
+      load();
+    } catch { toast({ title: "Could not reject", variant: "destructive" }); }
+    finally { setActing(false); }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div className="flex items-center gap-2">
+          <CardTitle>Task Submissions</CardTitle>
+          {submissions.length > 0 && (
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold">
+              {submissions.length}
+            </span>
+          )}
+        </div>
+        <ListTodo className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="space-y-3">{Array(2).fill(0).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+        ) : submissions.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground">
+            <ListTodo className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No pending task submissions</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {submissions.map((item) => {
+              const expanded = expandedId === item.id;
+              const rejecting = rejectId === item.id;
+              return (
+                <div key={item.id} className="rounded-lg border border-border overflow-hidden">
+                  <div className="flex items-center gap-3 p-3">
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-[11px] font-bold shrink-0">
+                      {(item.userName ?? "?").charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{item.userName}</p>
+                      <div className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground flex-wrap">
+                        <span className="truncate max-w-[140px]">{item.courseTitle}</span>
+                        <span>·</span>
+                        <span className="truncate max-w-[140px] font-medium text-foreground">{item.taskTitle}</span>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground shrink-0 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {new Date(item.submittedAt).toLocaleDateString()}
+                    </div>
+                    <button onClick={() => setExpandedId(expanded ? null : item.id)}
+                      className="p-1.5 rounded-md hover:bg-secondary transition-colors shrink-0">
+                      {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  {expanded && (
+                    <div className="px-3 pb-3 border-t border-border bg-secondary/20 space-y-2">
+                      {item.submission && (
+                        <div className="pt-2.5">
+                          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Written Answer</p>
+                          <p className="text-[12.5px] text-foreground leading-relaxed whitespace-pre-line">{item.submission}</p>
+                        </div>
+                      )}
+                      {item.fileUrl && (
+                        <div className="pt-1">
+                          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Attached File</p>
+                          <a href={item.fileUrl} target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[12.5px] text-primary hover:underline font-medium">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            {item.fileName ?? "View file"}
+                          </a>
+                        </div>
+                      )}
+                      {!item.submission && !item.fileUrl && (
+                        <p className="text-[12px] text-muted-foreground pt-2">No written answer or file submitted.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {rejecting ? (
+                    <div className="px-3 pb-3 border-t border-border space-y-2 pt-3">
+                      <p className="text-[12px] font-semibold text-foreground">Rejection feedback (required)</p>
+                      <textarea
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        placeholder="Tell the student what needs to be improved…"
+                        rows={3}
+                        className="w-full p-2.5 text-[12.5px] rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="destructive" onClick={() => reject(item.id)} disabled={acting}>
+                          <XCircle className="h-3.5 w-3.5 mr-1.5" /> Confirm Reject
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectNote(""); }}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 pb-3">
+                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => approve(item.id)} disabled={acting}>
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Approve
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectId(item.id)}>
+                        <XCircle className="h-3.5 w-3.5 mr-1.5" /> Reject
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -707,6 +875,9 @@ export default function InstructorPanel() {
 
       {/* Review Queue — always visible for instructor */}
       <ReviewQueueCard />
+
+      {/* Task Submission Review */}
+      <TaskSubmissionsCard />
 
       {/* Quiz Analytics */}
       <QuizAnalyticsCard courses={courses?.map((c) => ({ id: c.id, title: c.title }))} />

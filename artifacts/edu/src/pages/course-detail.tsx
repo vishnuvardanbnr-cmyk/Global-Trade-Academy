@@ -1661,25 +1661,52 @@ function TasksTab({ courseId, isEnrolled, onDone, onStart }: {
         <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${tasks.length ? (doneCount / tasks.length) * 100 : 0}%` }} />
       </div>
       {tasks.map((task) => {
-        const isDone = !!task.completed;
+        const status = (task as any).status as string | null;
+        const isApproved = status === "approved";
+        const isPendingReview = status === "pending_review";
+        const isRejected = status === "rejected";
+        const hasSubmission = !!status;
         return (
-          <div key={task.id} className={cn("p-4 rounded-xl border transition-all", isDone ? "bg-emerald-50/60 border-emerald-200" : "bg-white border-slate-200")}>
+          <div key={task.id} className={cn("p-4 rounded-xl border transition-all",
+            isApproved ? "bg-emerald-50/60 border-emerald-200" :
+            isPendingReview ? "bg-blue-50/50 border-blue-200" :
+            isRejected ? "bg-red-50/50 border-red-200" :
+            "bg-white border-slate-200"
+          )}>
             <div className="flex items-start gap-3">
               <div className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5",
-                isDone ? "bg-emerald-500 border-emerald-500" : "border-slate-300")}>
-                {isDone && <CheckCircle2 className="h-3 w-3 text-white" />}
+                isApproved ? "bg-emerald-500 border-emerald-500" :
+                isPendingReview ? "bg-blue-400 border-blue-400" :
+                isRejected ? "bg-red-400 border-red-400" :
+                "border-slate-300")}>
+                {isApproved && <CheckCircle2 className="h-3 w-3 text-white" />}
+                {isPendingReview && <Clock className="h-3 w-3 text-white" />}
+                {isRejected && <XCircle className="h-3 w-3 text-white" />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                  <p className={cn("text-[13px] font-semibold", isDone && "line-through text-slate-400")}>{task.title}</p>
+                  <p className={cn("text-[13px] font-semibold", isApproved && "line-through text-slate-400")}>{task.title}</p>
                   <span className="text-[10.5px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">+{task.xpReward} XP</span>
+                  {isPendingReview && <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Under Review</span>}
+                  {isRejected && <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">Rejected — Redo</span>}
+                  {isApproved && <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Approved</span>}
                 </div>
                 {task.description && <p className="text-[12px] text-slate-400 leading-relaxed">{task.description}</p>}
-                {isDone && task.submission && <p className="text-[11.5px] text-slate-500 mt-2 p-2 rounded-lg bg-white border border-slate-100">{task.submission}</p>}
-                {!isDone && (
+                {isRejected && (task as any).reviewNote && (
+                  <p className="text-[11.5px] text-red-600 mt-1.5 p-2 rounded-lg bg-red-50 border border-red-100">
+                    Feedback: {(task as any).reviewNote}
+                  </p>
+                )}
+                {!hasSubmission && (
                   <button onClick={() => onStart(task.id)}
                     className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors">
                     Start
+                  </button>
+                )}
+                {isRejected && (
+                  <button onClick={() => onStart(task.id)}
+                    className="mt-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[12px] font-semibold transition-colors">
+                    Resubmit
                   </button>
                 )}
               </div>
@@ -1707,33 +1734,87 @@ function TaskRunner({ courseId, taskId, onBack, onDone }: {
   const { data: tasks, isLoading } = useListTasks(courseId, { query: { enabled: courseId > 0, queryKey: getListTasksQueryKey(courseId) } });
   const { mutateAsync: complete, isPending } = useCompleteTask();
   const [submission, setSubmission] = useState("");
-  const [done, setDone] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [submitted, setSubmitted] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const task = tasks?.find((t) => t.id === taskId);
 
-  const onComplete = async () => {
+  // If already submitted, show current status
+  const currentStatus = task?.status as string | null | undefined;
+  const isRejected = currentStatus === "rejected";
+  const isPending2 = currentStatus === "pending_review";
+  const isApproved = currentStatus === "approved";
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const presignRes = await fetch(`/api/upload/presign?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+      if (!presignRes.ok) throw new Error("Failed to get upload URL");
+      const { presignedUrl, publicUrl } = await presignRes.json();
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100)); };
+        xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.open("PUT", presignedUrl);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.send(file);
+      });
+      setFileUrl(publicUrl);
+      setFileName(file.name);
+      toast({ title: "File uploaded" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onSubmit = async () => {
     if (!task) return;
     try {
-      const res = await complete({ taskId, data: { submission: submission.trim() || undefined } });
+      await complete({ taskId, data: { submission: submission.trim() || undefined, fileUrl: fileUrl || undefined, fileName: fileName || undefined } as any });
       await qc.invalidateQueries({ queryKey: getListTasksQueryKey(courseId) });
       onDone();
-      setDone(true);
-      if ((res.xpAwarded ?? 0) > 0) toast({ title: "Task complete! 🎉", description: `+${res.xpAwarded} XP` });
+      setSubmitted(true);
     } catch { toast({ title: "Could not submit task", variant: "destructive" }); }
   };
 
   if (isLoading || !task) return <Skeleton className="h-60 rounded-xl" />;
 
-  if (done) {
+  // Show submitted-pending state
+  if (submitted || (isPending2 && !isRejected)) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-12 max-w-md mx-auto">
+        <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-3">
+          <Clock className="h-8 w-8 text-blue-500" />
+        </div>
+        <h3 className="text-[20px] font-extrabold text-slate-800 mb-1">Submitted for Review</h3>
+        <p className="text-[13px] text-slate-400 mb-5">Your instructor will review your submission and approve or send feedback.</p>
+        <button onClick={onBack} className="px-6 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
+          Back to Tasks
+        </button>
+      </div>
+    );
+  }
+
+  // Show approved state
+  if (isApproved) {
+    return (
+      <div className="text-center py-12 max-w-md mx-auto">
         <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
           <Trophy className="h-8 w-8 text-emerald-600" />
         </div>
-        <h3 className="text-[20px] font-extrabold text-slate-800 mb-1">Task Complete!</h3>
-        <p className="text-[13px] text-slate-400 mb-5">Great work. Keep building your skills.</p>
-        <button onClick={onBack}
-          className="px-6 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
+        <h3 className="text-[20px] font-extrabold text-slate-800 mb-1">Task Approved!</h3>
+        <p className="text-[13px] text-slate-400 mb-5">Your submission was approved. +{task.xpReward} XP awarded.</p>
+        <button onClick={onBack} className="px-6 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
           Back to Tasks
         </button>
       </div>
@@ -1743,8 +1824,7 @@ function TaskRunner({ courseId, taskId, onBack, onDone }: {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-2">
-        <button onClick={onBack}
-          className="text-[12px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
+        <button onClick={onBack} className="text-[12px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
           <ArrowLeft className="h-3.5 w-3.5" /> Tasks
         </button>
       </div>
@@ -1753,38 +1833,70 @@ function TaskRunner({ courseId, taskId, onBack, onDone }: {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-[18px] font-extrabold text-slate-800 leading-snug">{task.title}</h3>
-            <span className="inline-block mt-1.5 text-[11px] px-2.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">
-              +{task.xpReward} XP
-            </span>
+            <span className="inline-block mt-1.5 text-[11px] px-2.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">+{task.xpReward} XP</span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
             <ListTodo className="h-5 w-5 text-blue-600" />
           </div>
         </div>
-        {task.description && (
-          <p className="text-[14px] text-slate-600 leading-relaxed">{task.description}</p>
-        )}
+        {task.description && <p className="text-[14px] text-slate-600 leading-relaxed">{task.description}</p>}
       </div>
 
+      {/* Rejection feedback */}
+      {isRejected && (task as any).reviewNote && (
+        <div className="p-4 rounded-xl border border-red-200 bg-red-50 flex gap-3">
+          <XCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-[13px] font-semibold text-red-800 mb-0.5">Submission rejected — please redo</p>
+            <p className="text-[12.5px] text-red-700">{(task as any).reviewNote}</p>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
-        <label className="text-[13px] font-semibold text-slate-700">Your submission <span className="text-slate-400 font-normal">(optional)</span></label>
+        <label className="text-[13px] font-semibold text-slate-700">Written answer <span className="text-slate-400 font-normal">(optional)</span></label>
         <textarea
           value={submission}
           onChange={(e) => setSubmission(e.target.value)}
           placeholder="Describe what you did, paste a link, or write your answer…"
-          rows={6}
-          className="w-full p-4 text-[13px] rounded-xl border border-slate-200 bg-white focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none transition-all"
+          rows={5}
+          className="w-full p-4 text-[13px] rounded-xl border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none transition-all"
         />
       </div>
 
+      {/* File upload */}
+      <div className="space-y-2">
+        <label className="text-[13px] font-semibold text-slate-700">Attach a file <span className="text-slate-400 font-normal">(optional)</span></label>
+        <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} />
+        {fileUrl ? (
+          <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span className="text-[12.5px] font-medium text-emerald-800 flex-1 truncate">{fileName}</span>
+            <button onClick={() => { setFileUrl(null); setFileName(null); }} className="text-[11px] text-slate-400 hover:text-red-500 transition-colors">Remove</button>
+          </div>
+        ) : uploading ? (
+          <div className="p-3 rounded-xl border border-blue-200 bg-blue-50">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+              <span className="text-[12px] text-blue-700 font-medium">Uploading… {uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-blue-100 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} /></div>
+          </div>
+        ) : (
+          <button onClick={() => fileRef.current?.click()}
+            className="w-full p-3 rounded-xl border-2 border-dashed border-slate-200 hover:border-blue-300 text-[12.5px] text-slate-400 hover:text-blue-500 transition-colors flex items-center justify-center gap-2">
+            <UploadCloud className="h-4 w-4" /> Click to upload a file
+          </button>
+        )}
+      </div>
+
       <div className="flex gap-3">
-        <button onClick={onComplete} disabled={isPending}
+        <button onClick={onSubmit} disabled={isPending || uploading}
           className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[14px] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
           {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          Submit & Complete Task
+          {isRejected ? "Resubmit Task" : "Submit for Review"}
         </button>
-        <button onClick={onBack}
-          className="px-5 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
+        <button onClick={onBack} className="px-5 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
           Cancel
         </button>
       </div>

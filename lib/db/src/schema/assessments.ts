@@ -75,6 +75,13 @@ export const taskCompletionsTable = pgTable("task_completions", {
   taskId: integer("task_id").notNull(),
   userId: text("user_id").notNull(),
   submission: text("submission"),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  // status: pending_review | approved | rejected
+  status: text("status").notNull().default("pending_review"),
+  reviewNote: text("review_note"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   unique("task_completions_task_user").on(t.taskId, t.userId),

@@ -7,6 +7,8 @@ import {
   quizAttemptsTable,
   tasksTable,
   taskCompletionsTable,
+  usersTable,
+  coursesTable,
 } from "@workspace/db";
 import { eq, and, asc, desc, inArray, isNull, or } from "drizzle-orm";
 import { awardXp, ownsCourse, recordLearningDay, isEnrolled, advanceGateOnPass } from "../lib/lms";
@@ -360,8 +362,12 @@ router.get("/courses/:courseId/tasks", async (req, res): Promise<void> => {
         description: t.description,
         xpReward: t.xpReward,
         order: t.order,
-        completed: !!c,
+        completed: c?.status === "approved",
         submission: c?.submission ?? null,
+        fileUrl: c?.fileUrl ?? null,
+        fileName: c?.fileName ?? null,
+        status: c?.status ?? null,
+        reviewNote: c?.reviewNote ?? null,
       };
     }));
   } catch (err) {
@@ -429,7 +435,7 @@ router.delete("/tasks/:taskId", async (req, res): Promise<void> => {
   }
 });
 
-// POST /api/tasks/:taskId/complete — mark complete, award XP idempotently
+// POST /api/tasks/:taskId/complete — submit task for instructor review
 router.post("/tasks/:taskId/complete", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
@@ -438,7 +444,7 @@ router.post("/tasks/:taskId/complete", async (req, res): Promise<void> => {
     const taskId = parseInt(req.params.taskId);
     if (isNaN(taskId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-    const { submission } = req.body ?? {};
+    const { submission, fileUrl, fileName } = req.body ?? {};
 
     const task = await db.select().from(tasksTable).where(eq(tasksTable.id, taskId)).limit(1).then((r) => r[0]);
     if (!task) { res.status(404).json({ error: "Task not found" }); return; }
@@ -449,23 +455,180 @@ router.post("/tasks/:taskId/complete", async (req, res): Promise<void> => {
       taskId,
       userId: clerkId,
       submission: submission ?? null,
+      fileUrl: fileUrl ?? null,
+      fileName: fileName ?? null,
+      status: "pending_review",
     }).onConflictDoUpdate({
       target: [taskCompletionsTable.taskId, taskCompletionsTable.userId],
-      set: { submission: submission ?? null },
+      set: {
+        submission: submission ?? null,
+        fileUrl: fileUrl ?? null,
+        fileName: fileName ?? null,
+        status: "pending_review",
+        reviewNote: null,
+        reviewedBy: null,
+        reviewedAt: null,
+        completedAt: new Date(),
+      },
     }).returning().then((r) => r[0]);
-
-    const xpAwarded = await awardXp(clerkId, "task_complete", `task:${taskId}`, task.xpReward);
-    await recordLearningDay(clerkId);
 
     res.json({
       taskId: completion.taskId,
       userId: completion.userId,
       submission: completion.submission,
+      fileUrl: completion.fileUrl,
+      fileName: completion.fileName,
+      status: completion.status,
       completedAt: completion.completedAt,
-      xpAwarded,
     });
   } catch (err) {
-    req.log.error({ err }, "Error completing task");
+    req.log.error({ err }, "Error submitting task");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── TASK SUBMISSIONS (Instructor) ───────────────────────────────── */
+
+// GET /api/instructor/task-submissions — list pending task submissions for instructor's courses
+router.get("/instructor/task-submissions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const status = (req.query.status as string) ?? "pending_review";
+
+    // Get instructor's courses
+    const instructorCourses = await db
+      .select({ id: coursesTable.id, title: coursesTable.title })
+      .from(coursesTable)
+      .where(eq(coursesTable.instructorId, clerkId));
+
+    if (instructorCourses.length === 0) { res.json([]); return; }
+
+    const courseIds = instructorCourses.map((c) => c.id);
+
+    // Get tasks for those courses
+    const tasks = await db
+      .select()
+      .from(tasksTable)
+      .where(inArray(tasksTable.courseId, courseIds));
+
+    if (tasks.length === 0) { res.json([]); return; }
+
+    const taskIds = tasks.map((t) => t.id);
+
+    // Get completions with requested status
+    const completions = await db
+      .select()
+      .from(taskCompletionsTable)
+      .where(and(
+        inArray(taskCompletionsTable.taskId, taskIds),
+        eq(taskCompletionsTable.status, status),
+      ))
+      .orderBy(desc(taskCompletionsTable.completedAt));
+
+    if (completions.length === 0) { res.json([]); return; }
+
+    // Get student display names
+    const studentIds = [...new Set(completions.map((c) => c.userId))];
+    const students = await db
+      .select({ id: usersTable.clerkId, displayName: usersTable.displayName })
+      .from(usersTable)
+      .where(inArray(usersTable.clerkId, studentIds));
+
+    const studentMap = Object.fromEntries(students.map((s) => [s.id, s.displayName]));
+    const taskMap = Object.fromEntries(tasks.map((t) => [t.id, t]));
+    const courseMap = Object.fromEntries(instructorCourses.map((c) => [c.id, c.title]));
+
+    res.json(completions.map((c) => {
+      const task = taskMap[c.taskId];
+      return {
+        id: c.id,
+        taskId: c.taskId,
+        taskTitle: task?.title ?? "Unknown Task",
+        courseId: task?.courseId,
+        courseTitle: courseMap[task?.courseId ?? 0] ?? "Unknown Course",
+        userId: c.userId,
+        userName: studentMap[c.userId] ?? c.userId,
+        submission: c.submission,
+        fileUrl: c.fileUrl,
+        fileName: c.fileName,
+        status: c.status,
+        reviewNote: c.reviewNote,
+        submittedAt: c.completedAt,
+      };
+    }));
+  } catch (err) {
+    req.log.error({ err }, "Error listing task submissions");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/instructor/task-submissions/:completionId/approve
+router.post("/instructor/task-submissions/:completionId/approve", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const completionId = parseInt(req.params.completionId);
+    if (isNaN(completionId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const completion = await db
+      .select()
+      .from(taskCompletionsTable)
+      .where(eq(taskCompletionsTable.id, completionId))
+      .limit(1)
+      .then((r) => r[0]);
+    if (!completion) { res.status(404).json({ error: "Not found" }); return; }
+
+    const task = await db.select().from(tasksTable).where(eq(tasksTable.id, completion.taskId)).limit(1).then((r) => r[0]);
+    if (!task || !(await ownsCourse(clerkId, task.courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.update(taskCompletionsTable)
+      .set({ status: "approved", reviewedBy: clerkId, reviewedAt: new Date(), reviewNote: null })
+      .where(eq(taskCompletionsTable.id, completionId));
+
+    // Award XP to the student now that it's approved
+    await awardXp(completion.userId, "task_complete", `task:${task.id}`, task.xpReward);
+    await recordLearningDay(completion.userId);
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error approving task submission");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/instructor/task-submissions/:completionId/reject
+router.post("/instructor/task-submissions/:completionId/reject", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const completionId = parseInt(req.params.completionId);
+    if (isNaN(completionId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const { reviewNote } = req.body ?? {};
+    if (!reviewNote?.trim()) { res.status(400).json({ error: "reviewNote required" }); return; }
+
+    const completion = await db
+      .select()
+      .from(taskCompletionsTable)
+      .where(eq(taskCompletionsTable.id, completionId))
+      .limit(1)
+      .then((r) => r[0]);
+    if (!completion) { res.status(404).json({ error: "Not found" }); return; }
+
+    const task = await db.select().from(tasksTable).where(eq(tasksTable.id, completion.taskId)).limit(1).then((r) => r[0]);
+    if (!task || !(await ownsCourse(clerkId, task.courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.update(taskCompletionsTable)
+      .set({ status: "rejected", reviewNote: reviewNote.trim(), reviewedBy: clerkId, reviewedAt: new Date() })
+      .where(eq(taskCompletionsTable.id, completionId));
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error rejecting task submission");
     res.status(500).json({ error: "Internal server error" });
   }
 });
