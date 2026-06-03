@@ -577,9 +577,9 @@ export default function CourseDetail() {
       <div className="flex flex-col lg:grid lg:grid-cols-[1fr_360px] min-h-0">
 
         {/* LEFT: player + lesson content */}
-        <div className="flex flex-col min-w-0 border-r border-slate-100">
+        <div className="flex flex-col min-w-0 border-r border-slate-100 bg-slate-950">
 
-          {/* Video player — completes lesson + auto-advances on end */}
+          {/* Video player */}
           <div className="w-full">
             <VideoPlayer
               url={cur?.videoUrl}
@@ -589,60 +589,55 @@ export default function CourseDetail() {
               onEnded={isEnrolled ? onVideoEnded : undefined}
             />
           </div>
+
           {/* Status bar below video */}
-          {isEnrolled && (
+          {isEnrolled && cur?.videoUrl && (
             <div className={cn(
-              "px-5 py-2 text-[11.5px] font-medium flex items-center gap-2 transition-colors",
+              "px-5 py-2.5 text-[12px] font-semibold flex items-center gap-2.5 transition-all",
               curDone
-                ? "bg-emerald-600 text-white"
-                : cur?.videoUrl
-                  ? "bg-slate-800 text-white/50"
-                  : "bg-slate-800/60 text-white/30 hidden",
+                ? "bg-emerald-500 text-white"
+                : "bg-slate-800 text-white/40",
             )}>
               {curDone
-                ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Lesson completed</>
-                : <><Play className="h-3 w-3 shrink-0" /> Watch the full video to complete this lesson</>}
+                ? <><CheckCircle2 className="h-4 w-4 shrink-0" /> Lesson completed — great work!</>
+                : <><Play className="h-3.5 w-3.5 shrink-0" /> Watch the full video to mark this lesson complete</>}
             </div>
           )}
 
-          {/* Lesson header */}
-          <div className="bg-white px-6 py-4 border-b border-slate-100">
-            {/* breadcrumb row */}
-            <div className="flex items-center justify-between gap-4 mb-2">
+          {/* Lesson header — white card */}
+          <div className="bg-white border-b border-slate-100 shrink-0">
+            {/* Top meta row */}
+            <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-3">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 {curChapter && (
-                  <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full shrink-0">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                     {curChapter.title}
                   </span>
                 )}
-                <span className="text-[11px] text-slate-400 shrink-0">Lesson {activeIdx + 1} of {totalL}</span>
                 {cur?.type && cur.type !== "video" && (
-                  <span className={cn("text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full shrink-0",
-                    cur.type === "article" ? "bg-violet-50 text-violet-600" : "bg-slate-100 text-slate-500")}>
-                    {cur.type === "article" ? "Article" : cur.type}
+                  <span className={cn("text-[11px] font-semibold px-2.5 py-1 rounded-full border shrink-0",
+                    cur.type === "article"
+                      ? "bg-violet-50 text-violet-700 border-violet-100"
+                      : "bg-slate-50 text-slate-500 border-slate-200")}>
+                    {cur.type === "article" ? "Reading" : cur.type.charAt(0).toUpperCase() + cur.type.slice(1)}
                   </span>
                 )}
                 {curDone && (
-                  <span className="text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex items-center gap-1 shrink-0">
-                    <CheckCircle2 className="h-3 w-3" /> Complete
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 shrink-0">
+                    <CheckCircle2 className="h-3 w-3" /> Completed
                   </span>
                 )}
+                <span className="text-[11px] text-slate-400 shrink-0">
+                  {activeIdx + 1} / {totalL}
+                </span>
               </div>
-              {isEnrolled && cur && (
-                <BookmarkButton courseId={courseId} lessonId={cur.id} />
-              )}
-            </div>
-
-            {/* title + nav row */}
-            <div className="flex items-center justify-between gap-3">
-              <h1 className="text-[20px] font-bold text-slate-900 leading-snug">
-                {cur?.title ?? course.title}
-              </h1>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isEnrolled && cur && <BookmarkButton courseId={courseId} lessonId={cur.id} />}
                 <button
                   disabled={activeIdx === 0}
                   onClick={() => { setActiveIdx((p) => p - 1); setTab("overview"); }}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-25 disabled:cursor-not-allowed transition-all border border-transparent hover:border-slate-200"
                   title="Previous lesson"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -650,7 +645,7 @@ export default function CourseDetail() {
                 <button
                   disabled={activeIdx >= totalL - 1}
                   onClick={() => { setActiveIdx((p) => p + 1); setTab("overview"); }}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-25 disabled:cursor-not-allowed transition-all border border-transparent hover:border-slate-200"
                   title="Next lesson"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -658,42 +653,49 @@ export default function CourseDetail() {
               </div>
             </div>
 
-            {/* Gate banner */}
-            {isEnrolled && curDone && gate && (
-              <div className="mt-3">
-                <LessonGateBanner gate={gate} onGoToQuiz={() => setTab("quiz")} />
-              </div>
-            )}
-          </div>
+            {/* Lesson title */}
+            <div className="px-6 pb-4">
+              <h1 className="text-[22px] font-extrabold text-slate-900 leading-tight tracking-tight">
+                {cur?.title ?? course.title}
+              </h1>
 
-          {/* Tab bar */}
-          <div className="bg-white border-b border-slate-100 flex overflow-x-auto shrink-0">
-            {[
-              { k: "overview", label: "Overview", Icon: BookOpen },
-              { k: "quiz", label: "Quizzes", Icon: FileQuestion },
-              { k: "tasks", label: "Tasks", Icon: ListTodo },
-              { k: "notes", label: "Notes", Icon: StickyNote },
-              { k: "reviews", label: "Reviews", Icon: Star },
-              { k: "live", label: "Live", Icon: Radio },
-            ].map(({ k, label, Icon }) => (
-              <button key={k} onClick={() => setTab(k as Tab)}
-                className={cn(
-                  "flex items-center gap-1.5 px-5 py-3 text-[12.5px] font-semibold transition-colors whitespace-nowrap relative",
-                  tab === k
-                    ? "text-blue-600 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-blue-600"
-                    : "text-slate-400 hover:text-slate-700",
-                )}>
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-                {k === "quiz" && gate && (gate.status === "awaiting_quiz" || gate.status === "rejected") && (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                )}
-              </button>
-            ))}
+              {/* Gate banner */}
+              {isEnrolled && curDone && gate && (
+                <div className="mt-3">
+                  <LessonGateBanner gate={gate} onGoToQuiz={() => setTab("quiz")} />
+                </div>
+              )}
+            </div>
+
+            {/* Tab bar — pill style */}
+            <div className="flex items-center gap-1 px-4 pb-3 overflow-x-auto">
+              {[
+                { k: "overview", label: "Overview", Icon: BookOpen },
+                { k: "quiz", label: "Quizzes", Icon: FileQuestion },
+                { k: "tasks", label: "Tasks", Icon: ListTodo },
+                { k: "notes", label: "Notes", Icon: StickyNote },
+                { k: "reviews", label: "Reviews", Icon: Star },
+                { k: "live", label: "Live", Icon: Radio },
+              ].map(({ k, label, Icon }) => (
+                <button key={k} onClick={() => setTab(k as Tab)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
+                    tab === k
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
+                  )}>
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                  {k === "quiz" && gate && (gate.status === "awaiting_quiz" || gate.status === "rejected") && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 bg-white p-6 pb-10">
+          <div className="flex-1 bg-white p-6 pb-12">
             {tab === "overview" && (
               <OverviewTab
                 cur={cur} chIdx={chIdx}
@@ -713,85 +715,103 @@ export default function CourseDetail() {
         </div>
 
         {/* RIGHT: Sticky sidebar ──────────────────────────── */}
-        <div className="lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto flex flex-col bg-white">
+        <div className="lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto flex flex-col bg-white border-l border-slate-100">
+
+          {/* Course thumbnail */}
+          {course.thumbnailUrl && (
+            <div className="relative shrink-0 overflow-hidden h-44">
+              <img
+                src={course.thumbnailUrl}
+                alt={course.title}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-900/40 to-transparent" />
+              <div className="absolute bottom-3 left-4 flex gap-1.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/90 text-white text-[10px] font-bold uppercase tracking-wide backdrop-blur-sm">
+                  {course.category}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold uppercase tracking-wide backdrop-blur-sm border border-white/20">
+                  {course.level}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Course info card */}
-          <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white p-5 shrink-0">
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10.5px] font-semibold uppercase tracking-wide">
-                {course.category}
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white/60 border border-white/15 text-[10.5px] font-semibold uppercase tracking-wide">
-                {course.level}
-              </span>
-            </div>
-
-            <h2 className="text-[15px] font-bold leading-snug mb-1">{course.title}</h2>
-            <p className="text-[11.5px] text-white/50 leading-relaxed mb-4 line-clamp-2">{course.description}</p>
+          <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shrink-0">
+            <h2 className="text-[14px] font-bold text-slate-900 leading-snug mb-1">{course.title}</h2>
+            <p className="text-[12px] text-slate-500 leading-relaxed mb-4 line-clamp-2">{course.description}</p>
 
             {/* Instructor row */}
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+            <div className="flex items-center gap-2.5 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[12px] font-bold text-white shrink-0">
                 {(course.instructorName ?? "I").charAt(0)}
               </div>
               <div>
-                <p className="text-[12px] font-semibold leading-none">{course.instructorName ?? "Instructor"}</p>
-                <p className="text-[10.5px] text-white/40 mt-0.5">Course Instructor</p>
+                <p className="text-[12.5px] font-semibold text-slate-800 leading-none">{course.instructorName ?? "Instructor"}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Course Instructor</p>
               </div>
             </div>
 
-            {/* Stats row */}
+            {/* Stats grid */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               {[
-                { Icon: Users, val: `${(course.enrollmentCount ?? 0).toLocaleString()} students` },
-                { Icon: BookOpen, val: `${totalL} lessons` },
-                { Icon: Clock, val: `${course.duration ?? 0}h content` },
-                { Icon: Star, val: course.rating ? `${course.rating.toFixed(1)} rating` : "New course" },
-              ].map(({ Icon, val }) => (
-                <div key={val} className="flex items-center gap-1.5 text-[11px] text-white/55">
-                  <Icon className="h-3 w-3 shrink-0 text-white/30" />
-                  <span>{val}</span>
+                { Icon: Users, val: `${(course.enrollmentCount ?? 0).toLocaleString()}`, label: "students" },
+                { Icon: BookOpen, val: `${totalL}`, label: "lessons" },
+                { Icon: Clock, val: `${course.duration ?? 0}h`, label: "content" },
+                { Icon: Star, val: course.rating ? course.rating.toFixed(1) : "New", label: "rating" },
+              ].map(({ Icon, val, label }) => (
+                <div key={label} className="flex flex-col gap-0.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="flex items-center gap-1.5">
+                    <Icon className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                    <span className="text-[13px] font-bold text-slate-800">{val}</span>
+                  </div>
+                  <span className="text-[10.5px] text-slate-400 capitalize">{label}</span>
                 </div>
               ))}
             </div>
 
             {isEnrolled ? (
               <div className="space-y-2.5">
-                <div>
-                  <div className="flex justify-between text-[11px] mb-1.5 text-white/60">
-                    <span>Your progress</span>
-                    <span className="font-bold text-white">{pct}%</span>
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="flex justify-between text-[12px] mb-2 text-slate-600">
+                    <span className="font-semibold">Your progress</span>
+                    <span className="font-extrabold text-slate-900">{pct}%</span>
                   </div>
-                  <div className="w-full bg-white/10 rounded-full h-2">
-                    <div className="bg-gradient-to-r from-emerald-400 to-emerald-500 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }} />
+                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-emerald-500 h-2.5 rounded-full transition-all duration-700"
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
-                  <p className="text-[10.5px] text-white/40 mt-1">{completedCount} of {totalL} lessons completed</p>
+                  <p className="text-[11px] text-slate-400 mt-2">{completedCount} of {totalL} lessons completed</p>
                 </div>
                 {progress?.courseCompleted && progress.certificateSerial && (
                   <Link href="/dashboard"
-                    className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11.5px] font-semibold hover:bg-amber-500/20 transition-colors">
-                    <Award className="h-4 w-4 shrink-0" />
+                    className="flex items-center gap-2.5 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 text-amber-800 text-[12px] font-semibold hover:border-amber-300 transition-colors">
+                    <Award className="h-5 w-5 text-amber-500 shrink-0" />
                     Certificate #{progress.certificateSerial}
                   </Link>
                 )}
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="text-center">
-                  <p className="text-[28px] font-extrabold leading-none">
+                <div className="flex items-end justify-center gap-1.5 py-1">
+                  <p className="text-[34px] font-black text-slate-900 leading-none">
                     {course.price ? `$${course.price}` : "Free"}
                   </p>
-                  <p className="text-[10.5px] text-white/40 mt-0.5">Full lifetime access</p>
+                  {!course.price && (
+                    <span className="text-[12px] text-slate-400 pb-1.5">Full lifetime access</span>
+                  )}
                 </div>
                 <button onClick={doEnroll} disabled={enrolling}
-                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-[13px] transition-colors disabled:opacity-60">
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-500/30 disabled:opacity-60 active:scale-[0.98]">
                   {enrolling ? "Enrolling…" : course.price ? "Enroll Now" : "Enroll Free"}
                 </button>
-                <ul className="space-y-1.5">
-                  {[`${totalL} lessons`, "Quizzes & tasks", "Certificate", "Lifetime access"].map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-[11px] text-white/55">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />{f}
+                <ul className="space-y-2">
+                  {[`${totalL} lessons`, "Quizzes & tasks", "Certificate on completion", "Lifetime access"].map((f) => (
+                    <li key={f} className="flex items-center gap-2 text-[12px] text-slate-600">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />{f}
                     </li>
                   ))}
                 </ul>
@@ -799,42 +819,49 @@ export default function CourseDetail() {
             )}
           </div>
 
-          {/* Curriculum list */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 shrink-0 bg-slate-50">
-            <span className="text-[12px] font-bold text-slate-700">Course Content</span>
-            <span className="text-[11px] text-slate-400">{totalL} lessons</span>
+          {/* Curriculum header */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
+            <span className="text-[12.5px] font-bold text-slate-800">Course Content</span>
+            <span className="text-[11px] font-medium text-slate-400 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{totalL} lessons</span>
           </div>
 
-          <div className="flex-1 divide-y divide-slate-50 overflow-y-auto">
+          {/* Curriculum list */}
+          <div className="flex-1 overflow-y-auto">
             {chapterGroups.length === 0 && (
-              <p className="px-4 py-6 text-[12px] text-slate-400 text-center">Curriculum coming soon…</p>
+              <p className="px-5 py-8 text-[12px] text-slate-400 text-center">Curriculum coming soon…</p>
             )}
             {chapterGroups.map((ch, ci) => {
               const open = expanded === ch.id;
               const chLessonsDone = ch.lessons.filter((l) => completedSet.has(l.id)).length;
               const chDone = ch.lessons.length > 0 && chLessonsDone === ch.lessons.length;
               return (
-                <div key={ch.id}>
+                <div key={ch.id} className="border-b border-slate-100 last:border-0">
                   <button onClick={() => setExpanded(open ? -1 : ch.id)}
-                    className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-slate-50 transition-colors text-left bg-white">
+                    className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left">
                     <div className={cn(
-                      "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
-                      chDone ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-500",
+                      "w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-extrabold shrink-0",
+                      chDone
+                        ? "bg-emerald-100 text-emerald-700"
+                        : open
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-slate-100 text-slate-500",
                     )}>
                       {chDone ? <CheckCheck className="h-3.5 w-3.5" /> : ci + 1}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-semibold text-slate-700 truncate leading-snug">{ch.title}</p>
+                      <p className="text-[12.5px] font-semibold text-slate-800 truncate leading-snug">{ch.title}</p>
                       <p className="text-[10.5px] text-slate-400 mt-0.5">
                         {ch.lessons.length} lessons · {ch.dur}
                         {chLessonsDone > 0 && ` · ${chLessonsDone}/${ch.lessons.length} done`}
                       </p>
                     </div>
-                    {open ? <ChevronUp className="h-3.5 w-3.5 text-slate-300 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-300 shrink-0" />}
+                    {open
+                      ? <ChevronUp className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                      : <ChevronDown className="h-3.5 w-3.5 text-slate-300 shrink-0" />}
                   </button>
 
                   {open && (
-                    <div className="bg-slate-50/80">
+                    <div className="bg-slate-50/60">
                       {ch.lessons.map((l) => {
                         const idx = dbLessons.findIndex((dl) => dl.id === l.id);
                         const isDone = completedSet.has(l.id);
@@ -845,28 +872,31 @@ export default function CourseDetail() {
                           <button key={l.id} disabled={locked}
                             onClick={() => { setActiveIdx(idx); setTab("overview"); }}
                             className={cn(
-                              "w-full flex items-center gap-2.5 pl-7 pr-4 py-2.5 text-left transition-all",
+                              "w-full flex items-center gap-3 pl-[52px] pr-4 py-2.5 text-left transition-all",
                               isActive
-                                ? "bg-blue-50 border-l-[3px] border-blue-600"
-                                : "border-l-[3px] border-transparent hover:bg-white",
+                                ? "bg-blue-600 text-white"
+                                : "hover:bg-white/80",
                               locked && "opacity-40 cursor-not-allowed",
                             )}>
                             <div className="shrink-0">
                               {locked
                                 ? <Lock className="h-3 w-3 text-slate-400" />
                                 : isDone
-                                  ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                                  : <LessonIcon className={cn("h-3.5 w-3.5", isActive ? "text-blue-500" : "text-slate-400")} />}
+                                  ? <CheckCircle2 className={cn("h-3.5 w-3.5", isActive ? "text-white/80" : "text-emerald-500")} />
+                                  : <LessonIcon className={cn("h-3.5 w-3.5", isActive ? "text-white/80" : "text-slate-400")} />}
                             </div>
                             <span className={cn(
                               "flex-1 text-[12px] leading-snug truncate",
-                              isActive ? "text-blue-700 font-semibold"
-                                : isDone ? "text-slate-400" : "text-slate-600",
+                              isActive ? "text-white font-semibold"
+                                : isDone ? "text-slate-400" : "text-slate-700",
                             )}>
                               {l.title}
                             </span>
+                            {l.isFree && !isEnrolled && (
+                              <span className="text-[9.5px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0">FREE</span>
+                            )}
                             {l.duration && (
-                              <span className="text-[10.5px] text-slate-400 shrink-0 tabular-nums">
+                              <span className={cn("text-[10.5px] shrink-0 tabular-nums", isActive ? "text-white/60" : "text-slate-400")}>
                                 {l.duration}m
                               </span>
                             )}
@@ -986,45 +1016,58 @@ function OverviewTab({
   const gateBlocksNext = gate && gate.status !== "approved";
 
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="space-y-6 max-w-2xl">
       {/* Lesson metadata pills */}
       <div className="flex flex-wrap gap-2">
         {[
-          { Icon: Clock, label: cur.duration ? `${cur.duration} min` : "—" },
-          { Icon: Zap, label: "+50 XP" },
-          { Icon: BarChart2, label: `Chapter ${chIdx + 1}` },
-          ...(cur.type && cur.type !== "video" ? [{ Icon: cur.type === "article" ? FileText : FileQuestion, label: cur.type.charAt(0).toUpperCase() + cur.type.slice(1) }] : []),
-        ].map(({ Icon, label }) => (
-          <div key={label} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-full text-[12px] text-slate-600">
-            <Icon className="h-3.5 w-3.5 text-blue-500" />
+          { Icon: Clock, label: cur.duration ? `${cur.duration} min` : "—", color: "text-blue-600 bg-blue-50 border-blue-100" },
+          { Icon: Zap, label: "+50 XP", color: "text-amber-600 bg-amber-50 border-amber-100" },
+          { Icon: BarChart2, label: `Section ${chIdx + 1}`, color: "text-slate-600 bg-slate-50 border-slate-200" },
+          ...(cur.type && cur.type !== "video" ? [{ Icon: cur.type === "article" ? FileText : FileQuestion, label: cur.type === "article" ? "Reading" : cur.type.charAt(0).toUpperCase() + cur.type.slice(1), color: "text-violet-600 bg-violet-50 border-violet-100" }] : []),
+        ].map(({ Icon, label, color }) => (
+          <div key={label} className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-full text-[12px] font-medium", color)}>
+            <Icon className="h-3.5 w-3.5" />
             {label}
           </div>
         ))}
       </div>
 
-      {/* Lesson description / content */}
-      {cur.content ? (
-        <div className="prose prose-sm prose-slate max-w-none text-[13.5px] leading-relaxed">
-          <p>{cur.content}</p>
-        </div>
-      ) : (
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-[13px] text-slate-400 italic">
-          No description available for this lesson.
+      {/* About this lesson */}
+      <div>
+        <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-3">About this lesson</h3>
+        {cur.description ? (
+          <p className="text-[14px] text-slate-700 leading-relaxed">{cur.description}</p>
+        ) : (
+          <p className="text-[14px] text-slate-400 leading-relaxed italic">
+            Select the Overview tab after starting the lesson to see details here.
+          </p>
+        )}
+      </div>
+
+      {/* Lesson content (markdown/article) */}
+      {cur.content && (
+        <div>
+          <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-3">Lesson Content</h3>
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200">
+            <div className="prose prose-sm prose-slate max-w-none text-[13.5px] leading-relaxed whitespace-pre-wrap">
+              {cur.content}
+            </div>
+          </div>
         </div>
       )}
 
       {/* Enroll CTA for non-enrolled visitors */}
       {!isEnrolled && (
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
-          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-            <Lock className="h-4 w-4 text-amber-600" />
+        <div className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 border border-blue-200/60">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0 shadow-md shadow-blue-600/20">
+            <Lock className="h-5 w-5 text-white" />
           </div>
           <div className="flex-1">
-            <p className="text-[13px] font-semibold text-amber-900">Enroll to unlock all lessons</p>
-            <p className="text-[11.5px] text-amber-600 mt-0.5">Free lessons are available to preview without enrolling</p>
+            <p className="text-[14px] font-bold text-slate-900 mb-0.5">Unlock all {totalL} lessons</p>
+            <p className="text-[12.5px] text-slate-500">Free preview lessons are available now. Enroll to access quizzes, tasks, notes, and your certificate.</p>
           </div>
           <button onClick={doEnroll} disabled={enrolling}
-            className="shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[12.5px] font-bold transition-colors disabled:opacity-60">
+            className="shrink-0 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[13px] font-bold transition-colors disabled:opacity-60 shadow-sm whitespace-nowrap">
             {enrolling ? "Enrolling…" : "Enroll Free"}
           </button>
         </div>
