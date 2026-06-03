@@ -758,23 +758,6 @@ export default function CourseDetail() {
               </div>
             </div>
 
-            {/* Stats grid */}
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {[
-                { Icon: Users, val: `${(course.enrollmentCount ?? 0).toLocaleString()}`, label: "students" },
-                { Icon: BookOpen, val: `${totalL}`, label: "lessons" },
-                { Icon: Clock, val: `${course.duration ?? 0}h`, label: "content" },
-                { Icon: Star, val: course.rating ? course.rating.toFixed(1) : "New", label: "rating" },
-              ].map(({ Icon, val, label }) => (
-                <div key={label} className="flex flex-col gap-0.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="flex items-center gap-1.5">
-                    <Icon className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                    <span className="text-[13px] font-bold text-slate-800">{val}</span>
-                  </div>
-                  <span className="text-[10.5px] text-slate-400 capitalize">{label}</span>
-                </div>
-              ))}
-            </div>
 
             {isEnrolled ? (
               <div className="space-y-2.5">
