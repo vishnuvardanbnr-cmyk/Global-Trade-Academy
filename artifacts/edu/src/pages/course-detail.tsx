@@ -1278,10 +1278,21 @@ function QuizTab({
               {q.bestScore != null && ` · Best: ${q.bestScore}%`}
             </p>
           </div>
-          <button onClick={() => onStart(q.id)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors shrink-0">
-            {q.passed ? "Retake" : "Start"}
-          </button>
+          {q.bestScore != null ? (
+            <span className={cn(
+              "px-3 py-1.5 rounded-lg text-[12px] font-semibold shrink-0",
+              q.passed
+                ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                : "bg-slate-100 text-slate-500 border border-slate-200"
+            )}>
+              {q.passed ? "Passed" : "Submitted"}
+            </span>
+          ) : (
+            <button onClick={() => onStart(q.id)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors shrink-0">
+              Start
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -1358,11 +1369,14 @@ function QuizRunner({
             );
           })}
         </div>
-        <div className="flex justify-center gap-2 mt-5">
+        {!result.passed && (
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 mb-3 text-left">
+            <ClipboardCheck className="h-4 w-4 text-slate-400 shrink-0" />
+            <p className="text-[12px] text-slate-500">Your attempt has been recorded. Your instructor can assign a new attempt if needed.</p>
+          </div>
+        )}
+        <div className="flex justify-center mt-3">
           <button onClick={onBack} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">Back to Quizzes</button>
-          {(!isGateQuiz || !result.passed) && (
-            <button onClick={() => { setResult(null); setAnswers({}); }} className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13px] transition-colors">Retake</button>
-          )}
         </div>
       </div>
     );
