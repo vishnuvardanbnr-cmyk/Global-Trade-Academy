@@ -28,7 +28,7 @@ import {
   StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
-  Radio, Calendar, ExternalLink, X,
+  Radio, Calendar, ExternalLink, X, Pause,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -751,11 +751,25 @@ export default function CourseDetail() {
                 {/* Start / Continue Learning button */}
                 {!progress?.courseCompleted && (
                   <button
-                    onClick={() => { setActiveIdx(firstUncompletedIdx); setLearningStarted(true); }}
-                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.98] flex items-center justify-center gap-2"
+                    onClick={() => {
+                      if (learningStarted) {
+                        setLearningStarted(false);
+                      } else {
+                        setActiveIdx(firstUncompletedIdx);
+                        setLearningStarted(true);
+                      }
+                    }}
+                    className={cn(
+                      "w-full py-3 rounded-xl font-bold text-[14px] transition-all active:scale-[0.98] flex items-center justify-center gap-2",
+                      learningStarted
+                        ? "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                        : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-md shadow-blue-600/20 hover:shadow-blue-600/30"
+                    )}
                   >
-                    <Play className="h-4 w-4 fill-white" />
-                    {completedCount === 0 ? "Start Learning" : "Continue Learning"}
+                    {learningStarted
+                      ? <><Pause className="h-4 w-4" /> Pause</>
+                      : <><Play className="h-4 w-4 fill-white" />{completedCount === 0 ? "Start Learning" : "Continue Learning"}</>
+                    }
                   </button>
                 )}
 
