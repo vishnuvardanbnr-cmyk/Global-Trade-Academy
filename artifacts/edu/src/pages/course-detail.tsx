@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRoute, Link } from "wouter";
+import { useUser } from "@clerk/react";
 import {
   useGetCourse, useListLessons, useListCourseSections, getListCourseSectionsQueryKey,
   useListEnrollments, useCreateEnrollment,
@@ -14,9 +15,11 @@ import {
   getGetDashboardSummaryQueryKey,
   useGetLessonGate, getGetLessonGateQueryKey,
   useListLiveClasses, useRegisterLiveClass, getListLiveClassesQueryKey,
+  useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,
   type QuizAttemptResult,
   type LessonGate,
   type LiveClass,
+  type LiveClassMessage,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -28,7 +31,7 @@ import {
   StickyNote, Trophy, Zap, BarChart2, PlayCircle, CheckCheck, Bookmark,
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
-  Radio, Calendar, ExternalLink, X, Pause,
+  Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -107,6 +110,186 @@ function loadYTApi(onReady: () => void) {
     s.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(s);
   }
+}
+
+/* ─── Jitsi loader (singleton) ─────────────────────────────────── */
+declare global {
+  interface Window {
+    JitsiMeetExternalAPI: new (domain: string, options: Record<string, unknown>) => {
+      dispose(): void;
+    };
+  }
+}
+let _jitsiLoading = false;
+let _jitsiReady = false;
+const _jitsiCbs: Array<() => void> = [];
+function loadJitsi(cb: () => void) {
+  if (_jitsiReady) { cb(); return; }
+  _jitsiCbs.push(cb);
+  if (_jitsiLoading) return;
+  _jitsiLoading = true;
+  const s = document.createElement("script");
+  s.src = "https://meet.jit.si/external_api.js";
+  s.onload = () => { _jitsiReady = true; _jitsiCbs.forEach((f) => f()); _jitsiCbs.length = 0; };
+  document.head.appendChild(s);
+}
+
+/* ─── Jitsi embed for video area ───────────────────────────────── */
+function JitsiMeetEmbed({ roomName, displayName, onLeave }: {
+  roomName: string; displayName: string; onLeave: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<{ dispose(): void } | null>(null);
+
+  useEffect(() => {
+    let destroyed = false;
+    loadJitsi(() => {
+      if (destroyed || !containerRef.current || apiRef.current) return;
+      apiRef.current = new window.JitsiMeetExternalAPI("meet.jit.si", {
+        roomName,
+        width: "100%",
+        height: "100%",
+        parentNode: containerRef.current,
+        configOverwrite: {
+          startWithAudioMuted: false, startWithVideoMuted: false,
+          prejoinPageEnabled: false, disableDeepLinking: true,
+          enableClosePage: false, analytics: { disabled: true },
+        },
+        interfaceConfigOverwrite: {
+          SHOW_JITSI_WATERMARK: false, SHOW_WATERMARK_FOR_GUESTS: false,
+          HIDE_INVITE_MORE_HEADER: true, DEFAULT_BACKGROUND: "#0f172a",
+        },
+        userInfo: { displayName },
+      });
+    });
+    return () => {
+      destroyed = true;
+      apiRef.current?.dispose();
+      apiRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomName]);
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex items-center justify-between px-4 py-2 bg-red-600 shrink-0">
+        <div className="flex items-center gap-2 text-white text-[12.5px] font-semibold">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          Live Session in Progress
+        </div>
+        <button onClick={onLeave}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-[12px] font-semibold transition-colors">
+          <X className="h-3.5 w-3.5" /> Leave
+        </button>
+      </div>
+      <div ref={containerRef} className="flex-1 min-h-0 bg-slate-950" />
+    </div>
+  );
+}
+
+/* ─── Live chat panel for right side ───────────────────────────── */
+function LiveChatPanel({ classId, userId, sessionTitle, onClose }: {
+  classId: number; userId: string; sessionTitle: string; onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+
+  const { data: messages = [], refetch } = useListLiveClassMessages(classId, {
+    query: { queryKey: getListLiveClassMessagesQueryKey(classId), refetchInterval: 3000 },
+  });
+  const { mutate: sendMsg, isPending } = useCreateLiveClassMessage({
+    mutation: {
+      onSuccess: () => { setText(""); refetch(); },
+      onError: () => toast({ title: "Could not send message", variant: "destructive" }),
+    },
+  });
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
+  const send = () => {
+    if (!text.trim()) return;
+    sendMsg({ classId, data: { message: text.trim() } });
+  };
+
+  function fmtTime(d: string | Date) {
+    return new Date(d).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  return (
+    <div className="w-[380px] shrink-0 flex flex-col bg-slate-900 rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+            <span className="text-[12.5px] font-bold text-white tracking-wide uppercase">Live Chat</span>
+          </div>
+          <p className="text-[11px] text-white/40 mt-0.5 truncate max-w-[220px]">{sessionTitle}</p>
+        </div>
+        <button onClick={onClose}
+          className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-0">
+        {(messages as LiveClassMessage[]).length === 0 && (
+          <div className="flex flex-col items-center justify-center h-32 text-center gap-2">
+            <MessageSquare className="h-7 w-7 text-white/10" />
+            <p className="text-white/30 text-[11.5px]">No messages yet — say hi!</p>
+          </div>
+        )}
+        {(messages as LiveClassMessage[]).map((msg) => {
+          const isMe = msg.userId === userId;
+          return (
+            <div key={msg.id} className={cn("flex gap-2", isMe && "flex-row-reverse")}>
+              <div className={cn(
+                "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5",
+                isMe ? "bg-blue-500" : "bg-slate-600",
+              )}>
+                {(msg.userName ?? "?").charAt(0).toUpperCase()}
+              </div>
+              <div className={cn("max-w-[75%]", isMe && "items-end flex flex-col")}>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[10px] text-white/40">{msg.userName ?? "Unknown"}</span>
+                  <span className="text-[9.5px] text-white/20">{fmtTime(msg.createdAt)}</span>
+                </div>
+                <div className={cn(
+                  "px-3 py-1.5 rounded-xl text-[12px] leading-snug",
+                  isMe ? "bg-blue-600 text-white rounded-tr-sm" : "bg-white/10 text-white/85 rounded-tl-sm",
+                )}>
+                  {msg.message}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="p-3 border-t border-white/10 shrink-0">
+        <div className="flex items-center gap-2">
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Type a message…"
+            maxLength={500}
+            className="flex-1 bg-white/10 border border-white/15 rounded-lg px-3 py-2 text-[12px] text-white placeholder-white/30 focus:outline-none focus:border-white/30 focus:bg-white/15"
+          />
+          <button onClick={send} disabled={isPending || !text.trim()}
+            className="p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg transition-colors">
+            <Send className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ─── YouTube sub-player (IFrame API → accurate ended event) ───── */
@@ -282,7 +465,10 @@ function VideoPlayer({
 }
 
 /* ─── Live Sessions Tab ─────────────────────────────────────── */
-function LiveSessionsTab({ courseId }: { courseId: number }) {
+function LiveSessionsTab({ courseId, onJoin }: {
+  courseId: number;
+  onJoin: (id: number, roomName: string, title: string) => void;
+}) {
   const { toast } = useToast();
   const { data: sessions = [], isLoading } = useListLiveClasses({ courseId }, {
     query: { queryKey: getListLiveClassesQueryKey({ courseId }), refetchInterval: 30_000 },
@@ -381,11 +567,12 @@ function LiveSessionsTab({ courseId }: { courseId: number }) {
           )}
           <div className="flex items-center gap-2 mt-3">
             {isLive ? (
-              <Link href={`/live/${session.id}/room`}
+              <button
+                onClick={() => onJoin(session.id, session.roomName ?? session.id.toString(), session.title)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[12.5px] font-bold transition-colors">
                 <Play className="h-3.5 w-3.5" />
                 Join Now
-              </Link>
+              </button>
             ) : isPast ? (
               session.replayUrl ? (
                 <a href={session.replayUrl} target="_blank" rel="noopener noreferrer"
@@ -478,6 +665,8 @@ export default function CourseDetail() {
   const [expanded, setExpanded] = useState<number>(1);
   const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
+  const [activeLiveSession, setActiveLiveSession] = useState<{ id: number; roomName: string; title: string } | null>(null);
+  const { user: clerkUser } = useUser();
 
   const dbLessons = (lessons ?? []) as DbLesson[];
   const chapterGroups = useMemo(() => {
@@ -625,7 +814,14 @@ export default function CourseDetail() {
         {/* LEFT: player / quiz / task — takes remaining space */}
         <div className="flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
 
-          {activeQuizId !== null ? (
+          {activeLiveSession !== null ? (
+            /* ── Jitsi live meeting in video area ── */
+            <JitsiMeetEmbed
+              roomName={activeLiveSession.roomName}
+              displayName={clerkUser?.fullName ?? clerkUser?.firstName ?? "Student"}
+              onLeave={() => setActiveLiveSession(null)}
+            />
+          ) : activeQuizId !== null ? (
             /* ── Quiz runner in video area ── */
             <div className="flex-1 overflow-y-auto bg-white p-6">
               <QuizRunner
@@ -967,8 +1163,18 @@ export default function CourseDetail() {
         </div>
         )}
 
-        {/* RIGHT: Tab content panel (non-overview tabs) */}
-        {showTabPanel && tab !== "overview" && (
+        {/* RIGHT: Live chat panel when in a live session */}
+        {activeLiveSession !== null && tab === "live" && showTabPanel && (
+          <LiveChatPanel
+            classId={activeLiveSession.id}
+            userId={clerkUser?.id ?? ""}
+            sessionTitle={activeLiveSession.title}
+            onClose={() => setShowTabPanel(false)}
+          />
+        )}
+
+        {/* RIGHT: Tab content panel (non-overview, non-live-active tabs) */}
+        {showTabPanel && tab !== "overview" && !(activeLiveSession !== null && tab === "live") && (
           <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
@@ -996,7 +1202,12 @@ export default function CourseDetail() {
               {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} onStart={setActiveTaskId} />}
               {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
               {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
-              {tab === "live" && <LiveSessionsTab courseId={courseId} />}
+              {tab === "live" && (
+                <LiveSessionsTab courseId={courseId} onJoin={(id, roomName, title) => {
+                  setActiveLiveSession({ id, roomName, title });
+                  setShowTabPanel(true);
+                }} />
+              )}
             </div>
           </div>
         )}
