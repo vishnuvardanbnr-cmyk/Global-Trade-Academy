@@ -1,0 +1,13 @@
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7881
+  use_ice_lite: false
+
+logging:
+  pion_level: error
+
+keys:
+  brightinsight: 47cfbfbfc2ed74584dda955c9f743b63d4111c71b761f076848987b0d8b7e88b

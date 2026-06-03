@@ -71,6 +71,12 @@ export default defineConfig({
         target: "http://localhost:5000",
         changeOrigin: false,
       },
+      "/livekit": {
+        target: "http://localhost:7880",
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/livekit/, "") || "/",
+      },
     },
   },
   preview: {
