@@ -979,7 +979,7 @@ export default function CourseDetail() {
     {/* ── Floating bottom tab bar ──────────────────────────────── */}
     <div className={cn(
       "fixed bottom-4 z-50 pointer-events-none flex justify-center transition-all duration-200",
-      showTabPanel ? "left-0 right-[404px]" : "left-0 right-0"
+      showTabPanel ? "left-60 right-[404px]" : "left-60 right-0"
     )}>
       <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto">
         {[
