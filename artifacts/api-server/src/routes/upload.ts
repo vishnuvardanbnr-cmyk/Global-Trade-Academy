@@ -34,7 +34,7 @@ async function getSigningKey(secretKey: string, date: string, region: string, se
   return kSigning;
 }
 
-router.get("/api/upload/presign", async (req, res) => {
+router.get("/upload/presign", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
