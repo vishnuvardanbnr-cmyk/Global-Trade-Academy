@@ -7,6 +7,7 @@ import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+import { useGetMe } from "@workspace/api-client-react";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -22,6 +23,7 @@ import InstructorPanel from "@/pages/instructor";
 import AdminPanel from "@/pages/admin";
 import Settings from "@/pages/settings";
 import VerifyCertificate from "@/pages/verify";
+import SetupPage from "@/pages/setup";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -106,6 +108,18 @@ function ProtectedRouteFullScreen({ component: Component }: { component: React.C
   );
 }
 
+function RoleProtectedRoute({ component: Component, allowedRoles }: { component: React.ComponentType; allowedRoles: string[] }) {
+  const { data: me, isLoading } = useGetMe();
+  if (isLoading) return null;
+  if (!me) return <Redirect to="/" />;
+  if (!allowedRoles.includes(me.role ?? "")) return <Redirect to="/dashboard" />;
+  return (
+    <Show when="signed-in">
+      <DashboardLayout><Component /></DashboardLayout>
+    </Show>
+  );
+}
+
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
@@ -154,9 +168,10 @@ function ClerkProviderWithRoutes() {
             <Route path="/community"><ProtectedRoute component={Community} /></Route>
             <Route path="/live/:classId/room"><ProtectedRouteFullScreen component={LiveRoom} /></Route>
             <Route path="/live"><ProtectedRoute component={LiveClasses} /></Route>
-            <Route path="/instructor"><ProtectedRoute component={InstructorPanel} /></Route>
-            <Route path="/admin"><ProtectedRoute component={AdminPanel} /></Route>
+            <Route path="/instructor"><RoleProtectedRoute component={InstructorPanel} allowedRoles={["instructor", "admin"]} /></Route>
+            <Route path="/admin"><RoleProtectedRoute component={AdminPanel} allowedRoles={["admin"]} /></Route>
             <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
+            <Route path="/setup"><ProtectedRoute component={SetupPage} /></Route>
             <Route path="/verify/:serial" component={VerifyCertificate} />
 
             <Route component={NotFound} />

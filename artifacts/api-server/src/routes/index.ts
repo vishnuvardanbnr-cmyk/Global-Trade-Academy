@@ -19,6 +19,7 @@ import instructorRouter from "./instructor";
 import adminRouter from "./admin";
 import notificationsRouter from "./notifications";
 import batchesRouter from "./batches";
+import setupRouter from "./setup";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(instructorRouter);
 router.use(adminRouter);
 router.use(notificationsRouter);
 router.use(batchesRouter);
+router.use(setupRouter);
 
 export default router;

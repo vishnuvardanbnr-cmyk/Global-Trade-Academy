@@ -93,6 +93,11 @@ router.post("/courses", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
+    const userRow = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    if (!userRow || (userRow.role !== "instructor" && userRow.role !== "admin")) {
+      res.status(403).json({ error: "Only instructors and admins can create courses" }); return;
+    }
+
     const { title, description, category, level, thumbnailUrl, price, duration } = req.body;
     if (!title || !category || !level) { res.status(400).json({ error: "title, category, level required" }); return; }
 

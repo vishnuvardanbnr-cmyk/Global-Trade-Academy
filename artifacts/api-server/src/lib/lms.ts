@@ -185,15 +185,14 @@ export async function syncCourseCompletion(userId: string, courseId: number): Pr
   return { completed: true, certificateSerial, xpAwarded };
 }
 
-/** Whether the authenticated user is the owner (instructor) of the course. */
+/** Whether the authenticated user is the owner (instructor) of the course, or a platform admin. */
 export async function ownsCourse(userId: string, courseId: number): Promise<boolean> {
-  const c = await db
-    .select({ instructorId: coursesTable.instructorId })
-    .from(coursesTable)
-    .where(eq(coursesTable.id, courseId))
-    .limit(1)
-    .then((r) => r[0]);
-  return !!c && c.instructorId === userId;
+  const [userRow, course] = await Promise.all([
+    db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId)).limit(1).then((r) => r[0]),
+    db.select({ instructorId: coursesTable.instructorId }).from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1).then((r) => r[0]),
+  ]);
+  if (userRow?.role === "admin") return !!course;
+  return !!course && course.instructorId === userId;
 }
 
 /** Whether the user has an enrollment for the course. */

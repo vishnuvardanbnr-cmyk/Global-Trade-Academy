@@ -14,7 +14,28 @@ import { reviewsTable } from "@workspace/db";
 
 const router = Router();
 
+async function isInstructorOrAdmin(clerkId: string): Promise<boolean> {
+  const user = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+  return user?.role === "instructor" || user?.role === "admin";
+}
+
+// Role guard middleware — all /instructor/* routes require instructor or admin
+router.use(/^\/instructor/, async (req, res, next) => {
+  const { userId: clerkId } = getAuth(req);
+  if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await isInstructorOrAdmin(clerkId))) {
+    res.status(403).json({ error: "Instructor or admin role required" }); return;
+  }
+  next();
+});
+
 async function getInstructorCourseIds(clerkId: string): Promise<number[]> {
+  const user = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+  // Admins can see all courses; instructors only see their own
+  if (user?.role === "admin") {
+    const courses = await db.select({ id: coursesTable.id }).from(coursesTable);
+    return courses.map((c) => c.id);
+  }
   const courses = await db
     .select({ id: coursesTable.id })
     .from(coursesTable)

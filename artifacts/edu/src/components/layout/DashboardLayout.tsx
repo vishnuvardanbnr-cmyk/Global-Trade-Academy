@@ -142,6 +142,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchNotifications = useCallback(async () => {
+    if (!user) return;
     try {
       const r = await fetch("/api/notifications");
       if (!r.ok) return;
@@ -149,13 +150,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setNotifications(data.notifications ?? []);
       setUnreadCount(data.unreadCount ?? 0);
     } catch { /* ignore */ }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
-  }, [fetchNotifications]);
+  }, [user, fetchNotifications]);
 
   const markRead = async (id: number) => {
     await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
