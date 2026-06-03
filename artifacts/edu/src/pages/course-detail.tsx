@@ -476,6 +476,8 @@ export default function CourseDetail() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [learningStarted, setLearningStarted] = useState(false);
   const [expanded, setExpanded] = useState<number>(1);
+  const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
 
   const dbLessons = (lessons ?? []) as DbLesson[];
   const chapterGroups = useMemo(() => {
@@ -620,9 +622,31 @@ export default function CourseDetail() {
       {/* ── Two-column main area ──────────────────────────── */}
       <div className="flex-1 min-h-0 bg-slate-100 flex flex-row gap-3 p-3">
 
-        {/* LEFT: player — takes remaining space */}
+        {/* LEFT: player / quiz / task — takes remaining space */}
         <div className="flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
 
+          {activeQuizId !== null ? (
+            /* ── Quiz runner in video area ── */
+            <div className="flex-1 overflow-y-auto bg-white p-6">
+              <QuizRunner
+                quizId={activeQuizId}
+                isGateQuiz={gate?.requiredQuizId === activeQuizId}
+                onBack={() => setActiveQuizId(null)}
+                onGraded={invalidateProgress}
+              />
+            </div>
+          ) : activeTaskId !== null ? (
+            /* ── Task runner in video area ── */
+            <div className="flex-1 overflow-y-auto bg-white p-6">
+              <TaskRunner
+                courseId={courseId}
+                taskId={activeTaskId}
+                onBack={() => setActiveTaskId(null)}
+                onDone={() => { invalidateProgress(); setActiveTaskId(null); }}
+              />
+            </div>
+          ) : (
+            <>
           {/* Video player */}
           <div className="w-full">
             <VideoPlayer
@@ -646,6 +670,8 @@ export default function CourseDetail() {
                 ? <><CheckCircle2 className="h-4 w-4 shrink-0" /> Lesson completed — great work!</>
                 : <><Play className="h-3.5 w-3.5 shrink-0" /> Watch the full video to mark this lesson complete</>}
             </div>
+          )}
+            </>
           )}
 
           {/* Lesson header — white card (hidden; tabs moved to floating pill) */}
@@ -965,9 +991,9 @@ export default function CourseDetail() {
                 />
               )}
               {tab === "quiz" && (
-                <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} gate={gate} />
+                <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} gate={gate} onStart={setActiveQuizId} />
               )}
-              {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} />}
+              {tab === "tasks" && <TasksTab courseId={courseId} isEnrolled={isEnrolled} onDone={invalidateProgress} onStart={setActiveTaskId} />}
               {tab === "notes" && <NotesTab lesson={cur} isEnrolled={isEnrolled} />}
               {tab === "reviews" && <ReviewsTab courseId={courseId} isEnrolled={isEnrolled} />}
               {tab === "live" && <LiveSessionsTab courseId={courseId} />}
@@ -1151,29 +1177,17 @@ function OverviewTab({
 
 /* ════════════════════ Quiz Tab ════════════════════ */
 function QuizTab({
-  courseId, isEnrolled, onGraded, gate,
+  courseId, isEnrolled, onGraded, gate, onStart,
 }: {
-  courseId: number; isEnrolled: boolean; onGraded: () => void; gate?: LessonGate;
+  courseId: number; isEnrolled: boolean; onGraded: () => void; gate?: LessonGate; onStart: (id: number) => void;
 }) {
   const { data: quizzes, isLoading } = useListQuizzes(courseId, {
     query: { enabled: courseId > 0, queryKey: getListQuizzesQueryKey(courseId) },
   });
-  const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
 
   if (!isEnrolled) return <GateBlock label="Enroll to access quizzes." />;
   if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
   if (!quizzes || quizzes.length === 0) return <Empty Icon={FileQuestion} label="No quizzes for this course yet." />;
-
-  if (activeQuizId !== null) {
-    return (
-      <QuizRunner
-        quizId={activeQuizId}
-        isGateQuiz={gate?.requiredQuizId === activeQuizId}
-        onBack={() => setActiveQuizId(null)}
-        onGraded={onGraded}
-      />
-    );
-  }
 
   // Separate gate quiz from regular quizzes
   const gateQuiz = gate ? quizzes.find((q) => q.id === gate.requiredQuizId) : null;
@@ -1237,7 +1251,7 @@ function QuizTab({
               </div>
             </div>
             {!isPendingReview && (
-              <button onClick={() => setActiveQuizId(gateQuiz.id)}
+              <button onClick={() => onStart(gateQuiz.id)}
                 className={cn("px-4 py-2 rounded-lg text-[12.5px] font-bold transition-colors shrink-0",
                   isActiveGate ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-blue-600 hover:bg-blue-700 text-white")}>
                 {gateQuiz.passed && gate?.status !== "rejected" ? "Retake" : "Start"}
@@ -1264,7 +1278,7 @@ function QuizTab({
               {q.bestScore != null && ` · Best: ${q.bestScore}%`}
             </p>
           </div>
-          <button onClick={() => setActiveQuizId(q.id)}
+          <button onClick={() => onStart(q.id)}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12.5px] font-bold transition-colors shrink-0">
             {q.passed ? "Retake" : "Start"}
           </button>
@@ -1398,29 +1412,16 @@ function QuizRunner({
 }
 
 /* ════════════════════ Tasks Tab ════════════════════ */
-function TasksTab({ courseId, isEnrolled, onDone }: { courseId: number; isEnrolled: boolean; onDone: () => void }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
+function TasksTab({ courseId, isEnrolled, onDone, onStart }: {
+  courseId: number; isEnrolled: boolean; onDone: () => void; onStart: (id: number) => void;
+}) {
   const { data: tasks, isLoading } = useListTasks(courseId, { query: { enabled: courseId > 0, queryKey: getListTasksQueryKey(courseId) } });
-  const { mutateAsync: complete, isPending } = useCompleteTask();
-  const [submissions, setSubmissions] = useState<Record<number, string>>({});
-  const [openId, setOpenId] = useState<number | null>(null);
 
   if (!isEnrolled) return <GateBlock label="Enroll to complete tasks and earn XP." />;
   if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
   if (!tasks || tasks.length === 0) return <Empty Icon={ListTodo} label="No tasks for this course yet." />;
 
   const doneCount = tasks.filter((t) => t.completed).length;
-
-  const onComplete = async (taskId: number) => {
-    try {
-      const res = await complete({ taskId, data: { submission: submissions[taskId] ?? undefined } });
-      await qc.invalidateQueries({ queryKey: getListTasksQueryKey(courseId) });
-      onDone();
-      if ((res.xpAwarded ?? 0) > 0) toast({ title: "Task complete", description: `+${res.xpAwarded} XP` });
-      setOpenId(null);
-    } catch { toast({ title: "Could not submit task", variant: "destructive" }); }
-  };
 
   return (
     <div className="space-y-3">
@@ -1432,11 +1433,10 @@ function TasksTab({ courseId, isEnrolled, onDone }: { courseId: number; isEnroll
         <span className="text-[12px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{doneCount}/{tasks.length} done</span>
       </div>
       <div className="w-full bg-slate-100 rounded-full h-1.5">
-        <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${(doneCount / tasks.length) * 100}%` }} />
+        <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${tasks.length ? (doneCount / tasks.length) * 100 : 0}%` }} />
       </div>
       {tasks.map((task) => {
         const isDone = !!task.completed;
-        const open = openId === task.id;
         return (
           <div key={task.id} className={cn("p-4 rounded-xl border transition-all", isDone ? "bg-emerald-50/60 border-emerald-200" : "bg-white border-slate-200")}>
             <div className="flex items-start gap-3">
@@ -1452,35 +1452,117 @@ function TasksTab({ courseId, isEnrolled, onDone }: { courseId: number; isEnroll
                 {task.description && <p className="text-[12px] text-slate-400 leading-relaxed">{task.description}</p>}
                 {isDone && task.submission && <p className="text-[11.5px] text-slate-500 mt-2 p-2 rounded-lg bg-white border border-slate-100">{task.submission}</p>}
                 {!isDone && (
-                  open ? (
-                    <div className="mt-2 space-y-2">
-                      <textarea value={submissions[task.id] ?? ""} onChange={(e) => setSubmissions((p) => ({ ...p, [task.id]: e.target.value }))}
-                        placeholder="Describe your work or paste your answer (optional)…" rows={2}
-                        className="w-full p-2.5 text-[12px] rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none resize-none" />
-                      <div className="flex gap-2">
-                        <button onClick={() => onComplete(task.id)} disabled={isPending}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[12px] font-bold transition-colors disabled:opacity-60 flex items-center gap-1.5">
-                          {isPending && <Loader2 className="h-3 w-3 animate-spin" />} Submit & Complete
-                        </button>
-                        <button onClick={() => setOpenId(null)} className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg text-[12px] font-medium transition-colors">Cancel</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => setOpenId(task.id)} className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors">Mark Complete</button>
-                  )
+                  <button onClick={() => onStart(task.id)}
+                    className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors">
+                    Start
+                  </button>
                 )}
               </div>
             </div>
           </div>
         );
       })}
-      {doneCount === tasks.length && (
+      {doneCount === tasks.length && tasks.length > 0 && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
           <Trophy className="h-7 w-7 text-emerald-600 mx-auto mb-1" />
           <p className="text-[13px] font-bold text-emerald-800">All tasks complete! 🎉</p>
           <p className="text-[11.5px] text-emerald-600">+{tasks.reduce((a, t) => a + t.xpReward, 0)} XP available from tasks</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ════════════════════ Task Runner (video-area view) ═══════════════ */
+function TaskRunner({ courseId, taskId, onBack, onDone }: {
+  courseId: number; taskId: number; onBack: () => void; onDone: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: tasks, isLoading } = useListTasks(courseId, { query: { enabled: courseId > 0, queryKey: getListTasksQueryKey(courseId) } });
+  const { mutateAsync: complete, isPending } = useCompleteTask();
+  const [submission, setSubmission] = useState("");
+  const [done, setDone] = useState(false);
+
+  const task = tasks?.find((t) => t.id === taskId);
+
+  const onComplete = async () => {
+    if (!task) return;
+    try {
+      const res = await complete({ taskId, data: { submission: submission.trim() || undefined } });
+      await qc.invalidateQueries({ queryKey: getListTasksQueryKey(courseId) });
+      onDone();
+      setDone(true);
+      if ((res.xpAwarded ?? 0) > 0) toast({ title: "Task complete! 🎉", description: `+${res.xpAwarded} XP` });
+    } catch { toast({ title: "Could not submit task", variant: "destructive" }); }
+  };
+
+  if (isLoading || !task) return <Skeleton className="h-60 rounded-xl" />;
+
+  if (done) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+          <Trophy className="h-8 w-8 text-emerald-600" />
+        </div>
+        <h3 className="text-[20px] font-extrabold text-slate-800 mb-1">Task Complete!</h3>
+        <p className="text-[13px] text-slate-400 mb-5">Great work. Keep building your skills.</p>
+        <button onClick={onBack}
+          className="px-6 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
+          Back to Tasks
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center gap-2">
+        <button onClick={onBack}
+          className="text-[12px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
+          <ArrowLeft className="h-3.5 w-3.5" /> Tasks
+        </button>
+      </div>
+
+      <div className="p-6 rounded-2xl border border-slate-200 bg-slate-50 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-[18px] font-extrabold text-slate-800 leading-snug">{task.title}</h3>
+            <span className="inline-block mt-1.5 text-[11px] px-2.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">
+              +{task.xpReward} XP
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+            <ListTodo className="h-5 w-5 text-blue-600" />
+          </div>
+        </div>
+        {task.description && (
+          <p className="text-[14px] text-slate-600 leading-relaxed">{task.description}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[13px] font-semibold text-slate-700">Your submission <span className="text-slate-400 font-normal">(optional)</span></label>
+        <textarea
+          value={submission}
+          onChange={(e) => setSubmission(e.target.value)}
+          placeholder="Describe what you did, paste a link, or write your answer…"
+          rows={6}
+          className="w-full p-4 text-[13px] rounded-xl border border-slate-200 bg-white focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none transition-all"
+        />
+      </div>
+
+      <div className="flex gap-3">
+        <button onClick={onComplete} disabled={isPending}
+          className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[14px] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+          {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          Submit & Complete Task
+        </button>
+        <button onClick={onBack}
+          className="px-5 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-semibold text-[13px] transition-colors">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
