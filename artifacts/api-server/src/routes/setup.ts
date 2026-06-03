@@ -123,8 +123,8 @@ router.post("/setup/demo-login", async (req, res): Promise<void> => {
       res.status(500).json({ error: "Could not create demo token" }); return;
     }
 
-    const { token } = await clerkRes.json() as { token: string };
-    res.json({ token });
+    const data = await clerkRes.json() as { token: string; url: string };
+    res.json({ token: data.token, url: data.url });
   } catch (err) {
     req.log.error({ err }, "Demo login error");
     res.status(500).json({ error: "Internal server error" });

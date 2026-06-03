@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useSignIn, useClerk } from "@clerk/react";
 import { useLocation } from "wouter";
 import { BarChart3, RefreshCw, AlertTriangle } from "lucide-react";
 
@@ -11,29 +10,15 @@ const ROLE_EMAILS: Record<string, string> = {
 
 export default function DemoLoginPage() {
   const [, navigate] = useLocation();
-  const { signOut } = useClerk();
-  const { signIn, setActive, isLoaded } = useSignIn();
-  const [status, setStatus] = useState("Preparing demo session…");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoaded) return;
-
     const params = new URLSearchParams(window.location.search);
     const role = params.get("role") ?? "student";
     const email = ROLE_EMAILS[role] ?? ROLE_EMAILS.student;
 
     async function login() {
       try {
-        // If already signed in as someone, sign out first so signIn is available
-        if (!signIn) {
-          setStatus("Signing out current session…");
-          await signOut();
-          // After signOut, the component will re-render with signIn available
-          return;
-        }
-
-        setStatus("Creating demo session…");
         const res = await fetch("/api/setup/demo-login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -46,18 +31,13 @@ export default function DemoLoginPage() {
           return;
         }
 
-        const { token } = await res.json() as { token: string };
+        const { url } = await res.json() as { url: string };
 
-        setStatus("Authenticating…");
-        const result = await signIn.create({ strategy: "ticket", ticket: token });
+        // Append redirect_url so Clerk sends the user to /dashboard after sign-in
+        const redirectUrl = `${window.location.origin}/dashboard`;
+        const clerkUrl = `${url}&redirect_url=${encodeURIComponent(redirectUrl)}`;
 
-        if (result.status === "complete") {
-          setStatus("Redirecting…");
-          await setActive!({ session: result.createdSessionId });
-          navigate("/dashboard");
-        } else {
-          setError(`Unexpected sign-in status: ${result.status}`);
-        }
+        window.location.href = clerkUrl;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         setError(`Demo login failed: ${msg}`);
@@ -65,7 +45,7 @@ export default function DemoLoginPage() {
     }
 
     login();
-  }, [isLoaded, signIn]);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-6 px-4">
@@ -93,7 +73,7 @@ export default function DemoLoginPage() {
       ) : (
         <div className="flex flex-col items-center gap-3 text-muted-foreground text-sm">
           <RefreshCw className="h-5 w-5 animate-spin text-primary" />
-          {status}
+          Signing you in…
         </div>
       )}
     </div>
