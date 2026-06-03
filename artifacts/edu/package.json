@@ -77,6 +77,9 @@
   "dependencies": {
     "@clerk/react": "^6.7.2",
     "@clerk/themes": "^2.4.57",
-    "lightweight-charts": "^5.2.0"
+    "@livekit/components-react": "^2.9.21",
+    "@livekit/components-styles": "^1.2.0",
+    "lightweight-charts": "^5.2.0",
+    "livekit-client": "^2.19.1"
   }
 }

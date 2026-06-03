@@ -457,4 +457,53 @@ router.post("/live-classes/:classId/polls/:pollId/vote", async (req, res): Promi
   }
 });
 
+// GET /api/live-classes/:classId/token  — LiveKit JWT for the room
+router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const classId = parseInt(req.params.classId);
+    const classes = await db.select().from(liveClassesTable).where(eq(liveClassesTable.id, classId)).limit(1);
+    if (!classes.length) { res.status(404).json({ error: "Not found" }); return; }
+    const cls = classes[0];
+
+    const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+    const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+    const LIVEKIT_URL = process.env.LIVEKIT_URL ?? "";
+
+    if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !LIVEKIT_URL) {
+      res.status(503).json({ error: "LiveKit not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL in env vars." });
+      return;
+    }
+
+    if (!cls.roomName) { res.status(400).json({ error: "Room name not set" }); return; }
+
+    const users = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1);
+    const displayName = users[0]?.displayName ?? clerkId;
+    const isInstructor = cls.instructorId === clerkId;
+
+    const { AccessToken } = await import("livekit-server-sdk");
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+      identity: clerkId,
+      name: displayName,
+      ttl: 7200,
+    });
+    at.addGrant({
+      roomJoin: true,
+      room: cls.roomName,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      roomAdmin: isInstructor,
+    });
+
+    const token = await at.toJwt();
+    res.json({ token, url: LIVEKIT_URL });
+  } catch (err) {
+    req.log.error({ err }, "Error generating LiveKit token");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

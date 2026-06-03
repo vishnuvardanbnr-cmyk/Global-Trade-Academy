@@ -9,63 +9,28 @@ import {
   getGetLiveClassQueryKey,
   type LiveClassMessage, type LiveClassQuestion, type LiveClassPoll,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft, Users, Clock, Video, VideoOff, Mic, MicOff,
-  MonitorUp, MessageSquare, PhoneOff, Radio, Circle,
+  MessageSquare, PhoneOff, AlertTriangle,
   BookOpen, Calendar, Wifi, WifiOff, Loader2, Play,
   ChevronRight, Send, ThumbsUp, Pin, CheckCircle2, BarChart2,
   X, PlusCircle, ChevronLeft, Info, Hand,
 } from "lucide-react";
-
-/* ─── Jitsi IFrame API types ───────────────────────────────────── */
-declare global {
-  interface Window {
-    JitsiMeetExternalAPI: new (
-      domain: string,
-      options: {
-        roomName: string;
-        width?: string | number;
-        height?: string | number;
-        parentNode?: HTMLElement;
-        configOverwrite?: Record<string, unknown>;
-        interfaceConfigOverwrite?: Record<string, unknown>;
-        userInfo?: { displayName?: string; email?: string };
-      }
-    ) => JitsiAPI;
-  }
-}
-
-interface JitsiAPI {
-  on(event: string, handler: (data?: Record<string, unknown>) => void): void;
-  dispose(): void;
-  executeCommand(command: string, ...args: unknown[]): void;
-  getParticipantsInfo(): Array<{ displayName: string; participantId: string }>;
-  isAudioMuted(): Promise<boolean>;
-  isVideoMuted(): Promise<boolean>;
-}
-
-/* ─── Jitsi script loader (singleton) ─────────────────────────── */
-let _jitsiLoading = false;
-let _jitsiReady = false;
-const _jitsiCallbacks: Array<() => void> = [];
-
-function loadJitsi(onReady: () => void) {
-  if (_jitsiReady) { onReady(); return; }
-  _jitsiCallbacks.push(onReady);
-  if (_jitsiLoading) return;
-  _jitsiLoading = true;
-  const s = document.createElement("script");
-  s.src = "https://meet.jit.si/external_api.js";
-  s.onload = () => {
-    _jitsiReady = true;
-    _jitsiCallbacks.forEach((fn) => fn());
-    _jitsiCallbacks.length = 0;
-  };
-  document.head.appendChild(s);
-}
+import "@livekit/components-styles";
+import {
+  LiveKitRoom,
+  GridLayout,
+  ParticipantTile,
+  RoomAudioRenderer,
+  ControlBar,
+  useTracks,
+  useParticipants,
+  useLocalParticipant,
+} from "@livekit/components-react";
+import { Track } from "livekit-client";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 function formatTime(d: string | Date) {
@@ -579,6 +544,103 @@ function InfoPanel({ cls, participantCount }: { cls: LiveClassInfo; participantC
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   LiveKit video area — inner components (must be inside LiveKitRoom)
+══════════════════════════════════════════════════════════════════ */
+function LiveKitGrid({
+  onJoined,
+  onParticipantCount,
+  onAudioMuted,
+  onVideoMuted,
+}: {
+  onJoined: () => void;
+  onParticipantCount: (n: number) => void;
+  onAudioMuted: (m: boolean) => void;
+  onVideoMuted: (m: boolean) => void;
+}) {
+  const participants = useParticipants();
+  const { localParticipant } = useLocalParticipant();
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false },
+  );
+
+  const joined = useRef(false);
+  useEffect(() => {
+    if (!joined.current && localParticipant) {
+      joined.current = true;
+      onJoined();
+    }
+  }, [localParticipant, onJoined]);
+
+  useEffect(() => {
+    onParticipantCount(participants.length);
+  }, [participants.length, onParticipantCount]);
+
+  useEffect(() => {
+    if (!localParticipant) return;
+    onAudioMuted(!localParticipant.isMicrophoneEnabled);
+    onVideoMuted(!localParticipant.isCameraEnabled);
+  }, [localParticipant?.isMicrophoneEnabled, localParticipant?.isCameraEnabled, onAudioMuted, onVideoMuted, localParticipant]);
+
+  return (
+    <div className="flex flex-col h-full" data-lk-theme="default">
+      <div className="flex-1 min-h-0">
+        <GridLayout tracks={tracks} style={{ height: "100%" }}>
+          <ParticipantTile />
+        </GridLayout>
+      </div>
+      <div className="shrink-0 bg-slate-900 border-t border-slate-700/50">
+        <ControlBar
+          variation="minimal"
+          controls={{ microphone: true, camera: true, screenShare: true, leave: false, chat: false }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function LiveKitVideoArea({
+  token,
+  serverUrl,
+  onJoined,
+  onDisconnected,
+  onParticipantCount,
+  onAudioMuted,
+  onVideoMuted,
+}: {
+  token: string;
+  serverUrl: string;
+  onJoined: () => void;
+  onDisconnected: () => void;
+  onParticipantCount: (n: number) => void;
+  onAudioMuted: (m: boolean) => void;
+  onVideoMuted: (m: boolean) => void;
+}) {
+  return (
+    <LiveKitRoom
+      serverUrl={serverUrl}
+      token={token}
+      connect
+      audio
+      video={false}
+      onDisconnected={onDisconnected}
+      style={{ height: "100%", background: "transparent" }}
+    >
+      <LiveKitGrid
+        onJoined={onJoined}
+        onParticipantCount={onParticipantCount}
+        onAudioMuted={onAudioMuted}
+        onVideoMuted={onVideoMuted}
+      />
+      <RoomAudioRenderer />
+    </LiveKitRoom>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
    Main live room
 ══════════════════════════════════════════════════════════════════ */
 type SidebarTab = "chat" | "qa" | "polls" | "info";
@@ -604,81 +666,38 @@ export default function LiveRoom() {
 
   const isInstructor = !!user && cls?.instructorId === user.id;
 
-  /* ─── Jitsi state ────────────────────────────────────────────── */
-  const containerRef = useRef<HTMLDivElement>(null);
-  const apiRef = useRef<JitsiAPI | null>(null);
-  const [jitsiReady, setJitsiReady] = useState(false);
+  /* ─── LiveKit state ──────────────────────────────────────────── */
   const [roomJoined, setRoomJoined] = useState(false);
   const [participantCount, setParticipantCount] = useState(0);
-  const [audioMuted, setAudioMuted] = useState(false);
-  const [videoMuted, setVideoMuted] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [audioMuted, setAudioMuted] = useState(true);
+  const [videoMuted, setVideoMuted] = useState(true);
+
+  const isLiveStatus = cls?.status === "live";
+
+  const { data: livekitToken, error: tokenError } = useQuery({
+    queryKey: ["livekit-token", classId],
+    queryFn: async () => {
+      const res = await fetch(`/api/live-classes/${classId}/token`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to get room token");
+      }
+      return res.json() as Promise<{ token: string; url: string }>;
+    },
+    enabled: isLiveStatus && classId > 0,
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
 
   /* ─── Sidebar state ──────────────────────────────────────────── */
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const initJitsi = useCallback(() => {
-    if (!containerRef.current || !cls?.roomName || apiRef.current) return;
-    loadJitsi(() => {
-      if (!containerRef.current || apiRef.current) return;
-      try {
-        const api = new window.JitsiMeetExternalAPI("meet.jit.si", {
-          roomName: cls.roomName!,
-          width: "100%",
-          height: "100%",
-          parentNode: containerRef.current,
-          configOverwrite: {
-            startWithAudioMuted: false,
-            startWithVideoMuted: false,
-            prejoinPageEnabled: false,
-            disableDeepLinking: true,
-            enableClosePage: false,
-            analytics: { disabled: true },
-            toolbarButtons: [
-              "microphone", "camera", "desktop", "fullscreen",
-              "fodeviceselection", "hangup", "raisehand",
-              "videoquality", "filmstrip", "participants-pane",
-              "tileview", "select-background",
-              ...(isInstructor ? ["recording", "mute-everyone", "kick"] : []),
-            ],
-          },
-          interfaceConfigOverwrite: {
-            SHOW_JITSI_WATERMARK: false,
-            SHOW_WATERMARK_FOR_GUESTS: false,
-            DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
-            SHOW_CHROME_EXTENSION_BANNER: false,
-            DEFAULT_BACKGROUND: "#0f172a",
-            HIDE_INVITE_MORE_HEADER: true,
-          },
-          userInfo: {
-            displayName: user?.fullName ?? user?.firstName ?? "Participant",
-          },
-        });
-
-        apiRef.current = api;
-        api.on("videoConferenceJoined", () => { setRoomJoined(true); setParticipantCount((c) => c + 1); });
-        api.on("participantJoined", () => setParticipantCount((c) => c + 1));
-        api.on("participantLeft", () => setParticipantCount((c) => Math.max(0, c - 1)));
-        api.on("audioMuteStatusChanged", (d) => setAudioMuted(!!(d as { muted: boolean }).muted));
-        api.on("videoMuteStatusChanged", (d) => setVideoMuted(!!(d as { muted: boolean }).muted));
-        api.on("recordingStatusChanged", (d) => setIsRecording(!!(d as { on: boolean }).on));
-        api.on("videoConferenceLeft", () => { setRoomJoined(false); if (!isInstructor) navigate("/live"); });
-      } catch (err) {
-        console.error("Jitsi init failed", err);
-        toast({ title: "Could not connect to room", variant: "destructive" });
-      }
-    });
-  }, [cls?.roomName, isInstructor, user, navigate, toast]);
-
-  useEffect(() => {
-    if (cls?.status === "live" && cls.roomName) setJitsiReady(true);
-  }, [cls?.status, cls?.roomName]);
-
-  useEffect(() => {
-    if (jitsiReady) initJitsi();
-    return () => { if (apiRef.current) { apiRef.current.dispose(); apiRef.current = null; } };
-  }, [jitsiReady, initJitsi]);
+  const handleLiveKitJoined = useCallback(() => setRoomJoined(true), []);
+  const handleLiveKitDisconnected = useCallback(() => {
+    setRoomJoined(false);
+    if (!isInstructor) navigate("/live");
+  }, [isInstructor, navigate]);
 
   const handleStart = async () => {
     try {
@@ -693,7 +712,6 @@ export default function LiveRoom() {
   const handleEnd = async () => {
     if (!confirm("End this session for all participants?")) return;
     try {
-      apiRef.current?.executeCommand("hangup");
       await endClass({ classId });
       await qc.invalidateQueries({ queryKey: getGetLiveClassQueryKey(classId) });
       toast({ title: "Session ended." });
@@ -701,12 +719,6 @@ export default function LiveRoom() {
     } catch {
       toast({ title: "Could not end session", variant: "destructive" });
     }
-  };
-
-  const toggleRecording = () => {
-    if (!apiRef.current) return;
-    if (isRecording) apiRef.current.executeCommand("stopRecording", "file");
-    else apiRef.current.executeCommand("startRecording", { mode: "file" });
   };
 
   if (isLoading || !cls) {
@@ -761,23 +773,11 @@ export default function LiveRoom() {
             </span>
           )}
 
-          {isLive && isInstructor && isRecording && (
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-600/20 border border-red-600/40 text-red-400 text-[11px] font-semibold">
-              <Circle className="h-2 w-2 fill-red-400 text-red-400 animate-pulse" />
-              REC
-            </span>
-          )}
-
           {isInstructor && isLive && (
             <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2.5">
-              <button onClick={toggleRecording} title={isRecording ? "Stop recording" : "Start recording"}
-                className={cn("p-1.5 rounded-lg transition-colors",
-                  isRecording ? "bg-red-600/20 text-red-400 hover:bg-red-600/30" : "text-white/40 hover:text-white hover:bg-white/10")}>
-                <Radio className="h-4 w-4" />
-              </button>
               <button onClick={handleEnd} disabled={ending}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[12px] font-bold transition-colors disabled:opacity-60">
-                <PhoneOff className="h-3.5 w-3.5" />End
+                <PhoneOff className="h-3.5 w-3.5" />End Session
               </button>
             </div>
           )}
@@ -798,7 +798,32 @@ export default function LiveRoom() {
 
         {/* Video / waiting */}
         <div className="flex-1 min-w-0 relative">
-          {isLive && <div ref={containerRef} className="w-full h-full" />}
+          {isLive && livekitToken && (
+            <LiveKitVideoArea
+              token={livekitToken.token}
+              serverUrl={livekitToken.url}
+              onJoined={handleLiveKitJoined}
+              onDisconnected={handleLiveKitDisconnected}
+              onParticipantCount={setParticipantCount}
+              onAudioMuted={setAudioMuted}
+              onVideoMuted={setVideoMuted}
+            />
+          )}
+
+          {isLive && !livekitToken && !tokenError && (
+            <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center gap-4 z-10">
+              <Wifi className="h-5 w-5 text-blue-400 animate-pulse" />
+              <span className="text-white/60 text-[14px]">Connecting to room…</span>
+            </div>
+          )}
+
+          {isLive && tokenError && (
+            <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center gap-3 z-10 p-8">
+              <AlertTriangle className="h-8 w-8 text-amber-400" />
+              <p className="text-white/70 text-[14px] font-medium text-center">Could not connect to video room</p>
+              <p className="text-white/35 text-[12px] text-center">{(tokenError as Error).message}</p>
+            </div>
+          )}
 
           {!isLive && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-gradient-to-br from-slate-950 via-blue-950/30 to-slate-950 p-8">
@@ -874,15 +899,6 @@ export default function LiveRoom() {
             </div>
           )}
 
-          {isLive && !roomJoined && (
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4 z-50">
-              <div className="flex items-center gap-3">
-                <Wifi className="h-5 w-5 text-blue-400 animate-pulse" />
-                <span className="text-white/70 text-[14px] font-medium">Connecting to room…</span>
-              </div>
-              <p className="text-white/30 text-[12px]">Setting up your audio and video</p>
-            </div>
-          )}
         </div>
 
         {/* ── Sidebar ──────────────────────────────────────────── */}
@@ -924,23 +940,18 @@ export default function LiveRoom() {
 
       {/* ── Bottom status bar ────────────────────────────────────── */}
       {isLive && roomJoined && (
-        <div className="shrink-0 bg-slate-900/80 border-t border-slate-700/30 px-6 py-1.5 flex items-center justify-between text-[11px] text-white/25">
-          <div className="flex items-center gap-4">
-            <span className={cn("flex items-center gap-1.5", audioMuted && "text-red-400/60")}>
-              {audioMuted ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
-              {audioMuted ? "Muted" : "Mic on"}
-            </span>
-            <span className={cn("flex items-center gap-1.5", videoMuted && "text-red-400/60")}>
-              {videoMuted ? <VideoOff className="h-3 w-3" /> : <Video className="h-3 w-3" />}
-              {videoMuted ? "Camera off" : "Camera on"}
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-white/20">
-              <MonitorUp className="h-3 w-3" />
-              Screen share in toolbar
-            </span>
-          </div>
+        <div className="shrink-0 bg-slate-900/80 border-t border-slate-700/30 px-6 py-1.5 flex items-center gap-6 text-[11px] text-white/30">
+          <span className={cn("flex items-center gap-1.5", audioMuted && "text-red-400/60")}>
+            {audioMuted ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+            {audioMuted ? "Muted" : "Mic on"}
+          </span>
+          <span className={cn("flex items-center gap-1.5", videoMuted && "text-red-400/60")}>
+            {videoMuted ? <VideoOff className="h-3 w-3" /> : <Video className="h-3 w-3" />}
+            {videoMuted ? "Camera off" : "Camera on"}
+          </span>
+          <span className="flex items-center gap-1.5 ml-auto">
+            <Users className="h-3 w-3" />{participantCount} in room
+          </span>
         </div>
       )}
     </div>
