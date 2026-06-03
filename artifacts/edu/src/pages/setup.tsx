@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useUser } from "@clerk/react";
+import { useUser, useSignIn, useClerk } from "@clerk/react";
 import { useGetMe } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,9 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   Shield, ShieldAlert, GraduationCap, UserCheck, CheckCircle2,
-  AlertTriangle, RefreshCw, Copy, ChevronRight, Zap,
+  AlertTriangle, RefreshCw, Copy, ChevronRight, Zap, LogIn,
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 function RoleBadge({ role }: { role: string }) {
   const cfg =
@@ -27,11 +27,48 @@ function RoleBadge({ role }: { role: string }) {
 
 export default function SetupPage() {
   const { user } = useUser();
+  const { signIn, isLoaded: signInLoaded } = useSignIn();
+  const { signOut } = useClerk();
   const { data: me, refetch: refetchMe } = useGetMe();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [bootstrapStatus, setBootstrapStatus] = useState<{ bootstrapped: boolean; adminCount: number } | null>(null);
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [demoLoggingIn, setDemoLoggingIn] = useState<string | null>(null);
+
+  const handleDemoLogin = async (email: string) => {
+    if (!signInLoaded) return;
+    setDemoLoggingIn(email);
+    try {
+      // If already signed in as someone else, sign out first
+      if (user) await signOut();
+
+      const res = await fetch("/api/setup/demo-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: err.error || "Demo login failed", variant: "destructive" });
+        return;
+      }
+      const { token } = await res.json() as { token: string };
+
+      const result = await signIn.create({ strategy: "ticket", ticket: token });
+      if (result.status === "complete") {
+        await qc.invalidateQueries();
+        navigate("/dashboard");
+      } else {
+        toast({ title: "Sign-in incomplete — unexpected state", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Demo login error", variant: "destructive" });
+    } finally {
+      setDemoLoggingIn(null);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/setup/status").then((r) => r.json()).then(setBootstrapStatus).catch(() => {});
@@ -169,25 +206,42 @@ export default function SetupPage() {
                     <RoleBadge role={a.label.toLowerCase()} />
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">{a.desc}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border">
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-muted-foreground">Email</p>
-                        <p className="text-xs font-mono font-semibold truncate">{a.email}</p>
+                  <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border">
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-muted-foreground">Email</p>
+                          <p className="text-xs font-mono font-semibold truncate">{a.email}</p>
+                        </div>
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 ml-2" onClick={() => copyToClipboard(a.email)}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
                       </div>
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 ml-2" onClick={() => copyToClipboard(a.email)}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border">
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-muted-foreground">Password</p>
-                        <p className="text-xs font-mono font-semibold">{a.password}</p>
+                      <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border">
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-muted-foreground">Password</p>
+                          <p className="text-xs font-mono font-semibold">{a.password}</p>
+                        </div>
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 ml-2" onClick={() => copyToClipboard(a.password)}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
                       </div>
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 ml-2" onClick={() => copyToClipboard(a.password)}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
                     </div>
+                    <Button
+                      size="sm"
+                      className={`w-full gap-2 ${
+                        a.label === "Admin" ? "bg-red-500 hover:bg-red-600" :
+                        a.label === "Instructor" ? "bg-purple-600 hover:bg-purple-700" :
+                        "bg-blue-600 hover:bg-blue-700"
+                      } text-white`}
+                      disabled={demoLoggingIn !== null}
+                      onClick={() => handleDemoLogin(a.email)}
+                    >
+                      {demoLoggingIn === a.email
+                        ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Signing in…</>
+                        : <><LogIn className="h-3.5 w-3.5" /> Login as {a.label}</>
+                      }
+                    </Button>
                   </div>
                 </div>
               </div>

@@ -93,4 +93,42 @@ router.post("/setup/set-role", async (req, res): Promise<void> => {
   }
 });
 
+/* ── POST /api/setup/demo-login ─────────────────────────────────
+   Creates a Clerk sign-in token for demo accounts only.
+   No auth required — these are demo credentials.               */
+const DEMO_USER_IDS: Record<string, string> = {
+  "brightinsight.admin@gmail.com":      "user_3EdOGmdMjsuPDcaT0obAxJk4AB5",
+  "brightinsight.instructor@gmail.com": "user_3EdOH3ArsB1MLX9StxB3FbxZWVD",
+  "brightinsight.student@gmail.com":    "user_3EdOHAlOOpfu6pw3wB5QJVwi2bU",
+};
+
+router.post("/setup/demo-login", async (req, res): Promise<void> => {
+  try {
+    const { email } = req.body as { email: string };
+    const userId = DEMO_USER_IDS[email];
+    if (!userId) { res.status(400).json({ error: "Not a demo account" }); return; }
+
+    const clerkRes = await fetch("https://api.clerk.com/v1/sign_in_tokens", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ user_id: userId }),
+    });
+
+    if (!clerkRes.ok) {
+      const err = await clerkRes.json().catch(() => ({}));
+      req.log.error({ err }, "Clerk sign-in token creation failed");
+      res.status(500).json({ error: "Could not create demo token" }); return;
+    }
+
+    const { token } = await clerkRes.json() as { token: string };
+    res.json({ token });
+  } catch (err) {
+    req.log.error({ err }, "Demo login error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
