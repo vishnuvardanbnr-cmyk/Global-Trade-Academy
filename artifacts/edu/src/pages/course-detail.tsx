@@ -745,18 +745,6 @@ export default function CourseDetail() {
           {/* Course info card */}
           <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shrink-0">
             <h2 className="text-[14px] font-bold text-slate-900 leading-snug mb-1">{course.title}</h2>
-            <p className="text-[12px] text-slate-500 leading-relaxed mb-4 line-clamp-2">{course.description}</p>
-
-            {/* Instructor row */}
-            <div className="flex items-center gap-2.5 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[12px] font-bold text-white shrink-0">
-                {(course.instructorName ?? "I").charAt(0)}
-              </div>
-              <div>
-                <p className="text-[12.5px] font-semibold text-slate-800 leading-none">{course.instructorName ?? "Instructor"}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Course Instructor</p>
-              </div>
-            </div>
 
 
             {isEnrolled ? (
