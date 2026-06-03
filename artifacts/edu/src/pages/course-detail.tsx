@@ -465,9 +465,17 @@ export default function CourseDetail() {
   const completedCount = progress?.completedLessons ?? completedSet.size;
 
   const firstUncompletedIdx = useMemo(() => {
-    const idx = dbLessons.findIndex((l) => !completedSet.has(l.id));
-    return idx >= 0 ? idx : 0;
-  }, [dbLessons, completedSet]);
+    // Walk chapters in curriculum order so Start Learning picks the correct first lesson
+    for (const ch of chapterGroups) {
+      for (const l of ch.lessons) {
+        if (!completedSet.has(l.id)) {
+          const idx = dbLessons.findIndex((dl) => dl.id === l.id);
+          if (idx >= 0) return idx;
+        }
+      }
+    }
+    return 0;
+  }, [chapterGroups, dbLessons, completedSet]);
 
   const cur = dbLessons[activeIdx];
   const curChapter = chapterGroups.find((ch) => ch.lessons.some((l) => l.id === cur?.id));
