@@ -4,10 +4,11 @@ import {
   LayoutDashboard, BookOpen, LineChart, Users, Video, MessageSquare,
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
   ChevronRight, MessageCircle, GraduationCap, Zap, Award, UserCircle2,
+  Settings, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGetMe, useGetInstructorReviewCount, getGetInstructorReviewCountQueryKey, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -101,7 +102,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { signOut } = useClerk();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileDismissed, setProfileDismissed] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const { data: me } = useGetMe();
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   const role = me?.role;
   const isInstructor = role === "instructor";
@@ -291,12 +305,76 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 Live Chat
               </button>
             </Link>
-            <button className="relative p-2 rounded-lg hover:bg-secondary transition-colors">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
-            </button>
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold cursor-pointer">
-              {initials || "U"}
+            {/* Bell */}
+            <div ref={bellRef} className="relative">
+              <button
+                onClick={() => { setBellOpen(o => !o); setMenuOpen(false); }}
+                className="relative p-2 rounded-lg hover:bg-secondary transition-colors"
+              >
+                <Bell className="h-5 w-5 text-muted-foreground" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
+              </button>
+              {bellOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                    <p className="text-sm font-semibold text-foreground">Notifications</p>
+                    <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">3 new</span>
+                  </div>
+                  <div className="divide-y divide-border max-h-72 overflow-y-auto">
+                    {[
+                      { icon: "📣", title: "New course added", sub: "Advanced Forex Strategies is now live", time: "2h ago", unread: true },
+                      { icon: "🎯", title: "Live session starting", sub: "Weekly market analysis begins in 1 hour", time: "5h ago", unread: true },
+                      { icon: "✅", title: "Platform update", sub: "Live room Q&A and polls are now available", time: "2d ago", unread: false },
+                    ].map((n, i) => (
+                      <div key={i} className={cn("flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 cursor-pointer transition-colors", n.unread && "bg-blue-50/40")}>
+                        <span className="text-lg leading-none mt-0.5">{n.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground leading-tight">{n.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.sub}</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-1">{n.time}</p>
+                        </div>
+                        {n.unread && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1.5" />}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-2.5 border-t border-border">
+                    <button className="text-xs font-medium text-primary hover:underline">Mark all as read</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Avatar menu */}
+            <div ref={menuRef} className="relative">
+              <button
+                onClick={() => { setMenuOpen(o => !o); setBellOpen(false); }}
+                className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold hover:opacity-90 transition-opacity"
+              >
+                {initials || "U"}
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-52 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border">
+                    <p className="text-sm font-semibold text-foreground truncate">{user?.fullName || "Trader"}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
+                  </div>
+                  <div className="py-1">
+                    <Link href="/dashboard" onClick={() => setMenuOpen(false)}>
+                      <div className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors">
+                        <User className="h-4 w-4 text-muted-foreground" /> My Profile
+                      </div>
+                    </Link>
+                  </div>
+                  <div className="border-t border-border py-1">
+                    <button
+                      onClick={() => { setMenuOpen(false); signOut({ redirectUrl: import.meta.env.BASE_URL }); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 cursor-pointer transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>

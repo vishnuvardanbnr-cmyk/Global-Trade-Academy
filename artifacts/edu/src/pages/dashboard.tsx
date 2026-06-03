@@ -7,10 +7,40 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   BookOpen, Trophy, TrendingUp, Video, ArrowUpRight,
   Star, Clock, CheckCircle2, Target, Zap, BarChart3, Activity,
-  Users, GraduationCap, Radio, Calendar,
+  Users, GraduationCap, Radio, Calendar, Megaphone, Pin, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+
+const ANNOUNCEMENTS = [
+  {
+    id: 1,
+    icon: Pin,
+    color: "bg-blue-50 text-blue-600",
+    pinned: true,
+    title: "New Course: Advanced Forex Strategies",
+    body: "Our most-requested course is now live. Master institutional order flow, supply & demand zones, and high-probability setups.",
+    date: "Jun 2, 2026",
+  },
+  {
+    id: 2,
+    icon: Video,
+    color: "bg-violet-50 text-violet-600",
+    pinned: false,
+    title: "Weekly Live Session — Every Friday 8 PM UTC",
+    body: "Join our lead instructor for a live market analysis session covering key levels and upcoming week opportunities.",
+    date: "Jun 1, 2026",
+  },
+  {
+    id: 3,
+    icon: Info,
+    color: "bg-amber-50 text-amber-600",
+    pinned: false,
+    title: "Platform Update: Live Room Q&A & Polls",
+    body: "You can now ask questions and participate in polls during live sessions. Look for the sidebar inside any live room.",
+    date: "May 30, 2026",
+  },
+];
 
 const ACTIVITY_META: Record<string, { icon: typeof CheckCircle2; color: string; xp: string }> = {
   enrollment:      { icon: GraduationCap, color: "text-blue-500 bg-blue-50",    xp: "+25 XP" },
@@ -169,30 +199,27 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Quick actions */}
-        <Card className="shadow-xs border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Quick Actions</CardTitle>
+        {/* Announcements */}
+        <Card className="shadow-xs border-border flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-base font-semibold">Announcements</CardTitle>
+            <Megaphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-2">
-            {[
-              { icon: BookOpen, label: "Browse Courses", sub: `${(allCourses ?? []).length} courses available`, href: "/courses", color: "bg-blue-50 text-blue-600" },
-              { icon: BarChart3, label: "Trading Chat", sub: "Live market analysis", href: "/trading-chat", color: "bg-emerald-50 text-emerald-600" },
-              { icon: Target, label: "Copy a Trader", sub: "6 verified traders", href: "/copy-trading", color: "bg-violet-50 text-violet-600" },
-              { icon: Zap, label: "Live Sessions", sub: `${summary?.upcomingClasses ?? 0} upcoming`, href: "/live", color: "bg-amber-50 text-amber-600" },
-            ].map((action) => (
-              <Link key={action.label} href={action.href}>
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary transition-colors cursor-pointer group">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${action.color}`}>
-                    <action.icon className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{action.label}</p>
-                    <p className="text-xs text-muted-foreground">{action.sub}</p>
-                  </div>
-                  <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <CardContent className="flex-1 space-y-3 pb-4">
+            {ANNOUNCEMENTS.map((a) => (
+              <div key={a.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${a.color}`}>
+                  <a.icon className="h-4 w-4" />
                 </div>
-              </Link>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    {a.pinned && <Pin className="h-3 w-3 text-primary shrink-0" />}
+                    <p className="text-sm font-semibold text-foreground leading-tight truncate">{a.title}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-snug line-clamp-2">{a.body}</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{a.date}</p>
+                </div>
+              </div>
             ))}
           </CardContent>
         </Card>
