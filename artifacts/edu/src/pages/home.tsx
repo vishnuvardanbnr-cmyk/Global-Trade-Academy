@@ -88,7 +88,7 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <BarChart3 className="h-4 w-4 text-white" strokeWidth={2.5} />
             </div>
-            <span className="font-bold text-[15px] text-foreground tracking-tight">EDU <span className="font-medium text-muted-foreground">Trading</span></span>
+            <span className="font-bold text-[15px] text-foreground tracking-tight">Bright Insight</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
@@ -231,7 +231,7 @@ export default function Home() {
           <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
             <h2 className="text-4xl font-extrabold text-white mb-4">Ready to trade smarter?</h2>
             <p className="text-blue-100 text-lg mb-8 max-w-xl mx-auto">
-              Join thousands of traders already using EDU to sharpen their edge. Start free today.
+              Join thousands of traders already using Bright Insight to sharpen their edge. Start free today.
             </p>
             <Link href="/sign-up">
               <Button
