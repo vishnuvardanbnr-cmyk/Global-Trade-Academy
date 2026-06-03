@@ -742,7 +742,7 @@ export default function CourseDetail() {
                 {/* Start / Continue Learning button */}
                 {!progress?.courseCompleted && (
                   <button
-                    onClick={() => { setActiveIdx(firstUncompletedIdx); setShowTabPanel(false); }}
+                    onClick={() => setActiveIdx(firstUncompletedIdx)}
                     className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 active:scale-[0.98] flex items-center justify-center gap-2"
                   >
                     <Play className="h-4 w-4 fill-white" />
