@@ -45,7 +45,7 @@ const NOTIF_ICON: Record<string, string> = {
   default: "🔔",
 };
 
-const mainNav = [
+const studentNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trading", label: "Markets", icon: LineChart },
   { href: "/courses", label: "Academy", icon: BookOpen },
@@ -53,6 +53,20 @@ const mainNav = [
   { href: "/live", label: "Live Sessions", icon: Video },
   { href: "/copy-trading", label: "Copy Trading", icon: TrendingUp },
   { href: "/community", label: "Community", icon: MessageSquare },
+];
+
+const instructorNav = [
+  { href: "/instructor", label: "Instructor Panel", icon: ShieldAlert },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/courses", label: "Academy", icon: BookOpen },
+  { href: "/live", label: "Live Sessions", icon: Video },
+];
+
+const adminNav = [
+  { href: "/admin", label: "Admin Panel", icon: Shield },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/courses", label: "Academy", icon: BookOpen },
+  { href: "/live", label: "Live Sessions", icon: Video },
 ];
 
 const XP_PER_LEVEL = 500;
@@ -215,9 +229,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        <p className="px-3 mb-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Navigation</p>
-        {mainNav.map((item) => {
+        <p className="px-3 mb-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+          {role === "instructor" ? "Instructor" : role === "admin" ? "Admin" : "Navigation"}
+        </p>
+        {(role === "instructor" ? instructorNav : role === "admin" ? adminNav : studentNav).map((item) => {
           const isActive = location === item.href || location.startsWith(item.href + "/");
+          const showBadge = item.href === "/instructor" && pendingReviews > 0;
           return (
             <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
               <div className={cn(
@@ -228,60 +245,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}>
                 <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-muted-foreground group-hover:text-foreground")} />
                 <span className="flex-1">{item.label}</span>
-                {isActive && <ChevronRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
+                {showBadge && (
+                  <span className={cn(
+                    "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1",
+                    isActive ? "bg-white text-primary" : "bg-red-500 text-white"
+                  )}>
+                    {pendingReviews > 99 ? "99+" : pendingReviews}
+                  </span>
+                )}
+                {isActive && !showBadge && <ChevronRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
               </div>
             </Link>
           );
         })}
 
-        {(role === "instructor" || role === "admin") && (
-          <>
-            <div className="pt-4 pb-1">
-              <p className="px-3 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Management</p>
+        {role === "student" || !role ? (
+          <div className="mt-4 mx-1 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Zap className="h-4 w-4 text-amber-500" />
+              <span className="text-xs font-bold text-amber-800">Level {level} Trader</span>
             </div>
-            {role === "instructor" && (
-              <Link href="/instructor" onClick={() => setMobileOpen(false)}>
-                <div className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer",
-                  location.startsWith("/instructor") ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                )}>
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  <span className="flex-1">Instructor Panel</span>
-                  {pendingReviews > 0 && (
-                    <span className={cn(
-                      "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1",
-                      location.startsWith("/instructor") ? "bg-white text-primary" : "bg-red-500 text-white"
-                    )}>
-                      {pendingReviews > 99 ? "99+" : pendingReviews}
-                    </span>
-                  )}
-                </div>
-              </Link>
-            )}
-            {role === "admin" && (
-              <Link href="/admin" onClick={() => setMobileOpen(false)}>
-                <div className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer",
-                  location.startsWith("/admin") ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                )}>
-                  <Shield className="h-4 w-4 shrink-0" />
-                  <span>Admin Panel</span>
-                </div>
-              </Link>
-            )}
-          </>
-        )}
-
-        <div className="mt-4 mx-1 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap className="h-4 w-4 text-amber-500" />
-            <span className="text-xs font-bold text-amber-800">Level {level} Trader</span>
+            <div className="w-full bg-amber-100 rounded-full h-1.5 mb-1">
+              <div className="bg-amber-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.round((xpIntoLevel / xpToNext) * 100)}%` }} />
+            </div>
+            <p className="text-[10px] text-amber-600">{xpIntoLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP to Level {level + 1}</p>
           </div>
-          <div className="w-full bg-amber-100 rounded-full h-1.5 mb-1">
-            <div className="bg-amber-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.round((xpIntoLevel / xpToNext) * 100)}%` }} />
-          </div>
-          <p className="text-[10px] text-amber-600">{xpIntoLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP to Level {level + 1}</p>
-        </div>
+        ) : null}
       </nav>
 
       <div className="border-t border-border px-3 py-3 shrink-0">
