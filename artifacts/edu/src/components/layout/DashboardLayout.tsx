@@ -215,7 +215,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const isFullBleed = location.startsWith("/courses/");
 
-  const SidebarContent = () => (
+  const sidebarContent = (
     <div className="flex flex-col h-full">
       <div className="h-16 flex items-center px-5 border-b border-border shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2.5">
@@ -299,14 +299,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-white flex-col h-screen">
-          <SidebarContent />
+          {sidebarContent}
         </aside>
 
         {mobileOpen && (
           <div className="md:hidden fixed inset-0 z-50 flex">
             <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
             <aside className="relative w-60 bg-white border-r border-border flex flex-col">
-              <SidebarContent />
+              {sidebarContent}
             </aside>
           </div>
         )}
