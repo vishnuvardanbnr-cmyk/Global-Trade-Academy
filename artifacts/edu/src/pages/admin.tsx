@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useGetAdminStats, useListUsers, getGetAdminStatsQueryKey, useListLiveClasses, useCreateLiveClass, getListLiveClassesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1111,7 +1112,9 @@ function AdminLiveClassesTab() {
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
 export default function AdminPanel() {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [, navigate] = useLocation();
+  useSearch(); // subscribe to search changes for reactivity
+  const activeTab = new URLSearchParams(window.location.search).get("tab") ?? "overview";
   const { data: users } = useListUsers({});
 
   return (
@@ -1121,19 +1124,7 @@ export default function AdminPanel() {
         <p className="text-muted-foreground">Platform-wide analytics, user management, and content control.</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="users">
-            Users
-            {users && <span className="ml-1.5 text-[10px] bg-primary/20 text-primary rounded-full px-1.5 py-0.5">{users.length}</span>}
-          </TabsTrigger>
-          <TabsTrigger value="courses">Courses</TabsTrigger>
-          <TabsTrigger value="live-classes">Live Classes</TabsTrigger>
-          <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
-          <TabsTrigger value="community">Community</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab}>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
         <TabsContent value="users" className="mt-6"><UsersTab /></TabsContent>

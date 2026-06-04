@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation, useSearch } from "wouter";
 import {
   useListCourses, useCreateCourse, useUpdateCourse, useDeleteCourse,
   useListLiveClasses, useCreateLiveClass, useListAttendance,
@@ -1539,7 +1540,9 @@ export default function InstructorPanel() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const clerkId = myProfile?.id ?? "";
-  const [activeTab, setActiveTab] = useState("overview");
+  const [, navigate] = useLocation();
+  useSearch(); // subscribe to search changes for reactivity
+  const activeTab = new URLSearchParams(window.location.search).get("tab") ?? "overview";
 
   const { data: courses, isLoading: coursesLoading } = useListCourses(
     { instructorId: clerkId },
@@ -1570,22 +1573,7 @@ export default function InstructorPanel() {
         <CreateCourseDialog onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })} />
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="courses">
-            Courses
-            {courses && courses.length > 0 && <span className="ml-1.5 text-[10px] bg-primary/20 text-primary rounded-full px-1.5 py-0.5">{courses.length}</span>}
-          </TabsTrigger>
-          <TabsTrigger value="students">Students</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
-          <TabsTrigger value="batches">Batches</TabsTrigger>
-          <TabsTrigger value="reviews" className="relative">
-            Reviews
-            {pendingCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold">{pendingCount}</span>}
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab}>
 
         {/* ── Overview ── */}
         <TabsContent value="overview" className="space-y-6 mt-6">
@@ -1596,7 +1584,7 @@ export default function InstructorPanel() {
               { label: "Live Sessions", value: liveClasses?.length ?? 0, icon: Video, color: "text-purple-400" },
               { label: "Pending Reviews", value: pendingCount, icon: ClipboardCheck, color: pendingCount > 0 ? "text-amber-400" : "text-muted-foreground" },
             ].map(({ label, value, icon: Icon, color }) => (
-              <Card key={label} className="cursor-pointer hover:bg-secondary/30 transition-colors" onClick={() => { if (label === "Pending Reviews") setActiveTab("reviews"); else if (label === "Your Courses") setActiveTab("courses"); else if (label === "Total Students") setActiveTab("students"); }}>
+              <Card key={label} className="cursor-pointer hover:bg-secondary/30 transition-colors" onClick={() => { if (label === "Pending Reviews") navigate("/instructor?tab=reviews"); else if (label === "Your Courses") navigate("/instructor?tab=courses"); else if (label === "Total Students") navigate("/instructor?tab=students"); }}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
                   <Icon className={`h-4 w-4 ${color}`} />

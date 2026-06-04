@@ -1,11 +1,12 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useAuthContext, useUser } from "@/lib/authContext";
 import {
   LayoutDashboard, BookOpen, LineChart, Users, Video, MessageSquare,
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
   ChevronRight, GraduationCap, Zap, Award, UserCircle2,
-  Settings, User, CheckCheck,
+  Settings, User, CheckCheck, BarChart3, Layers, ClipboardCheck, Activity,
 } from "lucide-react";
+import { Fragment } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -56,14 +57,26 @@ const studentNav = [
 ];
 
 const instructorNav = [
-  { href: "/instructor", label: "Instructor Panel", icon: ShieldAlert },
-  { href: "/courses", label: "Academy", icon: BookOpen },
+  { href: "/instructor", label: "Overview", icon: LayoutDashboard, tab: "" },
+  { href: "/instructor", label: "Courses", icon: BookOpen, tab: "courses" },
+  { href: "/instructor", label: "Students", icon: Users, tab: "students" },
+  { href: "/instructor", label: "Analytics", icon: BarChart3, tab: "analytics" },
+  { href: "/instructor", label: "Enrollments", icon: GraduationCap, tab: "enrollments" },
+  { href: "/instructor", label: "Batches", icon: Layers, tab: "batches" },
+  { href: "/instructor", label: "Reviews", icon: ClipboardCheck, tab: "reviews" },
+  { href: "/courses", label: "Academy", icon: BookOpen, divider: true },
   { href: "/live", label: "Live Sessions", icon: Video },
 ];
 
 const adminNav = [
-  { href: "/admin", label: "Admin Panel", icon: Shield },
-  { href: "/courses", label: "Academy", icon: BookOpen },
+  { href: "/admin", label: "Overview", icon: LayoutDashboard, tab: "" },
+  { href: "/admin", label: "Users", icon: Users, tab: "users" },
+  { href: "/admin", label: "Courses", icon: BookOpen, tab: "courses" },
+  { href: "/admin", label: "Live Classes", icon: Video, tab: "live-classes" },
+  { href: "/admin", label: "Enrollments", icon: GraduationCap, tab: "enrollments" },
+  { href: "/admin", label: "Community", icon: MessageSquare, tab: "community" },
+  { href: "/admin", label: "Activity", icon: Activity, tab: "activity" },
+  { href: "/courses", label: "Academy", icon: BookOpen, divider: true },
   { href: "/live", label: "Live Sessions", icon: Video },
 ];
 
@@ -231,29 +244,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {role === "instructor" ? "Instructor" : role === "admin" ? "Admin" : "Navigation"}
         </p>
         {(role === "instructor" ? instructorNav : role === "admin" ? adminNav : studentNav).map((item) => {
-          const isActive = location === item.href || location.startsWith(item.href + "/");
-          const showBadge = item.href === "/instructor" && pendingReviews > 0;
+          const currentTab = new URLSearchParams(window.location.search).get("tab") ?? "";
+          const isActive = "tab" in item
+            ? location === item.href && currentTab === (item.tab ?? "")
+            : location === item.href || location.startsWith(item.href + "/");
+          const showBadge = "tab" in item && item.tab === "reviews" && pendingReviews > 0;
+          const itemHref = "tab" in item && item.tab ? `${item.href}?tab=${item.tab}` : item.href;
           return (
-            <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
-              <div className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer group",
-                isActive
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-              )}>
-                <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-muted-foreground group-hover:text-foreground")} />
-                <span className="flex-1">{item.label}</span>
-                {showBadge && (
-                  <span className={cn(
-                    "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1",
-                    isActive ? "bg-white text-primary" : "bg-red-500 text-white"
-                  )}>
-                    {pendingReviews > 99 ? "99+" : pendingReviews}
-                  </span>
-                )}
-                {isActive && !showBadge && <ChevronRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
-              </div>
-            </Link>
+            <Fragment key={item.label}>
+              {!!(item as { divider?: boolean }).divider && (
+                <div className="mt-4 mb-2 px-3">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">General</p>
+                </div>
+              )}
+              <Link href={itemHref} onClick={() => setMobileOpen(false)}>
+                <div className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer group",
+                  isActive
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                )}>
+                  <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-muted-foreground group-hover:text-foreground")} />
+                  <span className="flex-1">{item.label}</span>
+                  {showBadge && (
+                    <span className={cn(
+                      "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1",
+                      isActive ? "bg-white text-primary" : "bg-red-500 text-white"
+                    )}>
+                      {pendingReviews > 99 ? "99+" : pendingReviews}
+                    </span>
+                  )}
+                  {isActive && !showBadge && <ChevronRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
+                </div>
+              </Link>
+            </Fragment>
           );
         })}
 
