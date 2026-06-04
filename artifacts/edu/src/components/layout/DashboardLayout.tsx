@@ -5,6 +5,7 @@ import {
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
   ChevronRight, GraduationCap, Zap, Award, UserCircle2,
   Settings, User, CheckCheck, BarChart3, Layers, ClipboardCheck, Activity,
+  Calendar, Megaphone,
 } from "lucide-react";
 import { Fragment } from "react";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,8 @@ const adminNav = [
   { href: "/admin", label: "Live Classes", icon: Video, tab: "live-classes" },
   { href: "/admin", label: "Enrollments", icon: GraduationCap, tab: "enrollments" },
   { href: "/admin", label: "Community", icon: MessageSquare, tab: "community" },
+  { href: "/admin", label: "Events", icon: Calendar, tab: "events" },
+  { href: "/admin", label: "Broadcast", icon: Megaphone, tab: "broadcast" },
   { href: "/admin", label: "Activity", icon: Activity, tab: "activity" },
   { href: "/courses", label: "Academy", icon: BookOpen, divider: true },
   { href: "/live", label: "Live Sessions", icon: Video },

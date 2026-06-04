@@ -22,7 +22,7 @@ import {
   ShieldAlert, RefreshCw, Star, StarOff, CheckCircle, XCircle,
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
-  Video, CalendarPlus,
+  Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -1108,6 +1108,255 @@ function AdminLiveClassesTab() {
   );
 }
 
+/* ─── Events Tab ─── */
+type AdminEvent = {
+  id: number; title: string; description: string | null; thumbnailUrl: string | null;
+  eventDate: string | null; location: string | null; type: string; createdAt: string;
+};
+
+const EVENT_TYPES = ["general", "webinar", "workshop", "trading", "masterclass", "ama"];
+
+function EventsTab() {
+  const { toast } = useToast();
+  const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [form, setForm] = useState({ title: "", description: "", thumbnailUrl: "", eventDate: "", location: "", type: "general" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/admin/events");
+      if (r.ok) setEvents(await r.json());
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim()) return;
+    setCreating(true);
+    try {
+      const r = await fetch("/api/admin/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (r.ok) {
+        toast({ title: "Event created" });
+        setForm({ title: "", description: "", thumbnailUrl: "", eventDate: "", location: "", type: "general" });
+        load();
+      } else {
+        const d = await r.json();
+        toast({ title: "Error", description: d.error, variant: "destructive" });
+      }
+    } finally { setCreating(false); }
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeleting(id);
+    try {
+      await fetch(`/api/admin/events/${id}`, { method: "DELETE" });
+      setEvents((prev) => prev.filter((e) => e.id !== id));
+      toast({ title: "Event deleted" });
+    } finally { setDeleting(null); }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Create form */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Create Event</CardTitle></CardHeader>
+        <CardContent>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Title *</label>
+                <Input placeholder="Event title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} required />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Type</label>
+                <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{EVENT_TYPES.map((t) => <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-sm font-medium">Description</label>
+                <Textarea placeholder="What is this event about?" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Thumbnail URL</label>
+                <Input placeholder="https://..." value={form.thumbnailUrl} onChange={(e) => setForm((f) => ({ ...f, thumbnailUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Location / Link</label>
+                <Input placeholder="Zoom link or venue" value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />Date & Time</label>
+                <Input type="datetime-local" value={form.eventDate} onChange={(e) => setForm((f) => ({ ...f, eventDate: e.target.value }))} />
+              </div>
+            </div>
+            {form.thumbnailUrl && (
+              <div className="rounded-xl overflow-hidden border border-border w-full max-w-xs">
+                <img src={form.thumbnailUrl} alt="Thumbnail preview" className="w-full h-32 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              </div>
+            )}
+            <Button type="submit" disabled={creating || !form.title.trim()} className="w-full sm:w-auto">
+              <CalendarPlus className="h-4 w-4 mr-2" />{creating ? "Creating…" : "Create Event"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Event list */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-medium text-muted-foreground">{events.length} event{events.length !== 1 ? "s" : ""}</p>
+          <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+        </div>
+        {loading ? (
+          <div className="space-y-3">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}</div>
+        ) : events.length === 0 ? (
+          <div className="py-12 text-center text-muted-foreground">
+            <Calendar className="h-10 w-10 mx-auto mb-3 opacity-30" />
+            <p>No events yet. Create your first event above.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {events.map((ev) => (
+              <Card key={ev.id} className="overflow-hidden">
+                {ev.thumbnailUrl && (
+                  <div className="h-32 w-full overflow-hidden bg-secondary">
+                    <img src={ev.thumbnailUrl} alt={ev.title} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }} />
+                  </div>
+                )}
+                <CardContent className="pt-3 pb-3 space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-sm leading-tight">{ev.title}</p>
+                    <Badge variant="outline" className="text-[10px] shrink-0 capitalize">{ev.type}</Badge>
+                  </div>
+                  {ev.description && <p className="text-xs text-muted-foreground line-clamp-2">{ev.description}</p>}
+                  {ev.eventDate && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {new Date(ev.eventDate).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                  {ev.location && <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />{ev.location}</p>}
+                  <Button variant="destructive" size="sm" className="w-full mt-2" onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}>
+                    <Trash2Icon className="h-3.5 w-3.5 mr-1.5" />{deleting === ev.id ? "Deleting…" : "Delete"}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Broadcast Tab ─── */
+function BroadcastTab() {
+  const { toast } = useToast();
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [audience, setAudience] = useState<"all" | "students" | "instructors">("all");
+  const [sendEmail, setSendEmail] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [lastResult, setLastResult] = useState<{ notified: number; emailResult: { sent: number; failed: number; configured: boolean } } | null>(null);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !message.trim()) return;
+    setSending(true);
+    setLastResult(null);
+    try {
+      const r = await fetch("/api/admin/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, message, audience, sendEmail }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        setLastResult(data);
+        toast({ title: `Broadcast sent to ${data.notified} user${data.notified !== 1 ? "s" : ""}` });
+        setTitle(""); setMessage("");
+      } else {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      }
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Megaphone className="h-4 w-4" />Send Broadcast</CardTitle>
+          <p className="text-sm text-muted-foreground">Sends an in-app announcement to all matching users. Optionally emails them too.</p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSend} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Subject / Title *</label>
+              <Input placeholder="e.g. New course available!" value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Message *</label>
+              <Textarea placeholder="Write your announcement here…" rows={5} value={message} onChange={(e) => setMessage(e.target.value)} required />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Audience</label>
+              <Select value={audience} onValueChange={(v) => setAudience(v as typeof audience)}>
+                <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All users</SelectItem>
+                  <SelectItem value="students">Students only</SelectItem>
+                  <SelectItem value="instructors">Instructors only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-secondary/30">
+              <input
+                type="checkbox"
+                id="send-email"
+                checked={sendEmail}
+                onChange={(e) => setSendEmail(e.target.checked)}
+                className="h-4 w-4 accent-primary cursor-pointer"
+              />
+              <label htmlFor="send-email" className="text-sm cursor-pointer flex-1">
+                <span className="font-medium flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />Also send via email</span>
+                <span className="text-muted-foreground text-xs block mt-0.5">Requires SMTP_HOST, SMTP_USER, SMTP_PASS env vars to be configured.</span>
+              </label>
+            </div>
+            <Button type="submit" disabled={sending || !title.trim() || !message.trim()} className="w-full">
+              <Send className="h-4 w-4 mr-2" />{sending ? "Sending…" : "Send Broadcast"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {lastResult && (
+        <Card className="border-green-200 bg-green-50/50">
+          <CardContent className="pt-4 pb-4 space-y-1">
+            <p className="text-sm font-semibold text-green-800 flex items-center gap-1.5"><CheckCircle className="h-4 w-4" />Broadcast sent</p>
+            <p className="text-xs text-green-700">In-app notifications: {lastResult.notified} users notified</p>
+            {sendEmail && (
+              lastResult.emailResult.configured
+                ? <p className="text-xs text-green-700 flex items-center gap-1"><Mail className="h-3 w-3" />Emails: {lastResult.emailResult.sent} sent, {lastResult.emailResult.failed} failed</p>
+                : <p className="text-xs text-amber-600 flex items-center gap-1"><XCircle className="h-3 w-3" />Email not configured — set SMTP env vars to enable.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
@@ -1132,6 +1381,8 @@ export default function AdminPanel() {
         <TabsContent value="live-classes" className="mt-6"><AdminLiveClassesTab /></TabsContent>
         <TabsContent value="enrollments" className="mt-6"><EnrollmentsTab /></TabsContent>
         <TabsContent value="community" className="mt-6"><CommunityTab /></TabsContent>
+        <TabsContent value="events" className="mt-6"><EventsTab /></TabsContent>
+        <TabsContent value="broadcast" className="mt-6"><BroadcastTab /></TabsContent>
         <TabsContent value="activity" className="mt-6"><ActivityTab /></TabsContent>
       </Tabs>
     </div>

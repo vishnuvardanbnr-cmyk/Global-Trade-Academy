@@ -12,3 +12,4 @@ export * from "./engagement";
 export * from "./gamification";
 export * from "./notifications";
 export * from "./batches";
+export * from "./events";

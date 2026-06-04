@@ -33,6 +33,31 @@ function useAnnouncements() {
   return { items, loading };
 }
 
+type PlatformEvent = {
+  id: number; title: string; description: string | null; thumbnailUrl: string | null;
+  eventDate: string | null; location: string | null; type: string;
+};
+
+function useUpcomingEvents() {
+  const [events, setEvents] = useState<PlatformEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/api/events")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: PlatformEvent[]) => {
+        const now = Date.now();
+        setEvents(
+          data
+            .filter((e) => !e.eventDate || new Date(e.eventDate).getTime() >= now - 3600000)
+            .slice(0, 4),
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  return { events, loading };
+}
+
 const ACTIVITY_META: Record<string, { icon: typeof CheckCircle2; color: string; xp: string }> = {
   enrollment:      { icon: GraduationCap, color: "text-blue-500 bg-blue-50",    xp: "+25 XP" },
   lesson_complete: { icon: CheckCircle2,  color: "text-emerald-500 bg-emerald-50", xp: "+50 XP" },
@@ -56,6 +81,7 @@ function timeAgo(date: string | Date) {
 export default function Dashboard() {
   const { data: user, isLoading: userLoading } = useGetMe();
   const { items: announcements, loading: announcementsLoading } = useAnnouncements();
+  const { events: upcomingEvents, loading: eventsLoading } = useUpcomingEvents();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
   const { data: leaderboard, isLoading: leaderLoading } = useGetLeaderboard();
   const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
@@ -187,6 +213,44 @@ export default function Dashboard() {
                 </Link>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Upcoming Events */}
+        <Card className="shadow-xs border-border flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-base font-semibold">Upcoming Events</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="flex-1 space-y-3 pb-4">
+            {eventsLoading ? (
+              <div className="space-y-2">{[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}</div>
+            ) : upcomingEvents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Calendar className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">No upcoming events.</p>
+              </div>
+            ) : upcomingEvents.map((ev) => (
+              <div key={ev.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border overflow-hidden">
+                {ev.thumbnailUrl ? (
+                  <img src={ev.thumbnailUrl} alt={ev.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{ev.title}</p>
+                  {ev.eventDate && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(ev.eventDate).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                  {ev.location && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{ev.location}</p>}
+                </div>
+                <Badge variant="outline" className="text-[10px] capitalize shrink-0 self-start mt-0.5">{ev.type}</Badge>
+              </div>
+            ))}
           </CardContent>
         </Card>
 

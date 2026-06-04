@@ -5,9 +5,11 @@ import {
   usersTable, coursesTable, enrollmentsTable, lessonsTable,
   lessonProgressTable, quizAttemptsTable, taskCompletionsTable,
   xpEventsTable, activityTable, liveClassesTable, certificatesTable,
-  postsTable, commentsTable,
+  postsTable, commentsTable, eventsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not } from "drizzle-orm";
+import { notifyUsers } from "../lib/notify";
+import { sendBulkEmails, isEmailConfigured } from "../lib/mailer";
 
 const router = Router();
 
@@ -457,6 +459,107 @@ router.get("/admin/comments", async (req, res): Promise<void> => {
     })));
   } catch (err) {
     req.log.error({ err }, "Error listing admin comments");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/events (public — students & guests) ──────────────── */
+router.get("/events", async (_req, res): Promise<void> => {
+  try {
+    const events = await db.select().from(eventsTable).orderBy(eventsTable.eventDate);
+    res.json(events);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/admin/events ─────────────────────────────────────── */
+router.get("/admin/events", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const events = await db.select().from(eventsTable).orderBy(desc(eventsTable.createdAt));
+    res.json(events);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/events ────────────────────────────────────── */
+router.post("/admin/events", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { title, description, thumbnailUrl, eventDate, location, type } = req.body as {
+      title: string; description?: string; thumbnailUrl?: string; eventDate?: string; location?: string; type?: string;
+    };
+    if (!title?.trim()) { res.status(400).json({ error: "Title is required" }); return; }
+    const [event] = await db.insert(eventsTable).values({
+      title: title.trim(),
+      description: description?.trim() ?? null,
+      thumbnailUrl: thumbnailUrl?.trim() ?? null,
+      eventDate: eventDate ? new Date(eventDate) : null,
+      location: location?.trim() ?? null,
+      type: type ?? "general",
+      createdBy: clerkId,
+    }).returning();
+    res.status(201).json(event);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── DELETE /api/admin/events/:id ──────────────────────────────── */
+router.delete("/admin/events/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    await db.delete(eventsTable).where(eq(eventsTable.id, parseInt(req.params.id)));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/broadcast ─────────────────────────────────── */
+router.post("/admin/broadcast", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { title, message, sendEmail: doEmail, audience } = req.body as {
+      title: string; message: string; sendEmail?: boolean; audience?: "all" | "students" | "instructors";
+    };
+    if (!title?.trim() || !message?.trim()) { res.status(400).json({ error: "Title and message required" }); return; }
+
+    const query = db.select({ id: usersTable.id, email: usersTable.email, displayName: usersTable.displayName }).from(usersTable);
+    const users = audience === "students"
+      ? await query.where(eq(usersTable.role, "student"))
+      : audience === "instructors"
+        ? await query.where(eq(usersTable.role, "instructor"))
+        : await query;
+
+    await notifyUsers(users.map((u) => u.id), "announcement", title.trim(), message.trim());
+
+    let emailResult = { sent: 0, failed: 0, configured: isEmailConfigured() };
+    if (doEmail && isEmailConfigured()) {
+      const result = await sendBulkEmails(
+        users.map((u) => ({ email: u.email, name: u.displayName })),
+        title.trim(),
+        (name) => `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+          <h2 style="color:#1a1a2e;margin-bottom:8px">Bright Insight</h2>
+          <h3 style="color:#333;margin-top:0">${title.trim()}</h3>
+          <p>Hi ${name},</p>
+          <p style="line-height:1.6;color:#444">${message.trim().replace(/\n/g, "<br>")}</p>
+          <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+          <p style="font-size:12px;color:#888">Bright Insight Trading Education</p>
+        </div>`,
+      );
+      emailResult = { ...result, configured: true };
+    }
+
+    res.json({ ok: true, notified: users.length, emailResult });
+  } catch (err) {
+    req.log.error({ err }, "Error sending broadcast");
     res.status(500).json({ error: "Internal server error" });
   }
 });
