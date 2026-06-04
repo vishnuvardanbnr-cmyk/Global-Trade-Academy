@@ -49,7 +49,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=5000 BASE_PATH=/ pnpm --filter @workspace/edu run dev"
+args = "PORT=5000 BASE_PATH=/ pnpm --filter @workspace/edu run dev & FROM_PORT=8080 TO_PORT=5000 node scripts/port-forward.mjs"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -77,10 +77,6 @@ externalPort = 3000
 
 [[ports]]
 localPort = 5000
-externalPort = 80
-
-[[ports]]
-localPort = 8080
 externalPort = 80
 
 [[ports]]
