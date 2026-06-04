@@ -29,8 +29,13 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 
 function HomeRedirect() {
   const { user, loading } = useAuthContext();
-  if (loading) return null;
-  if (user) return <Redirect to="/dashboard" />;
+  const { data: me, isLoading } = useGetMe();
+  if (loading || (user && isLoading)) return null;
+  if (user) {
+    if (me?.role === "instructor") return <Redirect to="/instructor" />;
+    if (me?.role === "admin") return <Redirect to="/admin" />;
+    return <Redirect to="/dashboard" />;
+  }
   return <Home />;
 }
 

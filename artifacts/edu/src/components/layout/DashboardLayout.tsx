@@ -57,14 +57,12 @@ const studentNav = [
 
 const instructorNav = [
   { href: "/instructor", label: "Instructor Panel", icon: ShieldAlert },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/courses", label: "Academy", icon: BookOpen },
   { href: "/live", label: "Live Sessions", icon: Video },
 ];
 
 const adminNav = [
   { href: "/admin", label: "Admin Panel", icon: Shield },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/courses", label: "Academy", icon: BookOpen },
   { href: "/live", label: "Live Sessions", icon: Video },
 ];
@@ -218,7 +216,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const sidebarContent = (
     <div className="flex flex-col h-full">
       <div className="h-16 flex items-center px-5 border-b border-border shrink-0">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
+        <Link href={role === "instructor" ? "/instructor" : role === "admin" ? "/admin" : "/dashboard"} className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <LineChart className="h-4 w-4 text-white" strokeWidth={2.5} />
           </div>
