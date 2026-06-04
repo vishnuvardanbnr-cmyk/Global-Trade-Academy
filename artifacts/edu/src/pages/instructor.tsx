@@ -8,7 +8,6 @@ import {
   useGetGateAnalytics, getGetGateAnalyticsQueryKey,
   type GateReviewItem,
 } from "@workspace/api-client-react";
-import { useUser } from "@clerk/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1535,10 +1534,10 @@ function BatchScheduleDialog({ batchId, courseId, courses, onSuccess }: { batchI
    MAIN INSTRUCTOR PANEL
 ════════════════════════════════════════════ */
 export default function InstructorPanel() {
-  const { user } = useUser();
+  const { data: myProfile } = useGetMe();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const clerkId = user?.id ?? "";
+  const clerkId = myProfile?.id ?? "";
   const [activeTab, setActiveTab] = useState("overview");
 
   const { data: courses, isLoading: coursesLoading } = useListCourses(

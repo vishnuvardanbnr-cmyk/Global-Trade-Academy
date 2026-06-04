@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useUser } from "@clerk/react";
+import { useUser } from "@/lib/authContext";
 import { useGetMe, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +21,6 @@ const SKILL_LABELS: Record<string, string> = {
 const XP_PER_LEVEL = 500;
 
 export default function Settings() {
-  const { user: clerkUser } = useUser();
   const { data: me, isLoading } = useGetMe();
   const { mutateAsync: updateMe } = useUpdateMe();
   const qc = useQueryClient();
@@ -35,7 +34,7 @@ export default function Settings() {
   const [initialized, setInitialized] = useState(false);
 
   if (me && !initialized) {
-    setDisplayName(me.displayName ?? clerkUser?.fullName ?? "");
+    setDisplayName(me.displayName ?? "");
     setBio((me as any).bio ?? "");
     setMarketFocus((me as any).marketFocus ?? "");
     setSkillLevel((me as any).skillLevel ?? "beginner");
@@ -96,7 +95,7 @@ export default function Settings() {
               <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
                 {[
                   { label: "Role", value: me?.role ?? "student", icon: Shield },
-                  { label: "Email", value: clerkUser?.primaryEmailAddress?.emailAddress ?? "—", icon: User },
+                  { label: "Email", value: me?.email ?? "—", icon: User },
                   { label: "Member since", value: me?.createdAt ? new Date(me.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—", icon: Award },
                 ].map(({ label, value, icon: Icon }) => (
                   <div key={label} className="text-center p-3 rounded-xl bg-secondary/50">
@@ -131,11 +130,11 @@ export default function Settings() {
                 <div>
                   <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Email</label>
                   <input
-                    value={clerkUser?.primaryEmailAddress?.emailAddress ?? ""}
+                    value={me?.email ?? ""}
                     disabled
                     className="w-full h-10 px-3 rounded-lg border border-border text-sm bg-secondary text-muted-foreground cursor-not-allowed"
                   />
-                  <p className="text-[10px] text-muted-foreground mt-1">Managed by your account provider.</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Email cannot be changed.</p>
                 </div>
 
                 <div>

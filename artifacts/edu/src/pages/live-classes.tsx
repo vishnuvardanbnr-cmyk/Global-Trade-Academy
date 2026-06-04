@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { useUser } from "@clerk/react";
+import { useUser } from "@/lib/authContext";
 import {
   useListLiveClasses, useRegisterLiveClass, useListCourses,
   getListLiveClassesQueryKey,

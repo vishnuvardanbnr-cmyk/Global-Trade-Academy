@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link, useLocation } from "wouter";
-import { useUser } from "@clerk/react";
+import { useUser } from "@/lib/authContext";
 import {
   useGetLiveClass, useStartLiveClass, useEndLiveClass,
   useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,

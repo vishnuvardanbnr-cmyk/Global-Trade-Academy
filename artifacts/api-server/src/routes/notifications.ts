@@ -2,18 +2,18 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { notificationsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
+import { getAuth } from "../lib/auth";
 
 const router = Router();
 
-/* GET /api/notifications — list for current user */
 router.get("/notifications", async (req, res): Promise<void> => {
-  const clerkId = req.auth?.userId;
-  if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const rows = await db
       .select()
       .from(notificationsTable)
-      .where(eq(notificationsTable.userId, clerkId))
+      .where(eq(notificationsTable.userId, userId))
       .orderBy(desc(notificationsTable.createdAt))
       .limit(50);
     const unreadCount = rows.filter((n) => !n.read).length;
@@ -24,16 +24,15 @@ router.get("/notifications", async (req, res): Promise<void> => {
   }
 });
 
-/* PATCH /api/notifications/:id/read — mark one read */
 router.patch("/notifications/:id/read", async (req, res): Promise<void> => {
-  const clerkId = req.auth?.userId;
-  if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
   try {
     await db
       .update(notificationsTable)
       .set({ read: true })
-      .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, clerkId)));
+      .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, userId)));
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Error marking notification read");
@@ -41,15 +40,14 @@ router.patch("/notifications/:id/read", async (req, res): Promise<void> => {
   }
 });
 
-/* POST /api/notifications/read-all — mark all read */
 router.post("/notifications/read-all", async (req, res): Promise<void> => {
-  const clerkId = req.auth?.userId;
-  if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     await db
       .update(notificationsTable)
       .set({ read: true })
-      .where(eq(notificationsTable.userId, clerkId));
+      .where(eq(notificationsTable.userId, userId));
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Error marking all notifications read");
@@ -57,15 +55,14 @@ router.post("/notifications/read-all", async (req, res): Promise<void> => {
   }
 });
 
-/* DELETE /api/notifications/:id */
 router.delete("/notifications/:id", async (req, res): Promise<void> => {
-  const clerkId = req.auth?.userId;
-  if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const { userId } = getAuth(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = Number(req.params.id);
   try {
     await db
       .delete(notificationsTable)
-      .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, clerkId)));
+      .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, userId)));
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Error deleting notification");

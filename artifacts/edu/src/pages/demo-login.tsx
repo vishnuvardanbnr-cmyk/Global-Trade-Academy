@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { BarChart3, RefreshCw, AlertTriangle } from "lucide-react";
+import { useAuthContext } from "@/lib/authContext";
+import { queryClient } from "@/lib/queryClient";
 
 const ROLE_EMAILS: Record<string, string> = {
   admin:      "brightinsight.admin@gmail.com",
@@ -10,6 +12,7 @@ const ROLE_EMAILS: Record<string, string> = {
 
 export default function DemoLoginPage() {
   const [, navigate] = useLocation();
+  const { refetch } = useAuthContext();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,13 +34,9 @@ export default function DemoLoginPage() {
           return;
         }
 
-        const { url } = await res.json() as { url: string };
-
-        // Append redirect_url so Clerk sends the user to /dashboard after sign-in
-        const redirectUrl = `${window.location.origin}/dashboard`;
-        const clerkUrl = `${url}&redirect_url=${encodeURIComponent(redirectUrl)}`;
-
-        window.location.href = clerkUrl;
+        queryClient.clear();
+        await refetch();
+        navigate("/dashboard");
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         setError(`Demo login failed: ${msg}`);

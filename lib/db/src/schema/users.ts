@@ -3,9 +3,10 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const usersTable = pgTable("users", {
-  id: text("id").primaryKey(), // clerk user ID
+  id: text("id").primaryKey(),
   clerkId: text("clerk_id").notNull().unique(),
   email: text("email").notNull().unique(),
+  passwordHash: text("password_hash"),
   displayName: text("display_name"),
   avatarUrl: text("avatar_url"),
   bio: text("bio"),

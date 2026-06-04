@@ -1,12 +1,11 @@
 import { Router } from "express";
-import { getAuth, clerkClient } from "@clerk/express";
+import { getAuth } from "../lib/auth";
 import { db } from "@workspace/db";
 import {
   usersTable,
   insertUserSchema,
 } from "@workspace/db";
 import { eq, ilike, or } from "drizzle-orm";
-import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -30,39 +29,17 @@ function buildUserResponse(user: typeof usersTable.$inferSelect) {
 // GET /api/users/me
 router.get("/users/me", async (req, res): Promise<void> => {
   try {
-    const { userId: clerkId } = getAuth(req);
-    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    let user = await db
+    const user = await db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.clerkId, clerkId))
+      .where(eq(usersTable.id, userId))
       .limit(1)
       .then((r) => r[0]);
 
-    if (!user) {
-      // Fetch real name + email from Clerk so we never store a raw user ID as display name
-      const clerkUser = await clerkClient.users.getUser(clerkId);
-      const firstName = clerkUser.firstName ?? "";
-      const lastName = clerkUser.lastName ?? "";
-      const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-      const realEmail =
-        clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-        clerkUser.emailAddresses[0]?.emailAddress ??
-        `${clerkId}@edu.app`;
-
-      const newUser = insertUserSchema.parse({
-        id: clerkId,
-        clerkId,
-        email: realEmail,
-        displayName: fullName || clerkUser.username || null,
-        role: "student",
-        xp: 0,
-        badges: [],
-      });
-      const inserted = await db.insert(usersTable).values(newUser).returning();
-      user = inserted[0];
-    }
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
     res.json(buildUserResponse(user));
   } catch (err) {
@@ -74,8 +51,8 @@ router.get("/users/me", async (req, res): Promise<void> => {
 // PATCH /api/users/me
 router.patch("/users/me", async (req, res): Promise<void> => {
   try {
-    const { userId: clerkId } = getAuth(req);
-    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
     const { displayName, bio, marketFocus, skillLevel } = req.body;
 
@@ -87,7 +64,7 @@ router.patch("/users/me", async (req, res): Promise<void> => {
         ...(marketFocus !== undefined && { marketFocus }),
         ...(skillLevel !== undefined && { skillLevel }),
       })
-      .where(eq(usersTable.clerkId, clerkId))
+      .where(eq(usersTable.id, userId))
       .returning();
 
     if (!updated[0]) { res.status(404).json({ error: "User not found" }); return; }

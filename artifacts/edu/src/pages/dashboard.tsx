@@ -1,6 +1,6 @@
 import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses, useListLiveClasses } from "@workspace/api-client-react";
 import type { LiveClass } from "@workspace/api-client-react";
-import { useUser } from "@clerk/react";
+import { useUser } from "@/lib/authContext";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +54,6 @@ function timeAgo(date: string | Date) {
 }
 
 export default function Dashboard() {
-  const { user: clerkUser } = useUser();
   const { data: user, isLoading: userLoading } = useGetMe();
   const { items: announcements, loading: announcementsLoading } = useAnnouncements();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
@@ -111,7 +110,7 @@ export default function Dashboard() {
             <Skeleton className="h-8 w-64 mb-2" />
           ) : (
             <h1 className="text-2xl font-bold text-foreground">
-              Hello, {clerkUser?.fullName ?? clerkUser?.firstName ?? user?.displayName ?? "Trader"} 👋
+              Hello, {user?.displayName ?? "Trader"} 👋
             </h1>
           )}
           <p className="text-sm text-muted-foreground">Here's what's happening with your portfolio and learning today.</p>

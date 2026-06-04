@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRoute, Link } from "wouter";
-import { useUser } from "@clerk/react";
+import { useUser } from "@/lib/authContext";
 import {
   useGetCourse, useListLessons, useListCourseSections, getListCourseSectionsQueryKey,
   useListEnrollments, useCreateEnrollment,
@@ -666,7 +666,7 @@ export default function CourseDetail() {
   const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [activeLiveSession, setActiveLiveSession] = useState<{ id: number; roomName: string; title: string } | null>(null);
-  const { user: clerkUser } = useUser();
+  const { data: meData } = useGetMe();
 
   const dbLessons = (lessons ?? []) as DbLesson[];
   const chapterGroups = useMemo(() => {
@@ -818,7 +818,7 @@ export default function CourseDetail() {
             /* ── Jitsi live meeting in video area ── */
             <JitsiMeetEmbed
               roomName={activeLiveSession.roomName}
-              displayName={clerkUser?.fullName ?? clerkUser?.firstName ?? "Student"}
+              displayName={meData?.displayName ?? "Student"}
               onLeave={() => setActiveLiveSession(null)}
             />
           ) : activeQuizId !== null ? (
@@ -1167,7 +1167,7 @@ export default function CourseDetail() {
         {activeLiveSession !== null && tab === "live" && showTabPanel && (
           <LiveChatPanel
             classId={activeLiveSession.id}
-            userId={clerkUser?.id ?? ""}
+            userId={meData?.id ?? ""}
             sessionTitle={activeLiveSession.title}
             onClose={() => setShowTabPanel(false)}
           />

@@ -1,9 +1,9 @@
 import { Link, useLocation } from "wouter";
-import { useUser, useClerk } from "@clerk/react";
+import { useAuthContext, useUser } from "@/lib/authContext";
 import {
   LayoutDashboard, BookOpen, LineChart, Users, Video, MessageSquare,
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
-  ChevronRight, MessageCircle, GraduationCap, Zap, Award, UserCircle2,
+  ChevronRight, GraduationCap, Zap, Award, UserCircle2,
   Settings, User, CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -57,9 +57,7 @@ const mainNav = [
 
 const XP_PER_LEVEL = 500;
 
-/* ─── Complete Profile Dialog ──────────────────────────────────── */
 function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
-  const { user: clerkUser } = useUser();
   const { mutateAsync: updateMe } = useUpdateMe();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -77,8 +75,6 @@ function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
       await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
       toast({ title: "Profile updated!", description: `Welcome, ${displayName}!` });
       onDone();
-      // Update Clerk profile in the background — non-critical, ignore errors
-      clerkUser?.update({ firstName: firstName.trim(), lastName: lastName.trim() }).catch(() => {});
     } catch {
       toast({ title: "Could not save", variant: "destructive" });
     } finally {
@@ -129,8 +125,8 @@ function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const { signOut } = useAuthContext();
   const { user } = useUser();
-  const { signOut, openUserProfile } = useClerk();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileDismissed, setProfileDismissed] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -149,7 +145,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const data = await r.json();
       setNotifications(data.notifications ?? []);
       setUnreadCount(data.unreadCount ?? 0);
-    } catch { /* ignore */ }
+    } catch { }
   }, [user]);
 
   useEffect(() => {
@@ -182,10 +178,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const role = me?.role;
   const isInstructor = role === "instructor";
-  const initials = (user?.firstName?.charAt(0) ?? "") + (user?.lastName?.charAt(0) ?? "");
+  const displayName = me?.displayName || user?.fullName || "Trader";
+  const email = user?.primaryEmailAddress?.emailAddress ?? "";
+  const initials = displayName.split(" ").map((p: string) => p[0]).slice(0, 2).join("").toUpperCase();
 
-  // Show profile dialog once when user has no name in Clerk AND no displayName in DB
-  const hasName = !!(user?.firstName || user?.fullName || me?.displayName);
+  const hasName = !!me?.displayName;
   const showProfileDialog = me !== undefined && !hasName && !profileDismissed;
 
   const xp = me?.xp ?? 0;
@@ -193,7 +190,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const xpIntoLevel = xp % XP_PER_LEVEL;
   const xpToNext = XP_PER_LEVEL;
 
-  // Pending review count badge — only fetched for instructors
   const { data: reviewCount } = useGetInstructorReviewCount({
     query: {
       enabled: isInstructor,
@@ -207,7 +203,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      {/* Logo */}
       <div className="h-16 flex items-center px-5 border-b border-border shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -219,7 +214,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </Link>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         <p className="px-3 mb-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Navigation</p>
         {mainNav.map((item) => {
@@ -278,7 +272,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </>
         )}
 
-        {/* XP level badge */}
         <div className="mt-4 mx-1 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100">
           <div className="flex items-center gap-2 mb-2">
             <Zap className="h-4 w-4 text-amber-500" />
@@ -291,21 +284,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </nav>
 
-      {/* User */}
       <div className="border-t border-border px-3 py-3 shrink-0">
         <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-secondary transition-colors cursor-default">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
             {initials || "U"}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">{user?.fullName || "Trader"}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
+            <p className="text-sm font-semibold text-foreground truncate">{displayName}</p>
+            <p className="text-xs text-muted-foreground truncate">{email}</p>
           </div>
         </div>
         <Button
           variant="ghost" size="sm"
           className="w-full justify-start mt-1 text-muted-foreground hover:text-foreground text-sm"
-          onClick={() => signOut({ redirectUrl: import.meta.env.BASE_URL })}
+          onClick={() => signOut({ redirectUrl: "/" })}
         >
           <LogOut className="h-4 w-4 mr-2" /> Sign Out
         </Button>
@@ -315,156 +307,146 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-    {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-white flex-col h-screen">
-        <SidebarContent />
-      </aside>
+      {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
+      <div className="flex h-screen overflow-hidden bg-background text-foreground">
+        <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-white flex-col h-screen">
+          <SidebarContent />
+        </aside>
 
-      {/* Mobile sidebar overlay */}
-      {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside className="relative w-60 bg-white border-r border-border flex flex-col">
-            <SidebarContent />
-          </aside>
-        </div>
-      )}
-
-      {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top header */}
-        <header className="h-16 border-b border-border bg-white flex items-center gap-4 px-4 md:px-6 shrink-0 z-10">
-          <button
-            className="md:hidden p-1.5 rounded-md hover:bg-secondary transition-colors"
-            onClick={() => setMobileOpen(!mobileOpen)}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-
-          {/* Search */}
-          <div className="flex-1 max-w-sm">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="search"
-                placeholder="Search courses, traders, symbols…"
-                className="w-full h-9 pl-9 pr-4 text-sm bg-secondary rounded-lg border border-transparent focus:border-primary focus:bg-white focus:outline-none transition-all"
-              />
-            </div>
+        {mobileOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+            <aside className="relative w-60 bg-white border-r border-border flex flex-col">
+              <SidebarContent />
+            </aside>
           </div>
+        )}
 
-          {/* Right side actions */}
-          <div className="ml-auto flex items-center gap-2">
-            {/* Bell */}
-            <div ref={bellRef} className="relative">
-              <button
-                onClick={() => { setBellOpen(o => !o); setMenuOpen(false); }}
-                className="relative p-2 rounded-lg hover:bg-secondary transition-colors"
-              >
-                <Bell className="h-5 w-5 text-muted-foreground" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center bg-red-500 rounded-full ring-2 ring-white text-[9px] font-bold text-white px-0.5">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                )}
-              </button>
-              {bellOpen && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                    <p className="text-sm font-semibold text-foreground">Notifications</p>
-                    {unreadCount > 0 && (
-                      <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">{unreadCount} new</span>
-                    )}
-                  </div>
-                  <div className="divide-y divide-border max-h-80 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <div className="px-4 py-8 text-center">
-                        <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                        <p className="text-xs text-muted-foreground">No notifications yet</p>
-                      </div>
-                    ) : notifications.map((n) => (
-                      <div
-                        key={n.id}
-                        onClick={() => { if (!n.read) markRead(n.id); }}
-                        className={cn("flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 cursor-pointer transition-colors", !n.read && "bg-blue-50/40")}
-                      >
-                        <span className="text-lg leading-none mt-0.5">{NOTIF_ICON[n.type] ?? NOTIF_ICON.default}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground leading-tight">{n.title}</p>
-                          {n.message && <p className="text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-2">{n.message}</p>}
-                          <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <header className="h-16 border-b border-border bg-white flex items-center gap-4 px-4 md:px-6 shrink-0 z-10">
+            <button
+              className="md:hidden p-1.5 rounded-md hover:bg-secondary transition-colors"
+              onClick={() => setMobileOpen(!mobileOpen)}
+            >
+              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+
+            <div className="flex-1 max-w-sm">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="search"
+                  placeholder="Search courses, traders, symbols…"
+                  className="w-full h-9 pl-9 pr-4 text-sm bg-secondary rounded-lg border border-transparent focus:border-primary focus:bg-white focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="ml-auto flex items-center gap-2">
+              <div ref={bellRef} className="relative">
+                <button
+                  onClick={() => { setBellOpen(o => !o); setMenuOpen(false); }}
+                  className="relative p-2 rounded-lg hover:bg-secondary transition-colors"
+                >
+                  <Bell className="h-5 w-5 text-muted-foreground" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center bg-red-500 rounded-full ring-2 ring-white text-[9px] font-bold text-white px-0.5">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+                {bellOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                      <p className="text-sm font-semibold text-foreground">Notifications</p>
+                      {unreadCount > 0 && (
+                        <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">{unreadCount} new</span>
+                      )}
+                    </div>
+                    <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center">
+                          <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                          <p className="text-xs text-muted-foreground">No notifications yet</p>
                         </div>
-                        {!n.read && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1.5" />}
-                      </div>
-                    ))}
+                      ) : notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => { if (!n.read) markRead(n.id); }}
+                          className={cn("flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 cursor-pointer transition-colors", !n.read && "bg-blue-50/40")}
+                        >
+                          <span className="text-lg leading-none mt-0.5">{NOTIF_ICON[n.type] ?? NOTIF_ICON.default}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground leading-tight">{n.title}</p>
+                            {n.message && <p className="text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-2">{n.message}</p>}
+                            <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                          </div>
+                          {!n.read && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1.5" />}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-4 py-2.5 border-t border-border flex items-center justify-between">
+                      {unreadCount > 0 ? (
+                        <button onClick={markAllRead} className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                        </button>
+                      ) : <span />}
+                      <span className="text-[10px] text-muted-foreground">{notifications.length} total</span>
+                    </div>
                   </div>
-                  <div className="px-4 py-2.5 border-t border-border flex items-center justify-between">
-                    {unreadCount > 0 ? (
-                      <button onClick={markAllRead} className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                        <CheckCheck className="h-3.5 w-3.5" /> Mark all read
-                      </button>
-                    ) : <span />}
-                    <span className="text-[10px] text-muted-foreground">{notifications.length} total</span>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            {/* Avatar menu */}
-            <div ref={menuRef} className="relative">
-              <button
-                onClick={() => { setMenuOpen(o => !o); setBellOpen(false); }}
-                className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold hover:opacity-90 transition-opacity"
-              >
-                {initials || "U"}
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-52 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border">
-                    <p className="text-sm font-semibold text-foreground truncate">{user?.fullName || "Trader"}</p>
-                    <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
-                  </div>
-                  <div className="py-1">
-                    <button
-                      onClick={() => { setMenuOpen(false); openUserProfile(); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors"
-                    >
-                      <User className="h-4 w-4 text-muted-foreground" /> My Profile
-                    </button>
-                    <Link href="/settings" onClick={() => setMenuOpen(false)}>
-                      <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors">
-                        <Settings className="h-4 w-4 text-muted-foreground" /> Settings
+              <div ref={menuRef} className="relative">
+                <button
+                  onClick={() => { setMenuOpen(o => !o); setBellOpen(false); }}
+                  className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold hover:opacity-90 transition-opacity"
+                >
+                  {initials || "U"}
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-52 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border">
+                      <p className="text-sm font-semibold text-foreground truncate">{displayName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{email}</p>
+                    </div>
+                    <div className="py-1">
+                      <Link href="/settings" onClick={() => setMenuOpen(false)}>
+                        <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors">
+                          <User className="h-4 w-4 text-muted-foreground" /> My Profile
+                        </button>
+                      </Link>
+                      <Link href="/settings" onClick={() => setMenuOpen(false)}>
+                        <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary cursor-pointer transition-colors">
+                          <Settings className="h-4 w-4 text-muted-foreground" /> Settings
+                        </button>
+                      </Link>
+                    </div>
+                    <div className="border-t border-border py-1">
+                      <button
+                        onClick={() => { setMenuOpen(false); signOut({ redirectUrl: "/" }); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 cursor-pointer transition-colors"
+                      >
+                        <LogOut className="h-4 w-4" /> Sign Out
                       </button>
-                    </Link>
+                    </div>
                   </div>
-                  <div className="border-t border-border py-1">
-                    <button
-                      onClick={() => { setMenuOpen(false); signOut({ redirectUrl: import.meta.env.BASE_URL }); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 cursor-pointer transition-colors"
-                    >
-                      <LogOut className="h-4 w-4" /> Sign Out
-                    </button>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
 
-        {/* Page content */}
-        <main className={cn("flex-1 overflow-y-auto bg-background", !isFullBleed && "overflow-y-auto")}>
-          {isFullBleed ? (
-            children
-          ) : (
-            <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto">
-              {children}
-            </div>
-          )}
-        </main>
+          <main className={cn("flex-1 overflow-y-auto bg-background", !isFullBleed && "overflow-y-auto")}>
+            {isFullBleed ? (
+              children
+            ) : (
+              <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto">
+                {children}
+              </div>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
     </>
   );
 }

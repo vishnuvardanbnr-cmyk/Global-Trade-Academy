@@ -1,10 +1,21 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { getAuth } from "../lib/auth";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
+import { signToken } from "../lib/auth";
 
 const router = Router();
+
+const COOKIE_OPTS = [
+  "HttpOnly",
+  "Path=/",
+  "SameSite=Lax",
+  `Max-Age=${30 * 24 * 60 * 60}`,
+  ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
+].join("; ");
 
 /* ── GET /api/setup/status ──────────────────────────────────────
    Returns whether the platform has been bootstrapped (has an admin).
@@ -27,8 +38,8 @@ router.get("/setup/status", async (_req, res): Promise<void> => {
    Only works if NO admins exist yet (first-time setup).            */
 router.post("/setup/bootstrap", async (req, res): Promise<void> => {
   try {
-    const { userId: clerkId } = getAuth(req);
-    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
     const adminCount = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -44,11 +55,11 @@ router.post("/setup/bootstrap", async (req, res): Promise<void> => {
     const updated = await db
       .update(usersTable)
       .set({ role: "admin" })
-      .where(eq(usersTable.id, clerkId))
+      .where(eq(usersTable.id, userId))
       .returning({ id: usersTable.id, role: usersTable.role, email: usersTable.email });
 
     if (!updated.length) {
-      res.status(404).json({ error: "User not found. Please visit /dashboard first to create your account." });
+      res.status(404).json({ error: "User not found. Please register first." });
       return;
     }
 
@@ -59,26 +70,25 @@ router.post("/setup/bootstrap", async (req, res): Promise<void> => {
 });
 
 /* ── POST /api/setup/set-role ───────────────────────────────────
-   Admin-only: change any user's role by email.
-   Used by setup scripts and the Admin Panel.                       */
+   Admin-only: change any user's role by email.                    */
 router.post("/setup/set-role", async (req, res): Promise<void> => {
   try {
-    const { userId: clerkId } = getAuth(req);
-    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
     const callerRow = await db.select({ role: usersTable.role }).from(usersTable)
-      .where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+      .where(eq(usersTable.id, userId)).limit(1).then((r) => r[0]);
     if (callerRow?.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
 
-    const { userId, email, role } = req.body;
+    const { userId: targetUserId, email, role } = req.body;
     if (!["student", "instructor", "admin"].includes(role)) {
       res.status(400).json({ error: "role must be student | instructor | admin" }); return;
     }
 
     let target;
-    if (userId) {
+    if (targetUserId) {
       target = await db.update(usersTable).set({ role })
-        .where(eq(usersTable.id, userId)).returning({ id: usersTable.id, email: usersTable.email, role: usersTable.role });
+        .where(eq(usersTable.id, targetUserId)).returning({ id: usersTable.id, email: usersTable.email, role: usersTable.role });
     } else if (email) {
       target = await db.update(usersTable).set({ role })
         .where(eq(usersTable.email, email)).returning({ id: usersTable.id, email: usersTable.email, role: usersTable.role });
@@ -94,39 +104,42 @@ router.post("/setup/set-role", async (req, res): Promise<void> => {
 });
 
 /* ── POST /api/setup/demo-login ─────────────────────────────────
-   Creates a Clerk sign-in token for demo accounts only.
-   No auth required — these are demo credentials.               */
-const DEMO_USER_IDS: Record<string, string> = {
-  "brightinsight.admin@gmail.com":      "user_3EdOGmdMjsuPDcaT0obAxJk4AB5",
-  "brightinsight.instructor@gmail.com": "user_3EdOH3ArsB1MLX9StxB3FbxZWVD",
-  "brightinsight.student@gmail.com":    "user_3EdOHAlOOpfu6pw3wB5QJVwi2bU",
-};
+   Creates a session for demo accounts (no Clerk needed).          */
+const DEMO_ACCOUNTS = [
+  { email: "brightinsight.admin@gmail.com",      role: "admin",      name: "Demo Admin" },
+  { email: "brightinsight.instructor@gmail.com", role: "instructor", name: "Demo Instructor" },
+  { email: "brightinsight.student@gmail.com",    role: "student",    name: "Demo Student" },
+];
 
 router.post("/setup/demo-login", async (req, res): Promise<void> => {
   try {
     const { email } = req.body as { email: string };
-    const userId = DEMO_USER_IDS[email];
-    if (!userId) { res.status(400).json({ error: "Not a demo account" }); return; }
+    const demo = DEMO_ACCOUNTS.find(a => a.email === email);
+    if (!demo) { res.status(400).json({ error: "Not a demo account" }); return; }
 
-    const clerkRes = await fetch("https://api.clerk.com/v1/sign_in_tokens", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ user_id: userId }),
-    });
+    let user = await db.select().from(usersTable)
+      .where(eq(usersTable.email, email)).limit(1).then(r => r[0]);
 
-    if (!clerkRes.ok) {
-      const err = await clerkRes.json().catch(() => ({}));
-      req.log.error({ err }, "Clerk sign-in token creation failed");
-      res.status(500).json({ error: "Could not create demo token" }); return;
+    if (!user) {
+      const id = randomUUID();
+      const hashed = await bcrypt.hash("demo-password-" + id, 10);
+      const [inserted] = await db.insert(usersTable).values({
+        id,
+        clerkId: id,
+        email,
+        displayName: demo.name,
+        passwordHash: hashed,
+        role: demo.role,
+        xp: 0,
+        badges: [],
+      }).returning();
+      user = inserted;
     }
 
-    const data = await clerkRes.json() as { token: string; url: string };
-    res.json({ token: data.token, url: data.url });
+    const token = signToken({ userId: user.id, email: user.email });
+    res.setHeader("Set-Cookie", `auth_token=${encodeURIComponent(token)}; ${COOKIE_OPTS}`);
+    res.json({ success: true, redirectUrl: "/dashboard" });
   } catch (err) {
-    req.log.error({ err }, "Demo login error");
     res.status(500).json({ error: "Internal server error" });
   }
 });
