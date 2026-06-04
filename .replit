@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "bash"]
+modules = ["nodejs-20", "web", "bash", "python-3.11"]
 
 [deployment]
 router = "application"
@@ -22,10 +22,6 @@ args = "API Server"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "EDU Frontend"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "LiveKit Server"
 
 [[workflows.workflow]]
@@ -39,18 +35,6 @@ outputType = "console"
 task = "shell.exec"
 args = "PORT=3000 pnpm --filter @workspace/api-server run dev"
 waitForPort = 3000
-
-[[workflows.workflow]]
-name = "EDU Frontend"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=5000 BASE_PATH=/ pnpm --filter @workspace/edu run dev & FROM_PORT=8080 TO_PORT=5000 node scripts/port-forward.mjs"
-waitForPort = 5000
 
 [[workflows.workflow]]
 name = "LiveKit Server"
@@ -77,6 +61,14 @@ externalPort = 3000
 
 [[ports]]
 localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 7881
+externalPort = 3001
+
+[[ports]]
+localPort = 8080
 externalPort = 80
 
 [[ports]]

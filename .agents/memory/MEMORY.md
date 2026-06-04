@@ -3,5 +3,6 @@
 - [Clerk name vs DB displayName](clerk-name-display.md) — greeting/sidebar must source name from useUser() not DB email; DB stores real name after CompleteProfileDialog.
 - [Quiz gate flow](quiz-gate-flow.md) — quiz submit → advanceGateOnPass → pending_review → instructor approves/rejects → next lesson unlocked; rejection creates per-student replacement quiz.
 - [Deriv App ID vs Token](deriv-appid.md) — DERIV_APP_ID env var holds an alphanumeric API token, not a numeric app_id; always validate and fall back to "1089" for market data.
-- [Vite proxy for API routes](vite-api-proxy.md) — frontend on port 5000 (webview), API on port 3000; vite.config.ts must proxy /api → localhost:3000.
+- [Vite proxy for API routes](vite-api-proxy.md) — frontend on port 23624 (artifact-assigned), API on port injected by artifact system; vite.config.ts proxies /api → localhost:3000 for internal access.
 - [Custom auth system](custom-auth.md) — Clerk replaced with JWT+bcrypt; getAuth shim in api-server/src/lib/auth.ts; frontend hooks in edu/src/lib/authContext.tsx.
+- [Replit artifact routing](replit-artifact-routing.md) — duplicate externalPort in [[ports]] causes permanent 502 in Helium microVM; fix by using artifact workflows (artifacts/edu: web, artifacts/api-server: API Server) which bypass the broken port-authority cache.
