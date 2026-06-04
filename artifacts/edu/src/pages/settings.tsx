@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight } from "lucide-react";
+import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MARKET_OPTIONS = ["Forex", "Crypto", "Stocks", "Futures", "Options", "Indices"];
@@ -29,6 +29,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [marketFocus, setMarketFocus] = useState("");
   const [skillLevel, setSkillLevel] = useState("");
   const [initialized, setInitialized] = useState(false);
@@ -36,6 +37,7 @@ export default function Settings() {
   if (me && !initialized) {
     setDisplayName(me.displayName ?? "");
     setBio((me as any).bio ?? "");
+    setAvatarUrl((me as any).avatarUrl ?? "");
     setMarketFocus((me as any).marketFocus ?? "");
     setSkillLevel((me as any).skillLevel ?? "beginner");
     setInitialized(true);
@@ -45,7 +47,15 @@ export default function Settings() {
     e.preventDefault();
     setSaving(true);
     try {
-      await updateMe({ data: { displayName: displayName.trim() || undefined } });
+      await updateMe({
+        data: {
+          displayName: displayName.trim() || undefined,
+          bio: bio.trim() || undefined,
+          marketFocus: marketFocus || undefined,
+          skillLevel: skillLevel || undefined,
+          avatarUrl: avatarUrl.trim() || undefined,
+        },
+      });
       await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
       toast({ title: "Settings saved", description: "Your profile has been updated." });
     } catch {
@@ -117,6 +127,29 @@ export default function Settings() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSave} className="space-y-4">
+                {/* Avatar preview + URL */}
+                <div className="flex items-start gap-4">
+                  <div className="w-16 h-16 rounded-2xl shrink-0 overflow-hidden border-2 border-border bg-primary/10 flex items-center justify-center">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ) : (
+                      <User className="h-7 w-7 text-primary/50" />
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      <ImageIcon className="inline h-3 w-3 mr-1" />Avatar URL
+                    </label>
+                    <input
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full h-10 px-3 rounded-lg border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all bg-background"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Paste an image URL to set your profile picture.</p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Display Name</label>
                   <input
@@ -124,6 +157,17 @@ export default function Settings() {
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="Your full name"
                     className="w-full h-10 px-3 rounded-lg border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all bg-background"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Bio</label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Tell others a bit about yourself and your trading journey…"
+                    rows={3}
+                    className="w-full px-3 py-2.5 rounded-lg border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all bg-background resize-none"
                   />
                 </div>
 

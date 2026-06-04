@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Heart, MessageCircle, Plus } from "lucide-react";
+import { Heart, MessageCircle, Plus, ImageIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -151,10 +151,10 @@ function CreatePostDialog({ onSuccess }: { onSuccess: () => void }) {
     },
   });
 
-  const form = useForm({ defaultValues: { title: "", content: "", category: "general" } });
+  const form = useForm({ defaultValues: { title: "", content: "", category: "general", imageUrl: "" } });
 
-  const onSubmit = (data: { title: string; content: string; category: string }) => {
-    createPost.mutate({ data: { title: data.title, content: data.content, category: data.category } });
+  const onSubmit = (data: { title: string; content: string; category: string; imageUrl: string }) => {
+    createPost.mutate({ data: { title: data.title, content: data.content, category: data.category, imageUrl: data.imageUrl || undefined } });
   };
 
   return (
@@ -203,6 +203,15 @@ function CreatePostDialog({ onSuccess }: { onSuccess: () => void }) {
                 <FormLabel>Content</FormLabel>
                 <FormControl>
                   <Textarea data-testid="input-post-content" placeholder="Share your thoughts, analysis, or news..." rows={5} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="imageUrl" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Image URL <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                <FormControl>
+                  <Input placeholder="https://..." {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

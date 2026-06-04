@@ -54,7 +54,7 @@ router.patch("/users/me", async (req, res): Promise<void> => {
     const { userId } = getAuth(req);
     if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { displayName, bio, marketFocus, skillLevel } = req.body;
+    const { displayName, bio, marketFocus, skillLevel, avatarUrl } = req.body;
 
     const updated = await db
       .update(usersTable)
@@ -63,6 +63,7 @@ router.patch("/users/me", async (req, res): Promise<void> => {
         ...(bio !== undefined && { bio }),
         ...(marketFocus !== undefined && { marketFocus }),
         ...(skillLevel !== undefined && { skillLevel }),
+        ...(avatarUrl !== undefined && { avatarUrl }),
       })
       .where(eq(usersTable.id, userId))
       .returning();

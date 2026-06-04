@@ -1869,6 +1869,7 @@ components:
         bio: { type: string }
         marketFocus: { type: string }
         skillLevel: { type: string }
+        avatarUrl: { type: string }
 
     Course:
       type: object

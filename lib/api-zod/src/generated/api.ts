@@ -42,7 +42,8 @@ export const UpdateMeBody = zod.object({
   "displayName": zod.string().optional(),
   "bio": zod.string().optional(),
   "marketFocus": zod.string().optional(),
-  "skillLevel": zod.string().optional()
+  "skillLevel": zod.string().optional(),
+  "avatarUrl": zod.string().optional()
 })
 
 export const UpdateMeResponse = zod.object({

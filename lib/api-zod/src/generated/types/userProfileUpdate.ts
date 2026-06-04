@@ -11,4 +11,5 @@ export interface UserProfileUpdate {
   bio?: string;
   marketFocus?: string;
   skillLevel?: string;
+  avatarUrl?: string;
 }
