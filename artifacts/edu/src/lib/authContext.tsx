@@ -25,10 +25,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    apiGetMe().then((me) => {
-      setUser(me);
-      setLoading(false);
-    });
+    apiGetMe()
+      .then((me) => {
+        setUser(me);
+      })
+      .catch(() => {
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   const signOut = useCallback(async (opts?: { redirectUrl?: string }) => {
