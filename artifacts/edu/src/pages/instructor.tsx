@@ -6,6 +6,7 @@ import {
   useListInstructorReviews, useApproveGate, useRejectGate,
   getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
   useGetGateAnalytics, getGetGateAnalyticsQueryKey,
+  useGetMe,
   type GateReviewItem,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
