@@ -17,7 +17,7 @@ import {
   MessageSquare, PhoneOff, AlertTriangle,
   BookOpen, Calendar, Wifi, WifiOff, Loader2, Play,
   ChevronRight, Send, ThumbsUp, Pin, CheckCircle2, BarChart2,
-  X, PlusCircle, ChevronLeft, Info, Hand,
+  X, PlusCircle, ChevronLeft, Info, Hand, Radio,
 } from "lucide-react";
 import "@livekit/components-styles";
 import {

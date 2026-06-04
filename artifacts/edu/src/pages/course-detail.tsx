@@ -16,6 +16,7 @@ import {
   useGetLessonGate, getGetLessonGateQueryKey,
   useListLiveClasses, useRegisterLiveClass, getListLiveClassesQueryKey,
   useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,
+  useGetMe,
   type QuizAttemptResult,
   type LessonGate,
   type LiveClass,
@@ -32,6 +33,7 @@ import {
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
   Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
+  XCircle, UploadCloud,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
