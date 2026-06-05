@@ -881,6 +881,41 @@ export interface ReviewCount {
   pending: number;
 }
 
+export interface LessonResource {
+  id: number;
+  lessonId: number;
+  title: string;
+  url: string;
+  type: string;
+  createdAt: string;
+}
+
+export interface LessonResourceInput {
+  /** @minLength 1 */
+  title: string;
+  /** @minLength 1 */
+  url: string;
+  type?: string;
+}
+
+export interface CourseAnnouncement {
+  id: number;
+  courseId: number;
+  instructorId: string;
+  /** @nullable */
+  instructorName?: string | null;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface CourseAnnouncementInput {
+  /** @minLength 1 */
+  title: string;
+  /** @minLength 1 */
+  content: string;
+}
+
 export type ListUsersParams = {
 role?: string;
 search?: string;
@@ -925,5 +960,13 @@ courseId?: number;
 export type ListInstructorReviewsParams = {
 status?: string;
 courseId?: number;
+};
+
+export type DeleteLessonResource200 = {
+  ok: boolean;
+};
+
+export type DeleteCourseAnnouncement200 = {
+  ok: boolean;
 };
 

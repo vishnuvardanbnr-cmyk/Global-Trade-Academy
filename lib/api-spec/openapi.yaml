@@ -1835,6 +1835,136 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/LessonGate" }
 
+  # ── LESSON RESOURCES ──────────────────────────────────────────────────────
+  /lessons/{lessonId}/resources:
+    get:
+      operationId: listLessonResources
+      tags: [lessons]
+      summary: List resources attached to a lesson
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: List of resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LessonResource" }
+    post:
+      operationId: addLessonResource
+      tags: [lessons]
+      summary: Add a resource to a lesson (instructor/admin)
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonResourceInput" }
+      responses:
+        "201":
+          description: Created resource
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonResource" }
+
+  /lessons/{lessonId}/resources/{resourceId}:
+    delete:
+      operationId: deleteLessonResource
+      tags: [lessons]
+      summary: Delete a lesson resource (instructor/admin)
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: resourceId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+
+  # ── COURSE ANNOUNCEMENTS ───────────────────────────────────────────────────
+  /courses/{courseId}/announcements:
+    get:
+      operationId: listCourseAnnouncements
+      tags: [courses]
+      summary: List announcements for a course (enrolled students)
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: List of announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CourseAnnouncement" }
+    post:
+      operationId: createCourseAnnouncement
+      tags: [courses]
+      summary: Create a course announcement (instructor/admin)
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseAnnouncementInput" }
+      responses:
+        "201":
+          description: Created announcement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseAnnouncement" }
+
+  /courses/{courseId}/announcements/{announcementId}:
+    delete:
+      operationId: deleteCourseAnnouncement
+      tags: [courses]
+      summary: Delete a course announcement (instructor/admin)
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: announcementId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+
 components:
   schemas:
     HealthStatus:
@@ -2785,3 +2915,43 @@ components:
       required: [pending]
       properties:
         pending: { type: integer }
+
+    # ── LESSON RESOURCES ────────────────────────────────────────────
+    LessonResource:
+      type: object
+      required: [id, lessonId, title, url, type, createdAt]
+      properties:
+        id: { type: integer }
+        lessonId: { type: integer }
+        title: { type: string }
+        url: { type: string }
+        type: { type: string }
+        createdAt: { type: string }
+
+    LessonResourceInput:
+      type: object
+      required: [title, url]
+      properties:
+        title: { type: string, minLength: 1 }
+        url: { type: string, minLength: 1 }
+        type: { type: string }
+
+    # ── COURSE ANNOUNCEMENTS ─────────────────────────────────────────
+    CourseAnnouncement:
+      type: object
+      required: [id, courseId, instructorId, title, content, createdAt]
+      properties:
+        id: { type: integer }
+        courseId: { type: integer }
+        instructorId: { type: string }
+        instructorName: { type: ["string", "null"] }
+        title: { type: string }
+        content: { type: string }
+        createdAt: { type: string }
+
+    CourseAnnouncementInput:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string, minLength: 1 }
+        content: { type: string, minLength: 1 }

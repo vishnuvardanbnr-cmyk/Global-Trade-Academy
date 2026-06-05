@@ -17,10 +17,14 @@ import {
   useListLiveClasses, useRegisterLiveClass, getListLiveClassesQueryKey,
   useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,
   useGetMe,
+  useListLessonResources, useAddLessonResource, useDeleteLessonResource, getListLessonResourcesQueryKey,
+  useListCourseAnnouncements, useCreateCourseAnnouncement, useDeleteCourseAnnouncement, getListCourseAnnouncementsQueryKey,
   type QuizAttemptResult,
   type LessonGate,
   type LiveClass,
   type LiveClassMessage,
+  type LessonResource,
+  type CourseAnnouncement,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -33,7 +37,7 @@ import {
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
   Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
-  XCircle, UploadCloud,
+  XCircle, UploadCloud, Paperclip, Megaphone, Link2, Plus,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -637,7 +641,7 @@ function LiveSessionsTab({ courseId, onJoin }: {
   );
 }
 
-type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews" | "live";
+type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews" | "live" | "resources" | "announcements";
 
 export default function CourseDetail() {
   const [, params] = useRoute<{ id: string }>("/courses/:id");
@@ -669,6 +673,7 @@ export default function CourseDetail() {
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [activeLiveSession, setActiveLiveSession] = useState<{ id: number; roomName: string; title: string } | null>(null);
   const { data: meData } = useGetMe();
+  const isOwner = meData?.role === "instructor" || meData?.role === "admin";
 
   const dbLessons = (lessons ?? []) as DbLesson[];
   const chapterGroups = useMemo(() => {
@@ -1182,6 +1187,8 @@ export default function CourseDetail() {
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
                 {tab === "quiz" ? "Quizzes"
                   : tab === "live" ? "Live Sessions"
+                  : tab === "announcements" ? "Announcements"
+                  : tab === "resources" ? "Resources"
                   : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </span>
               <button onClick={() => setShowTabPanel(false)}
@@ -1190,14 +1197,6 @@ export default function CourseDetail() {
               </button>
             </div>
             <div className={cn("flex-1 min-h-0", tab === "notes" ? "flex flex-col" : "overflow-y-auto p-3")}>
-              {tab === "overview" && (
-                <OverviewTab
-                  cur={cur} chIdx={chIdx} totalL={totalL}
-                  isEnrolled={isEnrolled} curDone={curDone}
-                  doEnroll={doEnroll} enrolling={enrolling}
-                  gate={gate} onGoToQuiz={() => setTab("quiz")}
-                />
-              )}
               {tab === "quiz" && (
                 <QuizTab courseId={courseId} isEnrolled={isEnrolled} onGraded={invalidateProgress} gate={gate} onStart={setActiveQuizId} />
               )}
@@ -1210,6 +1209,8 @@ export default function CourseDetail() {
                   setShowTabPanel(true);
                 }} />
               )}
+              {tab === "resources" && <ResourcesTab lessonId={cur?.id ?? 0} isOwner={isOwner} />}
+              {tab === "announcements" && <AnnouncementsTab courseId={courseId} isOwner={isOwner} />}
             </div>
           </div>
         )}
@@ -1222,12 +1223,14 @@ export default function CourseDetail() {
     )}>
       <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto">
         {[
-          { k: "overview" as Tab, label: "Overview", Icon: BookOpen },
-          { k: "quiz"     as Tab, label: "Quizzes",  Icon: FileQuestion },
-          { k: "tasks"    as Tab, label: "Tasks",    Icon: ListTodo },
-          { k: "notes"    as Tab, label: "Notes",    Icon: StickyNote },
-          { k: "reviews"  as Tab, label: "Reviews",  Icon: Star },
-          { k: "live"     as Tab, label: "Live",     Icon: Radio },
+          { k: "overview"      as Tab, label: "Overview",      Icon: BookOpen },
+          { k: "quiz"          as Tab, label: "Quizzes",       Icon: FileQuestion },
+          { k: "tasks"         as Tab, label: "Tasks",         Icon: ListTodo },
+          { k: "notes"         as Tab, label: "Notes",         Icon: StickyNote },
+          { k: "reviews"       as Tab, label: "Reviews",       Icon: Star },
+          { k: "live"          as Tab, label: "Live",          Icon: Radio },
+          { k: "resources"     as Tab, label: "Resources",     Icon: Paperclip },
+          { k: "announcements" as Tab, label: "Announcements", Icon: Megaphone },
         ].map(({ k, label, Icon }) => (
           <button key={k}
             onClick={() => {
@@ -2067,6 +2070,228 @@ function ReviewsTab({ courseId, isEnrolled }: { courseId: number; isEnrolled: bo
             </div>
           ))}
       </div>
+    </div>
+  );
+}
+
+/* ════════════════════ Resources Tab ════════════════════ */
+function ResourcesTab({ lessonId, isOwner }: { lessonId: number; isOwner: boolean }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: resources, isLoading } = useListLessonResources(lessonId, {
+    query: { enabled: lessonId > 0, queryKey: getListLessonResourcesQueryKey(lessonId) },
+  });
+  const { mutateAsync: addResource, isPending: adding } = useAddLessonResource();
+  const { mutateAsync: deleteResource } = useDeleteLessonResource();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", url: "", type: "link" });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListLessonResourcesQueryKey(lessonId) });
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.url.trim()) return;
+    try {
+      await addResource({ lessonId, data: { title: form.title.trim(), url: form.url.trim(), type: form.type } });
+      invalidate();
+      setForm({ title: "", url: "", type: "link" });
+      setShowForm(false);
+      toast({ title: "Resource added" });
+    } catch { toast({ title: "Could not add resource", variant: "destructive" }); }
+  };
+
+  const handleDelete = async (resourceId: number) => {
+    try {
+      await deleteResource({ lessonId, resourceId });
+      invalidate();
+    } catch { toast({ title: "Could not delete resource", variant: "destructive" }); }
+  };
+
+  const typeIcon = (type: string) => {
+    if (type === "pdf") return <FileText className="h-4 w-4 text-red-500" />;
+    if (type === "video") return <Video className="h-4 w-4 text-purple-500" />;
+    return <Link2 className="h-4 w-4 text-blue-500" />;
+  };
+
+  if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
+
+  return (
+    <div className="space-y-3">
+      {isOwner && (
+        <div>
+          {!showForm ? (
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-slate-300 text-[12.5px] font-semibold text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Resource
+            </button>
+          ) : (
+            <form onSubmit={handleAdd} className="space-y-2 p-3 rounded-xl border border-slate-200 bg-slate-50">
+              <input
+                required
+                placeholder="Title *"
+                value={form.title}
+                onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))}
+                className="w-full h-8 px-3 rounded-lg border border-slate-200 text-[12.5px] bg-white focus:outline-none focus:border-blue-400"
+              />
+              <input
+                required
+                placeholder="URL *"
+                value={form.url}
+                onChange={(e) => setForm(f => ({ ...f, url: e.target.value }))}
+                className="w-full h-8 px-3 rounded-lg border border-slate-200 text-[12.5px] bg-white focus:outline-none focus:border-blue-400"
+              />
+              <select
+                value={form.type}
+                onChange={(e) => setForm(f => ({ ...f, type: e.target.value }))}
+                className="w-full h-8 px-3 rounded-lg border border-slate-200 text-[12.5px] bg-white focus:outline-none focus:border-blue-400"
+              >
+                <option value="link">Link</option>
+                <option value="pdf">PDF</option>
+                <option value="video">Video</option>
+                <option value="file">File</option>
+              </select>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-slate-500 hover:bg-slate-200 transition-colors">Cancel</button>
+                <button type="submit" disabled={adding} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-50 transition-colors">{adding ? "Adding…" : "Add"}</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {(!resources || resources.length === 0) ? (
+        <div className="text-center py-8">
+          <Paperclip className="h-7 w-7 text-slate-300 mx-auto mb-2" />
+          <p className="text-[12.5px] text-slate-400">No resources for this lesson yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {resources.map((r: LessonResource) => (
+            <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 group transition-colors">
+              <div className="shrink-0">{typeIcon(r.type ?? "link")}</div>
+              <div className="flex-1 min-w-0">
+                <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-[12.5px] font-semibold text-slate-700 hover:text-blue-600 truncate block transition-colors">{r.title}</a>
+                <p className="text-[11px] text-slate-400 truncate">{r.url}</p>
+              </div>
+              <a href={r.url} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              {isOwner && (
+                <button onClick={() => handleDelete(r.id)} className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════ Announcements Tab ════════════════════ */
+function AnnouncementsTab({ courseId, isOwner }: { courseId: number; isOwner: boolean }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: announcements, isLoading } = useListCourseAnnouncements(courseId, {
+    query: { enabled: courseId > 0, queryKey: getListCourseAnnouncementsQueryKey(courseId) },
+  });
+  const { mutateAsync: createAnnouncement, isPending: creating } = useCreateCourseAnnouncement();
+  const { mutateAsync: deleteAnnouncement } = useDeleteCourseAnnouncement();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", content: "" });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListCourseAnnouncementsQueryKey(courseId) });
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.content.trim()) return;
+    try {
+      await createAnnouncement({ courseId, data: { title: form.title.trim(), content: form.content.trim() } });
+      invalidate();
+      setForm({ title: "", content: "" });
+      setShowForm(false);
+      toast({ title: "Announcement posted", description: "Enrolled students will be notified by email." });
+    } catch { toast({ title: "Could not post announcement", variant: "destructive" }); }
+  };
+
+  const handleDelete = async (announcementId: number) => {
+    try {
+      await deleteAnnouncement({ courseId, announcementId });
+      invalidate();
+    } catch { toast({ title: "Could not delete announcement", variant: "destructive" }); }
+  };
+
+  if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
+
+  return (
+    <div className="space-y-3">
+      {isOwner && (
+        <div>
+          {!showForm ? (
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-slate-300 text-[12.5px] font-semibold text-slate-500 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+            >
+              <Plus className="h-3.5 w-3.5" /> Post Announcement
+            </button>
+          ) : (
+            <form onSubmit={handleCreate} className="space-y-2 p-3 rounded-xl border border-amber-200 bg-amber-50">
+              <input
+                required
+                placeholder="Title *"
+                value={form.title}
+                onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))}
+                className="w-full h-8 px-3 rounded-lg border border-amber-200 text-[12.5px] bg-white focus:outline-none focus:border-amber-400"
+              />
+              <textarea
+                required
+                rows={3}
+                placeholder="Message to your students…"
+                value={form.content}
+                onChange={(e) => setForm(f => ({ ...f, content: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-amber-200 text-[12.5px] bg-white focus:outline-none focus:border-amber-400 resize-none"
+              />
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-slate-500 hover:bg-slate-200 transition-colors">Cancel</button>
+                <button type="submit" disabled={creating} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                  <Send className="h-3 w-3" />{creating ? "Posting…" : "Post & Notify"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {(!announcements || announcements.length === 0) ? (
+        <div className="text-center py-8">
+          <Megaphone className="h-7 w-7 text-slate-300 mx-auto mb-2" />
+          <p className="text-[12.5px] text-slate-400">No announcements yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {announcements.map((a: CourseAnnouncement & { instructorName?: string | null }) => (
+            <div key={a.id} className="p-3 rounded-xl border border-slate-100 group">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-800 leading-tight">{a.title}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {a.instructorName ?? "Instructor"} · {new Date(a.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </p>
+                </div>
+                {isOwner && (
+                  <button onClick={() => handleDelete(a.id)} className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <p className="text-[12.5px] text-slate-600 mt-2 leading-relaxed whitespace-pre-wrap">{a.content}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

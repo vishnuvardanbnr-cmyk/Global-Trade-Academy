@@ -6,3 +6,5 @@
 - [Vite proxy for API routes](vite-api-proxy.md) — frontend on port 23624 (artifact-assigned), API on port injected by artifact system; vite.config.ts proxies /api → localhost:3000 for internal access.
 - [Custom auth system](custom-auth.md) — Clerk replaced with JWT+bcrypt; getAuth shim in api-server/src/lib/auth.ts; frontend hooks in edu/src/lib/authContext.tsx.
 - [Replit artifact routing](replit-artifact-routing.md) — duplicate externalPort in [[ports]] causes permanent 502 in Helium microVM; fix by using artifact workflows (artifacts/edu: web, artifacts/api-server: API Server) which bypass the broken port-authority cache.
+- [Backend role lookup pattern](backend-role-lookup.md) — getAuth(req) only returns userId; to get role, query DB: getUserRole(userId) → usersTable.role. Never destructure role from getAuth.
+- [course-detail Tab type narrowing](course-detail-tab-narrowing.md) — the non-overview tab panel checks tab !== "overview"; never add tab === "overview" inside it or TS narrows to never. Overview content lives in the separate overview panel only.

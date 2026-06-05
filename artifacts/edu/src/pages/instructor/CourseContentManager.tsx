@@ -4,8 +4,9 @@ import {
   useListCourseSections, useCreateCourseSection, useUpdateCourseSection, useDeleteCourseSection, useReorderCourseSections,
   useListQuizzes, useCreateQuiz, useDeleteQuiz,
   useListTasks, useCreateTask, useDeleteTask,
+  useListLessonResources, useAddLessonResource, useDeleteLessonResource, getListLessonResourcesQueryKey,
   getListLessonsQueryKey, getListQuizzesQueryKey, getListTasksQueryKey, getListCourseSectionsQueryKey,
-  type Lesson, type CourseSection, type QuizQuestionInput,
+  type Lesson, type CourseSection, type QuizQuestionInput, type LessonResource,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -20,7 +21,7 @@ import {
   Plus, Trash2, Pencil, Video, FileText, GripVertical, Lock, Unlock,
   HelpCircle, CheckCircle2, X, Clock, Link2, ChevronDown, ChevronUp,
   FolderOpen, FolderClosed, MoveVertical, ArrowUp, ArrowDown, LayoutList,
-  AlertTriangle, UploadCloud, Link, CheckCircle, Loader2,
+  AlertTriangle, UploadCloud, Link, CheckCircle, Loader2, Paperclip, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRef } from "react";
@@ -157,6 +158,89 @@ function VideoUrlField({
 }
 
 const LESSON_TYPES = ["video", "article", "exercise"];
+
+/* ─────────────── Lesson Resources mini-panel ─────────────── */
+function LessonResourcesPanel({ lessonId }: { lessonId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: resources, isLoading } = useListLessonResources(lessonId, {
+    query: { enabled: lessonId > 0, queryKey: getListLessonResourcesQueryKey(lessonId) },
+  });
+  const { mutateAsync: addResource, isPending: adding } = useAddLessonResource();
+  const { mutateAsync: deleteResource } = useDeleteLessonResource();
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ title: "", url: "", type: "link" });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListLessonResourcesQueryKey(lessonId) });
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.url.trim()) return;
+    try {
+      await addResource({ lessonId, data: { title: form.title.trim(), url: form.url.trim(), type: form.type } });
+      invalidate();
+      setForm({ title: "", url: "", type: "link" });
+      setShowAdd(false);
+      toast({ title: "Resource added" });
+    } catch { toast({ title: "Could not add resource", variant: "destructive" }); }
+  };
+
+  const handleDelete = async (resourceId: number) => {
+    try { await deleteResource({ lessonId, resourceId }); invalidate(); }
+    catch { toast({ title: "Could not delete resource", variant: "destructive" }); }
+  };
+
+  return (
+    <div className="border-t border-border pt-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+          <Paperclip className="h-3.5 w-3.5" /> Resources
+        </span>
+        <Button type="button" variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setShowAdd(v => !v)}>
+          <Plus className="h-3 w-3" /> Add
+        </Button>
+      </div>
+
+      {showAdd && (
+        <form onSubmit={handleAdd} className="space-y-1.5 p-2.5 rounded-lg bg-secondary/40 border border-border">
+          <Input placeholder="Title *" value={form.title} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} className="h-7 text-xs" />
+          <Input placeholder="URL *" value={form.url} onChange={(e) => setForm(f => ({ ...f, url: e.target.value }))} className="h-7 text-xs" />
+          <div className="flex gap-2 items-center">
+            <select value={form.type} onChange={(e) => setForm(f => ({ ...f, type: e.target.value }))} className="flex-1 h-7 px-2 rounded-md border border-input text-xs bg-background focus:outline-none">
+              <option value="link">Link</option>
+              <option value="pdf">PDF</option>
+              <option value="video">Video</option>
+              <option value="file">File</option>
+            </select>
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button type="submit" size="sm" className="h-7 text-xs" disabled={adding}>{adding ? "…" : "Add"}</Button>
+          </div>
+        </form>
+      )}
+
+      {isLoading ? (
+        <Skeleton className="h-6 w-full" />
+      ) : !resources || resources.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground/60 italic">No resources yet.</p>
+      ) : (
+        <div className="space-y-1">
+          {resources.map((r: LessonResource) => (
+            <div key={r.id} className="flex items-center gap-2 group/res">
+              <a href={r.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-xs text-foreground/80 hover:text-primary truncate flex items-center gap-1.5">
+                <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                {r.title}
+              </a>
+              <Badge variant="outline" className="text-[10px] h-4 capitalize shrink-0">{r.type ?? "link"}</Badge>
+              <Button type="button" variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover/res:opacity-100 transition-opacity" onClick={() => handleDelete(r.id)}>
+                <X className="h-3 w-3 text-destructive" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ─────────────── Lesson form (shared) ─────────────── */
 interface LessonFormState {
@@ -411,6 +495,7 @@ function LessonsManager({ courseId }: { courseId: number }) {
             {editingLesson ? "Save Changes" : "Add Lesson"}
           </Button>
         </div>
+        {editingLesson && <LessonResourcesPanel lessonId={editingLesson.id} />}
       </div>
     );
   };

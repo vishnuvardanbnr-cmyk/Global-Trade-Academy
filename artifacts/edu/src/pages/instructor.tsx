@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation, useSearch } from "wouter";
 import {
   useListCourses, useCreateCourse, useUpdateCourse, useDeleteCourse,
-  useListLiveClasses, useCreateLiveClass, useListAttendance,
+  useListLiveClasses, useCreateLiveClass, useUpdateLiveClass, useListAttendance,
   getListCoursesQueryKey, getListLiveClassesQueryKey,
   useListInstructorReviews, useApproveGate, useRejectGate,
   getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
   useGetGateAnalytics, getGetGateAnalyticsQueryKey,
   useGetMe,
   type GateReviewItem,
+  type LiveClass,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ import {
   ClipboardCheck, CheckCircle2, XCircle, ChevronDown, ChevronUp,
   FileQuestion, Clock, BarChart3, Pencil, ImageIcon, CalendarPlus,
   ListTodo, ExternalLink, GraduationCap, TrendingUp, Award,
-  UserCheck, ChevronRight, RefreshCw, Star, Megaphone, Send,
+  UserCheck, ChevronRight, RefreshCw, Star, Megaphone, Send, Link2, Check,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
@@ -281,6 +282,65 @@ function EditCourseDialog({ course, onSuccess }: {
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ─── Live Class Row (with replay URL editor for completed sessions) ─── */
+function LiveClassRow({ cls, onUpdated }: { cls: LiveClass; onUpdated: () => void }) {
+  const { toast } = useToast();
+  const { mutateAsync: updateClass, isPending: saving } = useUpdateLiveClass();
+  const [editingReplay, setEditingReplay] = useState(false);
+  const [replayUrl, setReplayUrl] = useState(cls.replayUrl ?? "");
+
+  const handleSaveReplay = async () => {
+    try {
+      await updateClass({ classId: cls.id, data: { replayUrl: replayUrl.trim() || null } as any });
+      onUpdated();
+      setEditingReplay(false);
+      toast({ title: "Replay URL saved" });
+    } catch { toast({ title: "Could not save replay URL", variant: "destructive" }); }
+  };
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden" data-testid={`row-class-${cls.id}`}>
+      <div className="flex items-center gap-3 p-3">
+        <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
+          <Video className="h-4 w-4 text-purple-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm truncate">{cls.title}</p>
+          <p className="text-xs text-muted-foreground">{new Date(cls.scheduledAt).toLocaleString()}</p>
+        </div>
+        <Badge variant={cls.status === "live" ? "destructive" : cls.status === "completed" ? "secondary" : "outline"}>{cls.status}</Badge>
+        <span className="text-xs text-muted-foreground shrink-0">{cls.registrationCount} registered</span>
+        {cls.status === "completed" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 text-xs shrink-0"
+            onClick={() => { setEditingReplay(v => !v); setReplayUrl(cls.replayUrl ?? ""); }}
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            {cls.replayUrl ? "Edit Replay" : "Set Replay"}
+          </Button>
+        )}
+      </div>
+      {editingReplay && cls.status === "completed" && (
+        <div className="px-3 pb-3 flex gap-2 border-t border-border/50 pt-2.5">
+          <Input
+            placeholder="https://youtube.com/watch?v=…"
+            value={replayUrl}
+            onChange={(e) => setReplayUrl(e.target.value)}
+            className="h-8 text-xs flex-1"
+            autoFocus
+          />
+          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setEditingReplay(false)}>Cancel</Button>
+          <Button size="sm" className="h-8 text-xs gap-1.5" disabled={saving} onClick={handleSaveReplay}>
+            <Check className="h-3.5 w-3.5" />{saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1607,15 +1667,7 @@ export default function InstructorPanel() {
               <CardContent>
                 <div className="space-y-2">
                   {liveClasses.slice(0, 5).map((cls) => (
-                    <div key={cls.id} className="flex items-center gap-3 p-3 rounded-lg border border-border" data-testid={`row-class-${cls.id}`}>
-                      <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0"><Video className="h-4 w-4 text-purple-500" /></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{cls.title}</p>
-                        <p className="text-xs text-muted-foreground">{new Date(cls.scheduledAt).toLocaleString()}</p>
-                      </div>
-                      <Badge variant={cls.status === "live" ? "destructive" : cls.status === "completed" ? "secondary" : "outline"}>{cls.status}</Badge>
-                      <span className="text-xs text-muted-foreground shrink-0">{cls.registrationCount} registered</span>
-                    </div>
+                    <LiveClassRow key={cls.id} cls={cls} onUpdated={() => qc.invalidateQueries({ queryKey: getListLiveClassesQueryKey() })} />
                   ))}
                 </div>
               </CardContent>

@@ -2022,3 +2022,101 @@ export const RejectGateResponse = zod.object({
 })
 
 
+/**
+ * @summary List resources attached to a lesson
+ */
+export const ListLessonResourcesParams = zod.object({
+  "lessonId": zod.coerce.number()
+})
+
+export const ListLessonResourcesResponseItem = zod.object({
+  "id": zod.number(),
+  "lessonId": zod.number(),
+  "title": zod.string(),
+  "url": zod.string(),
+  "type": zod.string(),
+  "createdAt": zod.string()
+})
+export const ListLessonResourcesResponse = zod.array(ListLessonResourcesResponseItem)
+
+
+/**
+ * @summary Add a resource to a lesson (instructor/admin)
+ */
+export const AddLessonResourceParams = zod.object({
+  "lessonId": zod.coerce.number()
+})
+
+
+
+
+
+export const AddLessonResourceBody = zod.object({
+  "title": zod.string().min(1),
+  "url": zod.string().min(1),
+  "type": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a lesson resource (instructor/admin)
+ */
+export const DeleteLessonResourceParams = zod.object({
+  "lessonId": zod.coerce.number(),
+  "resourceId": zod.coerce.number()
+})
+
+export const DeleteLessonResourceResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
+ * @summary List announcements for a course (enrolled students)
+ */
+export const ListCourseAnnouncementsParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const ListCourseAnnouncementsResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number(),
+  "instructorId": zod.string(),
+  "instructorName": zod.string().nullish(),
+  "title": zod.string(),
+  "content": zod.string(),
+  "createdAt": zod.string()
+})
+export const ListCourseAnnouncementsResponse = zod.array(ListCourseAnnouncementsResponseItem)
+
+
+/**
+ * @summary Create a course announcement (instructor/admin)
+ */
+export const CreateCourseAnnouncementParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+
+
+
+
+export const CreateCourseAnnouncementBody = zod.object({
+  "title": zod.string().min(1),
+  "content": zod.string().min(1)
+})
+
+
+/**
+ * @summary Delete a course announcement (instructor/admin)
+ */
+export const DeleteCourseAnnouncementParams = zod.object({
+  "courseId": zod.coerce.number(),
+  "announcementId": zod.coerce.number()
+})
+
+export const DeleteCourseAnnouncementResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
