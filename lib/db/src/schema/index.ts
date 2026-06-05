@@ -14,3 +14,4 @@ export * from "./notifications";
 export * from "./batches";
 export * from "./events";
 export * from "./resources";
+export * from "./discussions";

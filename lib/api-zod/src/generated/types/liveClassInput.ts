@@ -13,6 +13,7 @@ export interface LiveClassInput {
   scheduledAt: string;
   duration?: number;
   courseId?: number;
+  batchId?: number;
   meetingUrl?: string;
   category?: string;
   maxAttendees?: number;

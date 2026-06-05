@@ -6,7 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight, ImageIcon } from "lucide-react";
+import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight, ImageIcon, Moon, Sun } from "lucide-react";
+import { useTheme } from "@/lib/useTheme";
 import { cn } from "@/lib/utils";
 
 const MARKET_OPTIONS = ["Forex", "Crypto", "Stocks", "Futures", "Options", "Indices"];
@@ -25,6 +26,7 @@ export default function Settings() {
   const { mutateAsync: updateMe } = useUpdateMe();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { isDark, toggle: toggleTheme } = useTheme();
 
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -240,6 +242,43 @@ export default function Settings() {
             </CardContent>
           </Card>
 
+          {/* Appearance */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Palette className="h-4 w-4" /> Appearance
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Dark mode</p>
+                  <p className="text-xs text-muted-foreground">Switch between light and dark interface</p>
+                </div>
+                <button
+                  onClick={toggleTheme}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                    isDark ? "bg-primary" : "bg-secondary border border-border"
+                  )}
+                >
+                  <span className={cn(
+                    "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
+                    isDark ? "translate-x-6" : "translate-x-1"
+                  )} />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg border border-border p-2.5 bg-secondary/50">
+                {isDark
+                  ? <Moon className="h-4 w-4 text-primary shrink-0" />
+                  : <Sun className="h-4 w-4 text-amber-500 shrink-0" />}
+                <span className="text-xs text-muted-foreground">
+                  Currently using <strong className="text-foreground">{isDark ? "Dark" : "Light"}</strong> theme — preference saved automatically
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Account actions */}
           <Card>
             <CardHeader className="pb-3">
@@ -251,7 +290,6 @@ export default function Settings() {
               {[
                 { label: "Change password", sub: "Update your login credentials", icon: Shield },
                 { label: "Notification preferences", sub: "Control which alerts you receive", icon: Bell },
-                { label: "Appearance", sub: "Theme and display settings", icon: Palette },
               ].map(({ label, sub, icon: Icon }) => (
                 <button
                   key={label}

@@ -91,11 +91,11 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
     const xpMap = Object.fromEntries(xpRows.map((r) => [r.userId, r.total]));
     const certMap = Object.fromEntries(certRows.map((r) => [r.userId, r.count]));
 
-    const courseMap: Record<number, number> = {};
+    const courseMap: Record<string, number> = {};
     for (const e of enrollments) {
       courseMap[e.userId] = (courseMap[e.userId] ?? 0) + 1;
     }
-    const completedMap: Record<number, number> = {};
+    const completedMap: Record<string, number> = {};
     for (const e of enrollments.filter((e) => e.status === "completed")) {
       completedMap[e.userId] = (completedMap[e.userId] ?? 0) + 1;
     }

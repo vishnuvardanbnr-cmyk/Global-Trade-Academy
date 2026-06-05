@@ -1724,7 +1724,7 @@ export default function InstructorPanel() {
                             <CourseContentManager courseId={course.id} />
                           </DialogContent>
                         </Dialog>
-                        <EditCourseDialog course={course} onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })} />
+                        <EditCourseDialog course={{ ...course, price: course.price != null ? String(course.price) : null }} onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })} />
                         <Button size="sm" variant="outline" data-testid={`button-toggle-status-${course.id}`} onClick={() => updateCourse.mutate({ courseId: course.id, data: { status: course.status === "published" ? "draft" : "published" } })}>
                           {course.status === "published" ? "Unpublish" : "Publish"}
                         </Button>

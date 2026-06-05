@@ -1,3 +1,4 @@
+import confetti from "canvas-confetti";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRoute, Link } from "wouter";
 import { useUser } from "@/lib/authContext";
@@ -37,7 +38,7 @@ import {
   Trash2, Loader2, ClipboardCheck, AlertTriangle, ShieldCheck,
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
   Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
-  XCircle, UploadCloud, Paperclip, Megaphone, Link2, Plus,
+  XCircle, UploadCloud, Paperclip, Megaphone, Link2, Plus, MessageCircle,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -45,6 +46,7 @@ type DbLesson = {
   id: number; title: string; duration: number | null; order: number;
   isFree: boolean; type: string; sectionId?: number | null;
   videoUrl?: string | null; content?: string | null;
+  dripDays?: number;
 };
 type ChapterGroup = { id: number; title: string; dur: string; lessons: DbLesson[] };
 
@@ -641,7 +643,192 @@ function LiveSessionsTab({ courseId, onJoin }: {
   );
 }
 
-type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews" | "live" | "resources" | "announcements";
+/* ─── Lesson Q&A ─────────────────────────────────────────────── */
+type LessonQuestion = {
+  id: number; lessonId: number; userId: string; content: string;
+  resolved: boolean; createdAt: string; authorName?: string | null;
+};
+type LessonAnswer = {
+  id: number; questionId: number; userId: string; content: string;
+  isInstructor: boolean; createdAt: string; authorName?: string | null;
+};
+
+function LessonQATab({ lessonId, lessonTitle, isOwner, userId }: {
+  lessonId: number; lessonTitle: string; isOwner: boolean; userId: string;
+}) {
+  const [questions, setQuestions] = useState<LessonQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedQ, setExpandedQ] = useState<number | null>(null);
+  const [answers, setAnswers] = useState<Record<number, LessonAnswer[]>>({});
+  const [newQuestion, setNewQuestion] = useState("");
+  const [answerInputs, setAnswerInputs] = useState<Record<number, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  const fetchQuestions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/lessons/${lessonId}/questions`);
+      if (!r.ok) throw new Error();
+      const data = await r.json() as { questions: LessonQuestion[] };
+      setQuestions(data.questions ?? []);
+    } catch { } finally { setLoading(false); }
+  }, [lessonId]);
+
+  useEffect(() => { if (lessonId > 0) fetchQuestions(); }, [lessonId, fetchQuestions]);
+
+  const fetchAnswers = useCallback(async (questionId: number) => {
+    if (answers[questionId]) return;
+    try {
+      const r = await fetch(`/api/lessons/${lessonId}/questions/${questionId}/answers`);
+      if (!r.ok) return;
+      const data = await r.json() as { answers: LessonAnswer[] };
+      setAnswers(prev => ({ ...prev, [questionId]: data.answers ?? [] }));
+    } catch { }
+  }, [lessonId, answers]);
+
+  const postQuestion = async () => {
+    if (!newQuestion.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const r = await fetch(`/api/lessons/${lessonId}/questions`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newQuestion.trim() }),
+      });
+      if (!r.ok) throw new Error();
+      const data = await r.json() as { question: LessonQuestion };
+      setQuestions(prev => [...prev, data.question]);
+      setNewQuestion("");
+      toast({ title: "Question posted" });
+    } catch { toast({ title: "Could not post question", variant: "destructive" }); }
+    finally { setSubmitting(false); }
+  };
+
+  const postAnswer = async (questionId: number) => {
+    const content = answerInputs[questionId]?.trim();
+    if (!content) return;
+    try {
+      const r = await fetch(`/api/lessons/${lessonId}/questions/${questionId}/answers`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (!r.ok) throw new Error();
+      const data = await r.json() as { answer: LessonAnswer };
+      setAnswers(prev => ({ ...prev, [questionId]: [...(prev[questionId] ?? []), data.answer] }));
+      setAnswerInputs(prev => ({ ...prev, [questionId]: "" }));
+    } catch { toast({ title: "Could not post reply", variant: "destructive" }); }
+  };
+
+  const resolveQuestion = async (questionId: number) => {
+    try {
+      await fetch(`/api/lessons/${lessonId}/questions/${questionId}/resolve`, { method: "PATCH" });
+      setQuestions(prev => prev.map(q => q.id === questionId ? { ...q, resolved: true } : q));
+    } catch { }
+  };
+
+  const deleteQuestion = async (questionId: number) => {
+    try {
+      await fetch(`/api/lessons/${lessonId}/questions/${questionId}`, { method: "DELETE" });
+      setQuestions(prev => prev.filter(q => q.id !== questionId));
+    } catch { toast({ title: "Could not delete", variant: "destructive" }); }
+  };
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="p-3 border-b border-slate-100 shrink-0">
+        <textarea
+          value={newQuestion}
+          onChange={e => setNewQuestion(e.target.value)}
+          placeholder={`Ask a question about "${lessonTitle}"…`}
+          rows={2}
+          className="w-full text-[12.5px] px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-blue-400 resize-none bg-white"
+        />
+        <button
+          disabled={submitting || !newQuestion.trim()}
+          onClick={postQuestion}
+          className="mt-1.5 h-8 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-[12px] font-semibold rounded-lg transition-colors"
+        >{submitting ? "Posting…" : "Post Question"}</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {loading ? (
+          Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)
+        ) : questions.length === 0 ? (
+          <div className="text-center py-10">
+            <MessageCircle className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-[12px] text-slate-400">No questions yet — be the first to ask!</p>
+          </div>
+        ) : questions.map(q => {
+          const isExpanded = expandedQ === q.id;
+          const isMyQ = q.userId === userId;
+          return (
+            <div key={q.id} className={cn("rounded-xl border overflow-hidden", q.resolved ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200 bg-white")}>
+              <div className="px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="text-[9px] font-bold text-blue-600">{(q.authorName ?? "?")[0].toUpperCase()}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-[11px] font-semibold text-slate-700">{q.authorName ?? "Student"}</span>
+                      {q.resolved && <span className="text-[9.5px] font-semibold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Resolved ✓</span>}
+                    </div>
+                    <p className="text-[12.5px] text-slate-800 leading-snug">{q.content}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2 pl-8">
+                  <button
+                    onClick={() => { if (!isExpanded) fetchAnswers(q.id); setExpandedQ(isExpanded ? null : q.id); }}
+                    className="text-[11px] text-blue-600 hover:underline font-medium"
+                  >{isExpanded ? "Hide replies" : `${answers[q.id]?.length ? `Replies (${answers[q.id].length})` : "Reply"}`}</button>
+                  {!q.resolved && (isOwner || isMyQ) && (
+                    <button onClick={() => resolveQuestion(q.id)} className="text-[11px] text-emerald-600 hover:underline font-medium">Mark Resolved</button>
+                  )}
+                  {(isOwner || isMyQ) && (
+                    <button onClick={() => deleteQuestion(q.id)} className="text-[11px] text-red-500 hover:underline font-medium ml-auto">Delete</button>
+                  )}
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2 space-y-2">
+                  {(answers[q.id] ?? []).map(a => (
+                    <div key={a.id} className="flex items-start gap-2">
+                      <div className={cn("w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5", a.isInstructor ? "bg-amber-100" : "bg-slate-200")}>
+                        <span className={cn("text-[8px] font-bold", a.isInstructor ? "text-amber-700" : "text-slate-500")}>{(a.authorName ?? "?")[0].toUpperCase()}</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10.5px] font-semibold text-slate-700">{a.authorName ?? "User"}</span>
+                          {a.isInstructor && <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded">Instructor</span>}
+                        </div>
+                        <p className="text-[12px] text-slate-700 leading-snug">{a.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      value={answerInputs[q.id] ?? ""}
+                      onChange={e => setAnswerInputs(prev => ({ ...prev, [q.id]: e.target.value }))}
+                      placeholder="Write a reply…"
+                      className="flex-1 h-8 px-3 text-[12px] rounded-lg border border-slate-200 focus:outline-none focus:border-blue-400 bg-white"
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void postAnswer(q.id); } }}
+                    />
+                    <button
+                      onClick={() => void postAnswer(q.id)}
+                      disabled={!(answerInputs[q.id]?.trim())}
+                      className="h-8 px-3 bg-blue-600 disabled:opacity-40 hover:bg-blue-700 text-white text-[11.5px] font-semibold rounded-lg transition-colors"
+                    >Reply</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews" | "live" | "resources" | "announcements" | "qa";
 
 export default function CourseDetail() {
   const [, params] = useRoute<{ id: string }>("/courses/:id");
@@ -753,6 +940,7 @@ export default function CourseDetail() {
         await qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
         await qc.invalidateQueries({ queryKey: getGetLessonGateQueryKey(cur.id) });
         if (res.courseCompleted) {
+          confetti({ particleCount: 180, spread: 100, origin: { y: 0.55 }, colors: ["#2563eb","#10b981","#f59e0b","#8b5cf6","#ef4444"] });
           toast({ title: "Course complete! 🎓", description: `+${res.xpAwarded} XP earned · Certificate issued.` });
           return;
         }
@@ -1126,35 +1314,48 @@ export default function CourseDetail() {
                         const isActive = cur?.id === l.id;
                         const locked = lessonLocked(l);
                         const LessonIcon = l.type === "article" ? FileText : l.type === "quiz" ? FileQuestion : PlayCircle;
+                        const enrolledMs = (progress as (typeof progress & { enrolledAt?: string }) | undefined)?.enrolledAt
+                          ? new Date((progress as (typeof progress & { enrolledAt?: string }))!.enrolledAt!).getTime() : null;
+                        const dripDaysLeft = (locked && l.dripDays && enrolledMs)
+                          ? Math.ceil((enrolledMs + l.dripDays * 86400000 - Date.now()) / 86400000)
+                          : null;
+                        const showDrip = dripDaysLeft !== null && dripDaysLeft > 0;
                         return (
                           <button key={l.id} disabled={locked}
                             onClick={() => { setActiveIdx(idx); setTab("overview"); }}
                             className={cn(
-                              "w-full flex items-center gap-3 pl-[52px] pr-4 py-2.5 text-left transition-all",
+                              "w-full flex items-start gap-3 pl-[52px] pr-4 py-2.5 text-left transition-all",
                               isActive
                                 ? "bg-blue-600 text-white"
                                 : "hover:bg-white/80",
                               locked && "opacity-40 cursor-not-allowed",
                             )}>
-                            <div className="shrink-0">
+                            <div className="shrink-0 mt-0.5">
                               {locked
                                 ? <Lock className="h-3 w-3 text-slate-400" />
                                 : isDone
                                   ? <CheckCircle2 className={cn("h-3.5 w-3.5", isActive ? "text-white/80" : "text-emerald-500")} />
                                   : <LessonIcon className={cn("h-3.5 w-3.5", isActive ? "text-white/80" : "text-slate-400")} />}
                             </div>
-                            <span className={cn(
-                              "flex-1 text-[12px] leading-snug truncate",
-                              isActive ? "text-white font-semibold"
-                                : isDone ? "text-slate-400" : "text-slate-700",
-                            )}>
-                              {l.title}
-                            </span>
+                            <div className="flex-1 min-w-0">
+                              <span className={cn(
+                                "block text-[12px] leading-snug truncate",
+                                isActive ? "text-white font-semibold"
+                                  : isDone ? "text-slate-400" : "text-slate-700",
+                              )}>
+                                {l.title}
+                              </span>
+                              {showDrip && (
+                                <span className="block text-[10px] text-amber-600 font-medium mt-0.5">
+                                  Unlocks in {dripDaysLeft}d
+                                </span>
+                              )}
+                            </div>
                             {l.isFree && !isEnrolled && (
-                              <span className="text-[9.5px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0">FREE</span>
+                              <span className="text-[9.5px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0 mt-0.5">FREE</span>
                             )}
-                            {l.duration && (
-                              <span className={cn("text-[10.5px] shrink-0 tabular-nums", isActive ? "text-white/60" : "text-slate-400")}>
+                            {l.duration && !showDrip && (
+                              <span className={cn("text-[10.5px] shrink-0 tabular-nums mt-0.5", isActive ? "text-white/60" : "text-slate-400")}>
                                 {l.duration}m
                               </span>
                             )}
@@ -1189,6 +1390,7 @@ export default function CourseDetail() {
                   : tab === "live" ? "Live Sessions"
                   : tab === "announcements" ? "Announcements"
                   : tab === "resources" ? "Resources"
+                  : tab === "qa" ? "Lesson Q&A"
                   : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </span>
               <button onClick={() => setShowTabPanel(false)}
@@ -1211,6 +1413,14 @@ export default function CourseDetail() {
               )}
               {tab === "resources" && <ResourcesTab lessonId={cur?.id ?? 0} isOwner={isOwner} />}
               {tab === "announcements" && <AnnouncementsTab courseId={courseId} isOwner={isOwner} />}
+              {tab === "qa" && cur && (
+                <LessonQATab
+                  lessonId={cur.id}
+                  lessonTitle={cur.title}
+                  isOwner={isOwner}
+                  userId={meData?.id ?? ""}
+                />
+              )}
             </div>
           </div>
         )}
@@ -1231,6 +1441,7 @@ export default function CourseDetail() {
           { k: "live"          as Tab, label: "Live",          Icon: Radio },
           { k: "resources"     as Tab, label: "Resources",     Icon: Paperclip },
           { k: "announcements" as Tab, label: "Announcements", Icon: Megaphone },
+          { k: "qa"            as Tab, label: "Q&A",           Icon: MessageCircle },
         ].map(({ k, label, Icon }) => (
           <button key={k}
             onClick={() => {
@@ -1749,7 +1960,7 @@ function TaskRunner({ courseId, taskId, onBack, onDone }: {
   const task = tasks?.find((t) => t.id === taskId);
 
   // If already submitted, show current status
-  const currentStatus = task?.status as string | null | undefined;
+  const currentStatus = (task as (typeof task & { status?: string }) | undefined)?.status as string | null | undefined;
   const isRejected = currentStatus === "rejected";
   const isPending2 = currentStatus === "pending_review";
   const isApproved = currentStatus === "approved";

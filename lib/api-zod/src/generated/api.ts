@@ -501,6 +501,7 @@ export const CreateLiveClassBody = zod.object({
   "scheduledAt": zod.string(),
   "duration": zod.number().optional(),
   "courseId": zod.number().optional(),
+  "batchId": zod.number().optional(),
   "meetingUrl": zod.string().optional(),
   "category": zod.string().optional(),
   "maxAttendees": zod.number().optional(),

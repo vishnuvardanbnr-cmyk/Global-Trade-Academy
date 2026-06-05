@@ -27,7 +27,7 @@ function toHex(buffer: ArrayBuffer): string {
 }
 
 async function getSigningKey(secretKey: string, date: string, region: string, service: string): Promise<ArrayBuffer> {
-  const kDate = await hmacSha256(new TextEncoder().encode("AWS4" + secretKey), date);
+  const kDate = await hmacSha256(new TextEncoder().encode("AWS4" + secretKey).buffer as ArrayBuffer, date);
   const kRegion = await hmacSha256(kDate, region);
   const kService = await hmacSha256(kRegion, service);
   const kSigning = await hmacSha256(kService, "aws4_request");
@@ -105,7 +105,7 @@ router.get("/upload/presign", async (req, res) => {
     ? `${publicUrl.replace(/\/$/, "")}/${key}`
     : `${endpoint}/${bucketName}/${key}`;
 
-  res.json({ presignedUrl, publicUrl: finalPublicUrl, key });
+  return res.json({ presignedUrl, publicUrl: finalPublicUrl, key });
 });
 
 export default router;

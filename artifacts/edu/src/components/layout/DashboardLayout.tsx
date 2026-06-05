@@ -5,8 +5,9 @@ import {
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
   ChevronRight, GraduationCap, Zap, Award, UserCircle2,
   Settings, User, CheckCheck, BarChart3, Layers, ClipboardCheck, Activity,
-  Calendar, Megaphone,
+  Calendar, Megaphone, Moon, Sun,
 } from "lucide-react";
+import { useTheme } from "@/lib/useTheme";
 import { Fragment } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -112,7 +113,7 @@ function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
         <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
           <UserCircle2 className="h-6 w-6 text-blue-600" />
         </div>
@@ -165,6 +166,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  const { isDark, toggle: toggleTheme } = useTheme();
   const userId = user?.id ?? null;
 
   const fetchNotifications = useCallback(async () => {
@@ -325,21 +327,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <>
       {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
-        <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-white flex-col h-screen">
+        <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-sidebar flex-col h-screen">
           {sidebarContent}
         </aside>
 
         {mobileOpen && (
           <div className="md:hidden fixed inset-0 z-50 flex">
             <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-            <aside className="relative w-60 bg-white border-r border-border flex flex-col">
+            <aside className="relative w-60 bg-sidebar border-r border-border flex flex-col">
               {sidebarContent}
             </aside>
           </div>
         )}
 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <header className="h-16 border-b border-border bg-white flex items-center gap-4 px-4 md:px-6 shrink-0 z-10">
+          <header className="h-16 border-b border-border bg-background flex items-center gap-4 px-4 md:px-6 shrink-0 z-10">
             <button
               className="md:hidden p-1.5 rounded-md hover:bg-secondary transition-colors"
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -353,12 +355,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <input
                   type="search"
                   placeholder="Search courses, traders, symbols…"
-                  className="w-full h-9 pl-9 pr-4 text-sm bg-secondary rounded-lg border border-transparent focus:border-primary focus:bg-white focus:outline-none transition-all"
+                  className="w-full h-9 pl-9 pr-4 text-sm bg-secondary rounded-lg border border-transparent focus:border-primary focus:bg-background focus:outline-none transition-all"
                 />
               </div>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={toggleTheme}
+                title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                className="p-2 rounded-lg hover:bg-secondary transition-colors"
+              >
+                {isDark ? <Sun className="h-4.5 w-4.5 text-muted-foreground" /> : <Moon className="h-4.5 w-4.5 text-muted-foreground" />}
+              </button>
+
               <div ref={bellRef} className="relative">
                 <button
                   onClick={() => { setBellOpen(o => !o); setMenuOpen(false); }}
@@ -372,7 +382,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   )}
                 </button>
                 {bellOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-popover border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
                     <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                       <p className="text-sm font-semibold text-foreground">Notifications</p>
                       {unreadCount > 0 && (
@@ -421,7 +431,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   {initials || "U"}
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-52 bg-white border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-2 w-52 bg-popover border border-border rounded-2xl shadow-lg z-50 overflow-hidden">
                     <div className="px-4 py-3 border-b border-border">
                       <p className="text-sm font-semibold text-foreground truncate">{displayName}</p>
                       <p className="text-xs text-muted-foreground truncate">{email}</p>

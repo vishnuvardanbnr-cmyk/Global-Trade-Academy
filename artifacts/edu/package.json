@@ -44,6 +44,7 @@
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
@@ -80,6 +81,7 @@
     "@clerk/themes": "^2.4.57",
     "@livekit/components-react": "^2.9.21",
     "@livekit/components-styles": "^1.2.0",
+    "canvas-confetti": "^1.9.4",
     "lightweight-charts": "^5.2.0",
     "livekit-client": "^2.19.1"
   }

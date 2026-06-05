@@ -2225,6 +2225,7 @@ components:
         scheduledAt: { type: string }
         duration: { type: integer }
         courseId: { type: integer }
+        batchId: { type: integer }
         meetingUrl: { type: string }
         category: { type: string }
         maxAttendees: { type: integer }

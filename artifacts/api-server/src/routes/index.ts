@@ -22,6 +22,7 @@ import notificationsRouter from "./notifications";
 import batchesRouter from "./batches";
 import setupRouter from "./setup";
 import resourcesRouter from "./resources";
+import discussionsRouter from "./discussions";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(notificationsRouter);
 router.use(batchesRouter);
 router.use(setupRouter);
 router.use(resourcesRouter);
+router.use(discussionsRouter);
 
 export default router;
