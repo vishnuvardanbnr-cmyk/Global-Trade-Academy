@@ -128,6 +128,7 @@ export default function Trading() {
       height: el.clientHeight,
       handleScroll: true,
       handleScale:  true,
+      attributionLogo: false,
     });
 
     const candleSeries = chart.addSeries(CandlestickSeriesDef, {
