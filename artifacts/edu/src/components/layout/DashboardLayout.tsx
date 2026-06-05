@@ -231,7 +231,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
   const pendingReviews = reviewCount?.pending ?? 0;
 
-  const isFullBleed = location.startsWith("/courses/");
+  const isFullBleed  = location.startsWith("/courses/");
+  const isChartPage  = location === "/trading";
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
@@ -462,9 +463,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </header>
 
-          <main className={cn("flex-1 overflow-y-auto bg-background", !isFullBleed && "overflow-y-auto")}>
+          <main className={cn(
+            "flex-1 bg-background",
+            isChartPage ? "overflow-hidden" : "overflow-y-auto",
+          )}>
             {isFullBleed ? (
               children
+            ) : isChartPage ? (
+              <div className="h-full p-4 md:p-5">
+                {children}
+              </div>
             ) : (
               <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto">
                 {children}
