@@ -163,8 +163,9 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Learning Progress + Quick Actions */}
+      {/* Learning Progress + Side Panel */}
       <div className="grid gap-4 lg:grid-cols-3">
+        {/* My Courses */}
         <Card className="lg:col-span-2 shadow-xs border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base font-semibold">My Courses</CardTitle>
@@ -216,127 +217,119 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Live Sessions */}
-        <Card className="shadow-xs border-border flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Live Sessions</CardTitle>
-            <Link href="/live">
-              <button className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5">
-                See all <ArrowUpRight className="h-3 w-3" />
-              </button>
-            </Link>
-          </CardHeader>
-          <CardContent className="flex-1 p-0">
-            {liveLoading ? (
-              <div className="space-y-3 px-6 py-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : (() => {
-              const live     = (liveClasses ?? []).filter((c: LiveClass) => c.status === "live");
-              const upcoming = (liveClasses ?? []).filter((c: LiveClass) => c.status === "scheduled");
-              const shown    = [...live, ...upcoming].slice(0, 4);
+        {/* Right column: Live Sessions + Announcements stacked */}
+        <div className="flex flex-col gap-4">
+          {/* Live Sessions */}
+          <Card className="shadow-xs border-border flex flex-col flex-1">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base font-semibold">Live Sessions</CardTitle>
+              <Link href="/live">
+                <button className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5">
+                  See all <ArrowUpRight className="h-3 w-3" />
+                </button>
+              </Link>
+            </CardHeader>
+            <CardContent className="flex-1 p-0">
+              {liveLoading ? (
+                <div className="space-y-3 px-6 py-3">
+                  {[1, 2].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+                </div>
+              ) : (() => {
+                const live     = (liveClasses ?? []).filter((c: LiveClass) => c.status === "live");
+                const upcoming = (liveClasses ?? []).filter((c: LiveClass) => c.status === "scheduled");
+                const shown    = [...live, ...upcoming].slice(0, 3);
 
-              if (shown.length === 0) {
-                return (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[180px] px-6 py-8 text-center">
-                    <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center mb-3">
-                      <Calendar className="h-5 w-5 text-muted-foreground" />
+                if (shown.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center px-6 py-6 text-center">
+                      <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center mb-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs font-medium text-foreground">No sessions scheduled</p>
+                      <Link href="/live">
+                        <button className="mt-2 text-xs text-primary hover:underline font-medium">Browse schedule</button>
+                      </Link>
                     </div>
-                    <p className="text-sm font-medium text-foreground">No sessions scheduled</p>
-                    <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                      Live trading sessions will appear here when instructors go live or post upcoming classes.
-                    </p>
-                    <Link href="/live">
-                      <button className="mt-3 text-xs text-primary hover:underline font-medium">Browse schedule</button>
-                    </Link>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              return (
-                <div className="divide-y divide-border">
-                  {shown.map((session: LiveClass) => {
-                    const isLive = session.status === "live";
-                    const diff   = new Date(session.scheduledAt).getTime() - Date.now();
-                    const h      = Math.floor(diff / 3_600_000);
-                    const m      = Math.floor((diff % 3_600_000) / 60_000);
-                    const when   = diff <= 0 ? "Starting now" : h >= 24 ? `In ${Math.floor(h / 24)}d` : `In ${h}h ${m}m`;
+                return (
+                  <div className="divide-y divide-border">
+                    {shown.map((session: LiveClass) => {
+                      const isLive = session.status === "live";
+                      const diff   = new Date(session.scheduledAt).getTime() - Date.now();
+                      const h      = Math.floor(diff / 3_600_000);
+                      const m      = Math.floor((diff % 3_600_000) / 60_000);
+                      const when   = diff <= 0 ? "Starting now" : h >= 24 ? `In ${Math.floor(h / 24)}d` : `In ${h}h ${m}m`;
 
-                    return (
-                      <div key={session.id} className="flex items-start gap-3 px-5 py-3 hover:bg-secondary/40 transition-colors">
-                        <div className={cn(
-                          "mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-                          isLive ? "bg-red-50" : "bg-blue-50",
-                        )}>
-                          <Radio className={cn("h-4 w-4", isLive ? "text-red-500" : "text-blue-400")} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground leading-tight truncate">{session.title}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                            {session.instructorName ?? "Instructor"}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            {isLive ? (
-                              <Badge className="text-[10px] px-1.5 py-0 bg-red-500 hover:bg-red-500 text-white border-0 gap-1">
-                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                                LIVE
-                              </Badge>
-                            ) : (
-                              <span className="text-[11px] font-medium text-yellow-600">{when}</span>
-                            )}
-                            {session.meetingUrl && isLive && (
-                              <a
-                                href={session.meetingUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5"
-                              >
-                                Join <ArrowUpRight className="h-3 w-3" />
-                              </a>
-                            )}
+                      return (
+                        <div key={session.id} className="flex items-start gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors">
+                          <div className={cn(
+                            "mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0",
+                            isLive ? "bg-red-50" : "bg-blue-50",
+                          )}>
+                            <Radio className={cn("h-3.5 w-3.5", isLive ? "text-red-500" : "text-blue-400")} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-foreground leading-tight truncate">{session.title}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              {isLive ? (
+                                <Badge className="text-[10px] px-1.5 py-0 bg-red-500 hover:bg-red-500 text-white border-0 gap-1">
+                                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                  LIVE
+                                </Badge>
+                              ) : (
+                                <span className="text-[11px] font-medium text-yellow-600">{when}</span>
+                              )}
+                              {session.meetingUrl && isLive && (
+                                <a href={session.meetingUrl} target="_blank" rel="noopener noreferrer"
+                                  className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5">
+                                  Join <ArrowUpRight className="h-3 w-3" />
+                                </a>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </CardContent>
-        </Card>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
 
-        {/* Announcements */}
-        <Card className="shadow-xs border-border flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Announcements</CardTitle>
-            <Megaphone className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="flex-1 space-y-3 pb-4">
-            {announcementsLoading ? (
-              <div className="space-y-2">
-                {[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
-              </div>
-            ) : announcements.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">No announcements yet.</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-1">Instructor announcements will appear here.</p>
-              </div>
-            ) : announcements.map((a) => (
-              <div key={a.id} className={cn("flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border", !a.read && "border-primary/30 bg-primary/5")}>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <Megaphone className="h-4 w-4" />
+          {/* Announcements */}
+          <Card className="shadow-xs border-border flex flex-col flex-1">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base font-semibold">Announcements</CardTitle>
+              <Megaphone className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="flex-1 space-y-3 pb-4">
+              {announcementsLoading ? (
+                <div className="space-y-2">
+                  {[1,2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{a.title}</p>
-                  {a.message && <p className="text-xs text-muted-foreground leading-snug line-clamp-2 mt-0.5">{a.message}</p>}
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">{new Date(a.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+              ) : announcements.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center">
+                  <Bell className="h-7 w-7 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">No announcements yet.</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">Instructor announcements will appear here.</p>
                 </div>
-                {!a.read && <span className="w-2 h-2 bg-primary rounded-full shrink-0 mt-1.5" />}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+              ) : announcements.map((a) => (
+                <div key={a.id} className={cn("flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border", !a.read && "border-primary/30 bg-primary/5")}>
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <Megaphone className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-foreground leading-tight truncate">{a.title}</p>
+                    {a.message && <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2 mt-0.5">{a.message}</p>}
+                  </div>
+                  {!a.read && <span className="w-2 h-2 bg-primary rounded-full shrink-0 mt-1" />}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Upcoming Events + Activity */}
