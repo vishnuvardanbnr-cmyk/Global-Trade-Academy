@@ -1,51 +1,72 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { createChart, ColorType, CandlestickSeries as CandlestickSeriesDef } from "lightweight-charts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  createChart,
+  ColorType,
+  CandlestickSeries as CandlestickSeriesDef,
+  HistogramSeries,
+  CrosshairMode,
+  IChartApi,
+  ISeriesApi,
+} from "lightweight-charts";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, ArrowDownRight, RefreshCw, Wifi, WifiOff, Loader2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  ArrowDownRight,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Loader2,
+  TrendingUp,
+  TrendingDown,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Candle = { time: number; open: number; high: number; low: number; close: number };
-type PriceData = { price: number; change: string; up: boolean; open: number; high: number; low: number };
-type Prices = Record<string, PriceData>;
+type Candle     = { time: number; open: number; high: number; low: number; close: number };
+type PriceData  = { price: number; change: string; up: boolean; open: number; high: number; low: number };
+type Prices     = Record<string, PriceData>;
 
-const WATCHLIST = [
-  { symbol: "BTC/USD", name: "Bitcoin",      market: "Crypto"    },
-  { symbol: "ETH/USD", name: "Ethereum",     market: "Crypto"    },
-  { symbol: "EUR/USD", name: "Euro/Dollar",  market: "Forex"     },
-  { symbol: "GBP/USD", name: "Pound/Dollar", market: "Forex"     },
-  { symbol: "XAU/USD", name: "Gold",         market: "Commodity" },
-  { symbol: "SPX500",  name: "S&P 500",      market: "Index"     },
+const SYMBOLS = [
+  { symbol: "BTC/USD", name: "Bitcoin",      market: "Crypto",    emoji: "₿" },
+  { symbol: "ETH/USD", name: "Ethereum",     market: "Crypto",    emoji: "Ξ" },
+  { symbol: "EUR/USD", name: "Euro/Dollar",  market: "Forex",     emoji: "€" },
+  { symbol: "GBP/USD", name: "Pound/Dollar", market: "Forex",     emoji: "£" },
+  { symbol: "XAU/USD", name: "Gold",         market: "Commodity", emoji: "Au" },
+  { symbol: "SPX500",  name: "S&P 500",      market: "Index",     emoji: "📈" },
+  { symbol: "USD/JPY", name: "Dollar/Yen",   market: "Forex",     emoji: "¥" },
+  { symbol: "AUD/USD", name: "Aussie/Dollar", market: "Forex",    emoji: "A$" },
 ];
 
-const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"];
+const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"] as const;
 
 function formatPrice(price: number | undefined, symbol: string): string {
   if (price == null) return "—";
-  const isForex = (symbol === "EUR/USD" || symbol === "GBP/USD");
-  if (isForex) return price.toFixed(5);
+  if (symbol === "EUR/USD" || symbol === "GBP/USD" || symbol === "USD/JPY" || symbol === "AUD/USD") {
+    return price.toFixed(symbol === "USD/JPY" ? 3 : 5);
+  }
+  if (symbol === "XAU/USD") return "$" + price.toFixed(2);
   return "$" + price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function Trading() {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [activeSymbol, setActiveSymbol] = useState("BTC/USD");
-  const [activeTimeframe, setActiveTimeframe] = useState("1D");
+function priceDiff(a: number, b: number) {
+  return ((b - a) / a) * 100;
+}
 
-  const {
-    data: candles,
-    isLoading: candlesLoading,
-    isError: candlesError,
-    refetch: refetchCandles,
-  } = useQuery<Candle[]>({
+export default function Trading() {
+  const chartContainerRef   = useRef<HTMLDivElement>(null);
+  const chartRef            = useRef<IChartApi | null>(null);
+  const candleSeriesRef     = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef     = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const [activeSymbol, setActiveSymbol]       = useState("BTC/USD");
+  const [activeTimeframe, setActiveTimeframe] = useState("1D");
+  const [tooltipCandle, setTooltipCandle]     = useState<Candle | null>(null);
+
+  const { data: candles, isLoading: candlesLoading, isError: candlesError, refetch } = useQuery<Candle[]>({
     queryKey: ["market-candles", activeSymbol, activeTimeframe],
     queryFn: async ({ signal }) => {
-      const r = await fetch(
-        `/api/market/candles?symbol=${encodeURIComponent(activeSymbol)}&tf=${activeTimeframe}`,
-        { signal },
-      );
-      if (!r.ok) throw new Error("Failed to fetch candles");
+      const r = await fetch(`/api/market/candles?symbol=${encodeURIComponent(activeSymbol)}&tf=${activeTimeframe}`, { signal });
+      if (!r.ok) throw new Error("Failed");
       return r.json() as Promise<Candle[]>;
     },
     staleTime: 30_000,
@@ -56,7 +77,7 @@ export default function Trading() {
     queryKey: ["market-prices"],
     queryFn: async ({ signal }) => {
       const r = await fetch("/api/market/prices", { signal });
-      if (!r.ok) throw new Error("Failed to fetch prices");
+      if (!r.ok) throw new Error("Failed");
       return r.json() as Promise<Prices>;
     },
     staleTime: 60_000,
@@ -64,263 +85,345 @@ export default function Trading() {
     retry: 1,
   });
 
-  /* Rebuild chart whenever candle data changes */
-  useEffect(() => {
-    if (!chartContainerRef.current || !candles?.length) return;
+  /* ── Build / rebuild chart ───────────────────────────────────── */
+  const initChart = useCallback(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
 
-    const chart = createChart(chartContainerRef.current, {
+    // Destroy previous
+    if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
+
+    const isDark = document.documentElement.classList.contains("dark");
+    const textColor   = isDark ? "#94a3b8" : "#64748b";
+    const gridColor   = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.05)";
+    const bgColor     = "transparent";
+
+    const chart = createChart(el, {
       layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#64748b",
-        fontFamily: "Inter, sans-serif",
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor,
+        fontFamily: "'Inter', 'system-ui', sans-serif",
+        fontSize: 12,
       },
       grid: {
-        vertLines: { color: "rgba(0,0,0,0.04)" },
-        horzLines: { color: "rgba(0,0,0,0.04)" },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
-      width: chartContainerRef.current.clientWidth,
-      height: 400,
       crosshair: {
-        vertLine: { color: "#2563eb", labelBackgroundColor: "#2563eb" },
-        horzLine: { color: "#2563eb", labelBackgroundColor: "#2563eb" },
+        mode: CrosshairMode.Normal,
+        vertLine: { color: "#3b82f6", labelBackgroundColor: "#3b82f6", width: 1, style: 3 },
+        horzLine: { color: "#3b82f6", labelBackgroundColor: "#3b82f6", width: 1, style: 3 },
       },
-      rightPriceScale: { borderColor: "rgba(0,0,0,0.06)" },
-      timeScale: { borderColor: "rgba(0,0,0,0.06)", timeVisible: true },
+      rightPriceScale: {
+        borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
+        scaleMargins: { top: 0.08, bottom: 0.25 },
+      },
+      timeScale: {
+        borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
+        timeVisible: true,
+        secondsVisible: false,
+        fixLeftEdge: false,
+        fixRightEdge: false,
+      },
+      width:  el.clientWidth,
+      height: el.clientHeight,
+      handleScroll: true,
+      handleScale:  true,
     });
 
-    const series = chart.addSeries(CandlestickSeriesDef, {
-      upColor:      "#10b981",
-      downColor:    "#ef4444",
+    const candleSeries = chart.addSeries(CandlestickSeriesDef, {
+      upColor:       "#10b981",
+      downColor:     "#ef4444",
       borderVisible: false,
-      wickUpColor:  "#10b981",
-      wickDownColor:"#ef4444",
+      wickUpColor:   "#10b981",
+      wickDownColor: "#ef4444",
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    series.setData(candles as any);
-    chart.timeScale().fitContent();
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat:    { type: "volume" },
+      priceScaleId:   "volume",
+    });
+    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
+
+    chartRef.current        = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+
+    // Crosshair tooltip
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !candleSeries) { setTooltipCandle(null); return; }
+      const data = param.seriesData.get(candleSeries) as Candle | undefined;
+      if (data) setTooltipCandle(data);
+    });
 
     const onResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      if (el && chartRef.current) {
+        chartRef.current.applyOptions({ width: el.clientWidth, height: el.clientHeight });
       }
     };
-    window.addEventListener("resize", onResize);
-    return () => { window.removeEventListener("resize", onResize); chart.remove(); };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(el);
+    return () => { ro.disconnect(); };
+  }, []);
+
+  useEffect(() => {
+    const cleanup = initChart();
+    return cleanup;
+  }, [initChart]);
+
+  /* ── Feed data into series ───────────────────────────────────── */
+  useEffect(() => {
+    if (!candles?.length || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    candleSeriesRef.current.setData(candles as any);
+
+    const volData = candles.map((c, i) => ({
+      time:  c.time,
+      value: i > 0 ? Math.abs(c.close - c.open) * 1000 : 0,
+      color: c.close >= c.open ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)",
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    volumeSeriesRef.current.setData(volData as any);
+    chartRef.current?.timeScale().fitContent();
+
+    setTooltipCandle(candles.at(-1) ?? null);
   }, [candles]);
 
-  const activeInfo  = WATCHLIST.find((w) => w.symbol === activeSymbol) ?? WATCHLIST[0];
+  const activeInfo  = SYMBOLS.find((s) => s.symbol === activeSymbol) ?? SYMBOLS[0];
   const activePrice = prices?.[activeSymbol];
-  const lastCandle  = candles?.at(-1);
+  const displayCandle = tooltipCandle ?? candles?.at(-1);
+  const isUp = displayCandle ? displayCandle.close >= displayCandle.open : true;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="flex flex-col gap-5 h-full">
+      {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Markets</h1>
-          <p className="text-sm text-muted-foreground">Live candlestick charts powered by Deriv</p>
+          <p className="text-sm text-muted-foreground">Live candlestick data via Deriv · stored &amp; served from your database</p>
         </div>
         <button
-          onClick={() => refetchCandles()}
-          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-secondary hover:bg-secondary/70 px-3 py-1.5 rounded-lg transition-colors"
+          onClick={() => refetch()}
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-secondary hover:bg-secondary/80 px-3 py-1.5 rounded-lg transition-colors"
         >
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
-        {/* ── Chart panel ─────────────────────────────────────── */}
-        <Card className="lg:col-span-3 shadow-xs border-border">
-          <CardHeader className="pb-3 border-b border-border">
-            {/* Symbol + price row */}
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-lg font-bold text-foreground">{activeInfo.symbol}</h2>
-                  <Badge variant="secondary" className="text-xs">{activeInfo.market}</Badge>
-                  {pricesLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                  ) : activePrice ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
-                      <Wifi className="h-2.5 w-2.5" /> Live
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <WifiOff className="h-2.5 w-2.5" /> Offline
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2.5 mt-1">
-                  <span className="text-2xl font-extrabold text-foreground tabular-nums">
-                    {pricesLoading
-                      ? <span className="inline-block h-7 w-28 bg-secondary rounded animate-pulse align-middle" />
-                      : formatPrice(activePrice?.price, activeSymbol)}
-                  </span>
-                  {activePrice && (
-                    <span className={cn(
-                      "flex items-center gap-0.5 text-sm font-semibold",
-                      activePrice.up ? "text-emerald-600" : "text-red-500",
-                    )}>
-                      {activePrice.up
-                        ? <ArrowUpRight className="h-4 w-4" />
-                        : <ArrowDownRight className="h-4 w-4" />}
-                      {activePrice.up ? "+" : ""}{activePrice.change}%
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Timeframe picker */}
-              <div className="flex items-center gap-0.5 bg-secondary rounded-lg p-1">
-                {TIMEFRAMES.map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => setActiveTimeframe(tf)}
-                    className={cn(
-                      "px-2.5 py-1 text-xs font-medium rounded-md transition-all",
-                      activeTimeframe === tf
-                        ? "bg-white text-foreground shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* OHLC row — from real last candle */}
-            {lastCandle && (
-              <div className="flex flex-wrap gap-4 mt-3 text-xs text-muted-foreground">
-                {([
-                  ["Open",  lastCandle.open ],
-                  ["High",  lastCandle.high ],
-                  ["Low",   lastCandle.low  ],
-                  ["Close", lastCandle.close],
-                ] as [string, number][]).map(([label, val]) => (
-                  <div key={label}>
-                    <span className="font-medium">{label} </span>
-                    <span className="text-foreground font-semibold tabular-nums">{formatPrice(val, activeSymbol)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardHeader>
-
-          {/* Chart body */}
-          <CardContent className="p-0 pt-2 relative">
-            {/* Loading overlay */}
-            {candlesLoading && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/80 rounded-b-xl">
-                <Loader2 className="h-8 w-8 text-primary animate-spin" />
-                <p className="text-sm text-muted-foreground">
-                  Loading {activeSymbol} · {activeTimeframe} data…
-                </p>
-              </div>
-            )}
-
-            {/* Error state */}
-            {candlesError && !candlesLoading && (
-              <div className="flex flex-col items-center justify-center h-[400px] gap-3 text-muted-foreground">
-                <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center">
-                  <WifiOff className="h-6 w-6" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-foreground">Chart data unavailable</p>
-                  <p className="text-xs mt-0.5">Market may be closed or temporarily offline</p>
-                </div>
-                <button
-                  onClick={() => refetchCandles()}
-                  className="text-xs text-primary hover:underline font-medium"
-                >
-                  Try again
-                </button>
-              </div>
-            )}
-
-            <div ref={chartContainerRef} className="w-full" style={{ height: "400px" }} />
-          </CardContent>
-        </Card>
-
-        {/* ── Watchlist ─────────────────────────────────────── */}
-        <Card className="shadow-xs border-border flex flex-col">
-          <CardHeader className="pb-2 border-b border-border">
-            <CardTitle className="text-sm font-semibold">Watchlist</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 p-0">
-            <div className="divide-y divide-border">
-              {WATCHLIST.map((item) => {
-                const p = prices?.[item.symbol];
-                return (
-                  <button
-                    key={item.symbol}
-                    onClick={() => setActiveSymbol(item.symbol)}
-                    className={cn(
-                      "w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors",
-                      activeSymbol === item.symbol
-                        ? "bg-primary/5 border-l-2 border-primary"
-                        : "hover:bg-secondary/50 border-l-2 border-transparent",
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{item.symbol}</p>
-                      <p className="text-xs text-muted-foreground">{item.name}</p>
-                    </div>
-                    <div className="text-right">
-                      {pricesLoading ? (
-                        <div className="space-y-1.5">
-                          <div className="h-3.5 w-16 bg-secondary rounded animate-pulse" />
-                          <div className="h-3 w-10 bg-secondary rounded animate-pulse ml-auto" />
-                        </div>
-                      ) : p ? (
-                        <>
-                          <p className="text-sm font-semibold text-foreground tabular-nums">
-                            {formatPrice(p.price, item.symbol)}
-                          </p>
-                          <p className={cn(
-                            "text-xs font-semibold flex items-center justify-end gap-0.5",
-                            p.up ? "text-emerald-600" : "text-red-500",
-                          )}>
-                            {p.up
-                              ? <ArrowUpRight className="h-3 w-3" />
-                              : <ArrowDownRight className="h-3 w-3" />}
-                            {p.up ? "+" : ""}{p.change}%
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">—</p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Market stats ─────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "Market Cap",    value: "$2.37T", sub: "Total crypto",  up: true,  delta: "+2.1%" },
-          { label: "24h Volume",    value: "$94.8B", sub: "Global trading", up: true,  delta: "+5.4%" },
-          { label: "BTC Dominance", value: "54.2%",  sub: "Market share",  up: false, delta: "-0.3%" },
-          { label: "Fear & Greed",  value: "72",     sub: "Greed",         up: true,  delta: "Bullish" },
-        ].map((stat) => (
-          <Card key={stat.label} className="shadow-xs border-border">
-            <CardContent className="pt-5">
-              <p className="text-xs text-muted-foreground mb-1">{stat.label}</p>
-              <div className="text-2xl font-extrabold text-foreground">{stat.value}</div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="text-xs text-muted-foreground">{stat.sub}</span>
-                <span className={cn("text-xs font-semibold", stat.up ? "text-emerald-600" : "text-red-500")}>
-                  {stat.delta}
+      {/* ── Symbol selector bar ─────────────────────────────────── */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {SYMBOLS.map((s) => {
+          const p   = prices?.[s.symbol];
+          const active = s.symbol === activeSymbol;
+          return (
+            <button
+              key={s.symbol}
+              onClick={() => setActiveSymbol(s.symbol)}
+              className={cn(
+                "flex-none flex flex-col items-start gap-0.5 px-3.5 py-2.5 rounded-xl border transition-all",
+                active
+                  ? "bg-primary text-primary-foreground border-primary shadow-md"
+                  : "bg-card border-border hover:border-primary/30 hover:bg-primary/5",
+              )}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className={cn("text-[10px] font-bold", active ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                  {s.market}
                 </span>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+              <span className={cn("text-sm font-bold leading-none", active ? "text-white" : "text-foreground")}>
+                {s.symbol}
+              </span>
+              {pricesLoading ? (
+                <div className="h-3.5 w-14 bg-current opacity-20 rounded animate-pulse mt-0.5" />
+              ) : p ? (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className={cn("text-[11px] font-semibold tabular-nums", active ? "text-white/90" : "text-foreground")}>
+                    {formatPrice(p.price, s.symbol)}
+                  </span>
+                  <span className={cn(
+                    "text-[10px] font-bold",
+                    active
+                      ? (p.up ? "text-emerald-300" : "text-red-300")
+                      : (p.up ? "text-emerald-600" : "text-red-500"),
+                  )}>
+                    {p.up ? "+" : ""}{p.change}%
+                  </span>
+                </div>
+              ) : (
+                <span className={cn("text-[11px]", active ? "text-white/50" : "text-muted-foreground")}>—</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Chart card ─────────────────────────────────────────── */}
+      <Card className="flex-1 shadow-xs border-border flex flex-col min-h-0">
+        {/* Chart header */}
+        <div className="flex flex-wrap items-start justify-between gap-4 px-5 pt-4 pb-3 border-b border-border">
+          {/* Left: symbol info + OHLC */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl font-extrabold text-foreground tracking-tight">{activeInfo.symbol}</span>
+              <Badge variant="secondary" className="text-xs font-semibold">{activeInfo.market}</Badge>
+              {activePrice ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                  <Wifi className="h-2.5 w-2.5" /> Live
+                </span>
+              ) : !pricesLoading ? (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <WifiOff className="h-2.5 w-2.5" /> Offline
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-extrabold text-foreground tabular-nums">
+                {pricesLoading
+                  ? <span className="inline-block h-7 w-32 bg-secondary rounded-lg animate-pulse align-middle" />
+                  : formatPrice(activePrice?.price, activeSymbol)}
+              </span>
+              {activePrice && (
+                <span className={cn(
+                  "flex items-center gap-0.5 text-sm font-bold",
+                  activePrice.up ? "text-emerald-600" : "text-red-500",
+                )}>
+                  {activePrice.up ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                  {activePrice.up ? "+" : ""}{activePrice.change}%
+                </span>
+              )}
+            </div>
+
+            {/* OHLC row */}
+            {displayCandle && (
+              <div className="flex items-center gap-4 text-xs">
+                {(["open","high","low","close"] as const).map((k) => (
+                  <div key={k} className="flex items-center gap-1">
+                    <span className="text-muted-foreground uppercase font-medium tracking-wide">{k[0]}</span>
+                    <span className={cn(
+                      "font-bold tabular-nums",
+                      k === "close"
+                        ? (isUp ? "text-emerald-600" : "text-red-500")
+                        : k === "high"
+                          ? "text-emerald-600"
+                          : k === "low"
+                            ? "text-red-500"
+                            : "text-foreground",
+                    )}>
+                      {formatPrice(displayCandle[k], activeSymbol)}
+                    </span>
+                  </div>
+                ))}
+                {displayCandle && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground uppercase font-medium tracking-wide">Chg</span>
+                    <span className={cn("font-bold tabular-nums", isUp ? "text-emerald-600" : "text-red-500")}>
+                      {isUp ? "+" : ""}{priceDiff(displayCandle.open, displayCandle.close).toFixed(2)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right: timeframe picker */}
+          <div className="flex items-center gap-0.5 bg-secondary rounded-xl p-1 self-start">
+            {TIMEFRAMES.map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setActiveTimeframe(tf)}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                  activeTimeframe === tf
+                    ? "bg-white dark:bg-slate-700 text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart body */}
+        <CardContent className="flex-1 p-0 relative min-h-0">
+          {/* Loading overlay */}
+          {candlesLoading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 rounded-b-xl backdrop-blur-sm">
+              <Loader2 className="h-8 w-8 text-primary animate-spin" />
+              <p className="text-sm text-muted-foreground">
+                Fetching {activeSymbol} · {activeTimeframe} candles…
+              </p>
+            </div>
+          )}
+
+          {/* Error state */}
+          {candlesError && !candlesLoading && (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground px-8">
+              <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
+                <WifiOff className="h-7 w-7 text-red-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-foreground">Chart data unavailable</p>
+                <p className="text-xs mt-1">Market may be closed or Deriv is temporarily unreachable</p>
+              </div>
+              <button onClick={() => refetch()} className="text-xs font-semibold text-primary hover:underline">
+                Try again
+              </button>
+            </div>
+          )}
+
+          <div ref={chartContainerRef} className="w-full h-full" style={{ minHeight: "500px" }} />
+        </CardContent>
+      </Card>
+
+      {/* ── Price ticker row ─────────────────────────────────────── */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {SYMBOLS.slice(0, 4).map((s) => {
+          const p = prices?.[s.symbol];
+          return (
+            <button
+              key={s.symbol}
+              onClick={() => setActiveSymbol(s.symbol)}
+              className={cn(
+                "flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left",
+                activeSymbol === s.symbol
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-border bg-card hover:border-primary/20 hover:bg-secondary/50",
+              )}
+            >
+              <div className={cn(
+                "w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0",
+                p?.up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600",
+              )}>
+                {s.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-foreground">{s.symbol}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{s.name}</p>
+              </div>
+              <div className="text-right shrink-0">
+                {pricesLoading ? (
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-16 bg-secondary rounded animate-pulse" />
+                    <div className="h-3 w-10 bg-secondary rounded animate-pulse ml-auto" />
+                  </div>
+                ) : p ? (
+                  <>
+                    <p className="text-xs font-bold text-foreground tabular-nums">{formatPrice(p.price, s.symbol)}</p>
+                    <p className={cn("text-[11px] font-semibold flex items-center justify-end gap-0.5",
+                      p.up ? "text-emerald-600" : "text-red-500")}>
+                      {p.up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {p.up ? "+" : ""}{p.change}%
+                    </p>
+                  </>
+                ) : <p className="text-xs text-muted-foreground">—</p>}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
