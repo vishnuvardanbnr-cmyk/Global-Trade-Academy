@@ -10,6 +10,11 @@ rtc:
   use_external_ip: true
   use_ice_lite: false
 
+room:
+  auto_create: true
+  empty_timeout: 300
+  max_participants: 500
+
 logging:
   pion_level: error
 

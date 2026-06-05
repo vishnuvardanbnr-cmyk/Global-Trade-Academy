@@ -29,8 +29,9 @@ import {
   useTracks,
   useParticipants,
   useLocalParticipant,
+  useRoomContext,
 } from "@livekit/components-react";
-import { Track, Room, VideoPresets } from "livekit-client";
+import { Track, Room, VideoPresets, ConnectionQuality } from "livekit-client";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 function formatTime(d: string | Date) {
@@ -546,6 +547,31 @@ function InfoPanel({ cls, participantCount }: { cls: LiveClassInfo; participantC
 /* ══════════════════════════════════════════════════════════════════
    LiveKit video area — inner components (must be inside LiveKitRoom)
 ══════════════════════════════════════════════════════════════════ */
+
+function ConnectionQualityDot({ quality }: { quality: ConnectionQuality | undefined }) {
+  const bars = [
+    quality !== ConnectionQuality.Unknown,
+    quality === ConnectionQuality.Good || quality === ConnectionQuality.Excellent,
+    quality === ConnectionQuality.Excellent,
+  ];
+  const colour =
+    quality === ConnectionQuality.Excellent ? "bg-green-400" :
+    quality === ConnectionQuality.Good       ? "bg-yellow-400" :
+    quality === ConnectionQuality.Poor       ? "bg-red-400" :
+    quality === ConnectionQuality.Lost       ? "bg-red-600" :
+    "bg-white/20";
+  return (
+    <div title={`Network: ${quality ?? "unknown"}`} className="flex items-end gap-px h-4">
+      {bars.map((active, i) => (
+        <div key={i} className={cn("w-[3px] rounded-sm transition-colors",
+          i === 0 ? "h-[5px]" : i === 1 ? "h-[9px]" : "h-[13px]",
+          active ? colour : "bg-white/15"
+        )} />
+      ))}
+    </div>
+  );
+}
+
 function LiveKitGrid({
   onJoined,
   onParticipantCount,
@@ -557,8 +583,11 @@ function LiveKitGrid({
   onAudioMuted: (m: boolean) => void;
   onVideoMuted: (m: boolean) => void;
 }) {
+  const room = useRoomContext();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
+  const [lowBw, setLowBw] = useState(false);
+
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
@@ -585,6 +614,29 @@ function LiveKitGrid({
     onVideoMuted(!localParticipant.isCameraEnabled);
   }, [localParticipant?.isMicrophoneEnabled, localParticipant?.isCameraEnabled, onAudioMuted, onVideoMuted, localParticipant]);
 
+  const setRemoteVideoSubscribed = useCallback((subscribed: boolean) => {
+    for (const p of room.remoteParticipants.values()) {
+      for (const pub of p.videoTrackPublications.values()) {
+        pub.setSubscribed(subscribed);
+      }
+    }
+  }, [room]);
+
+  useEffect(() => {
+    setRemoteVideoSubscribed(!lowBw);
+  }, [lowBw, participants, setRemoteVideoSubscribed]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (lowBw) return;
+      setRemoteVideoSubscribed(!document.hidden);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [lowBw, setRemoteVideoSubscribed]);
+
+  const quality = localParticipant?.connectionQuality;
+
   return (
     <div className="flex flex-col h-full" data-lk-theme="default">
       <div className="flex-1 min-h-0">
@@ -592,11 +644,29 @@ function LiveKitGrid({
           <ParticipantTile />
         </GridLayout>
       </div>
-      <div className="shrink-0 bg-slate-900 border-t border-slate-700/50">
-        <ControlBar
-          variation="minimal"
-          controls={{ microphone: true, camera: true, screenShare: true, leave: false, chat: false }}
-        />
+      <div className="shrink-0 bg-slate-900 border-t border-slate-700/50 flex items-center">
+        <div className="flex-1">
+          <ControlBar
+            variation="minimal"
+            controls={{ microphone: true, camera: true, screenShare: true, leave: false, chat: false }}
+          />
+        </div>
+        <div className="flex items-center gap-3 px-4 border-l border-slate-700/50">
+          <ConnectionQualityDot quality={quality} />
+          <button
+            onClick={() => setLowBw(v => !v)}
+            title={lowBw ? "Resume incoming video" : "Save bandwidth: pause all incoming video"}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors",
+              lowBw
+                ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 hover:bg-amber-500/30"
+                : "text-white/40 hover:text-white hover:bg-white/10"
+            )}
+          >
+            {lowBw ? <VideoOff className="h-3.5 w-3.5" /> : <Video className="h-3.5 w-3.5" />}
+            {lowBw ? "Video paused" : "Low BW"}
+          </button>
+        </div>
       </div>
     </div>
   );
