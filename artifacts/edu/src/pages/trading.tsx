@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   ArrowUpRight,
   ArrowDownRight,
-  RefreshCw,
   Wifi,
   WifiOff,
   Loader2,
@@ -197,20 +196,6 @@ export default function Trading() {
 
   return (
     <div className="flex flex-col gap-5 h-full">
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Markets</h1>
-          <p className="text-sm text-muted-foreground">Live candlestick data via Deriv · stored &amp; served from your database</p>
-        </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-secondary hover:bg-secondary/80 px-3 py-1.5 rounded-lg transition-colors"
-        >
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </button>
-      </div>
-
       {/* ── Chart card ─────────────────────────────────────────── */}
       <Card className="flex-1 shadow-xs border-border flex flex-col min-h-0">
         {/* Chart header */}
