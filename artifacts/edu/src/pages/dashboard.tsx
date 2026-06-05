@@ -216,80 +216,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Upcoming Events */}
-        <Card className="shadow-xs border-border flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Upcoming Events</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="flex-1 space-y-3 pb-4">
-            {eventsLoading ? (
-              <div className="space-y-2">{[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}</div>
-            ) : upcomingEvents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Calendar className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">No upcoming events.</p>
-              </div>
-            ) : upcomingEvents.map((ev) => (
-              <div key={ev.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border overflow-hidden">
-                {ev.thumbnailUrl ? (
-                  <img src={ev.thumbnailUrl} alt={ev.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                ) : (
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <Calendar className="h-5 w-5" />
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{ev.title}</p>
-                  {ev.eventDate && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {new Date(ev.eventDate).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  )}
-                  {ev.location && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{ev.location}</p>}
-                </div>
-                <Badge variant="outline" className="text-[10px] capitalize shrink-0 self-start mt-0.5">{ev.type}</Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Announcements */}
-        <Card className="shadow-xs border-border flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base font-semibold">Announcements</CardTitle>
-            <Megaphone className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="flex-1 space-y-3 pb-4">
-            {announcementsLoading ? (
-              <div className="space-y-2">
-                {[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
-              </div>
-            ) : announcements.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">No announcements yet.</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-1">Instructor announcements will appear here.</p>
-              </div>
-            ) : announcements.map((a) => (
-              <div key={a.id} className={cn("flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border", !a.read && "border-primary/30 bg-primary/5")}>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <Megaphone className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{a.title}</p>
-                  {a.message && <p className="text-xs text-muted-foreground leading-snug line-clamp-2 mt-0.5">{a.message}</p>}
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">{new Date(a.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
-                </div>
-                {!a.read && <span className="w-2 h-2 bg-primary rounded-full shrink-0 mt-1.5" />}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Live Sessions + Activity */}
-      <div className="grid gap-4 lg:grid-cols-3">
         {/* Live Sessions */}
         <Card className="shadow-xs border-border flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -376,6 +302,80 @@ export default function Dashboard() {
                 </div>
               );
             })()}
+          </CardContent>
+        </Card>
+
+        {/* Announcements */}
+        <Card className="shadow-xs border-border flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-base font-semibold">Announcements</CardTitle>
+            <Megaphone className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="flex-1 space-y-3 pb-4">
+            {announcementsLoading ? (
+              <div className="space-y-2">
+                {[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+              </div>
+            ) : announcements.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">No announcements yet.</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">Instructor announcements will appear here.</p>
+              </div>
+            ) : announcements.map((a) => (
+              <div key={a.id} className={cn("flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border", !a.read && "border-primary/30 bg-primary/5")}>
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <Megaphone className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{a.title}</p>
+                  {a.message && <p className="text-xs text-muted-foreground leading-snug line-clamp-2 mt-0.5">{a.message}</p>}
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{new Date(a.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+                </div>
+                {!a.read && <span className="w-2 h-2 bg-primary rounded-full shrink-0 mt-1.5" />}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Upcoming Events + Activity */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Upcoming Events */}
+        <Card className="shadow-xs border-border flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-base font-semibold">Upcoming Events</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="flex-1 space-y-3 pb-4">
+            {eventsLoading ? (
+              <div className="space-y-2">{[1,2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}</div>
+            ) : upcomingEvents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Calendar className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">No upcoming events.</p>
+              </div>
+            ) : upcomingEvents.map((ev) => (
+              <div key={ev.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border overflow-hidden">
+                {ev.thumbnailUrl ? (
+                  <img src={ev.thumbnailUrl} alt={ev.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground leading-tight truncate">{ev.title}</p>
+                  {ev.eventDate && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(ev.eventDate).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                  {ev.location && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{ev.location}</p>}
+                </div>
+                <Badge variant="outline" className="text-[10px] capitalize shrink-0 self-start mt-0.5">{ev.type}</Badge>
+              </div>
+            ))}
           </CardContent>
         </Card>
 
