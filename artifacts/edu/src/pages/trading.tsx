@@ -211,54 +211,6 @@ export default function Trading() {
         </button>
       </div>
 
-      {/* ── Symbol selector bar ─────────────────────────────────── */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {SYMBOLS.map((s) => {
-          const p   = prices?.[s.symbol];
-          const active = s.symbol === activeSymbol;
-          return (
-            <button
-              key={s.symbol}
-              onClick={() => setActiveSymbol(s.symbol)}
-              className={cn(
-                "flex-none flex flex-col items-start gap-0.5 px-3.5 py-2.5 rounded-xl border transition-all",
-                active
-                  ? "bg-primary text-primary-foreground border-primary shadow-md"
-                  : "bg-card border-border hover:border-primary/30 hover:bg-primary/5",
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                <span className={cn("text-[10px] font-bold", active ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                  {s.market}
-                </span>
-              </div>
-              <span className={cn("text-sm font-bold leading-none", active ? "text-white" : "text-foreground")}>
-                {s.symbol}
-              </span>
-              {pricesLoading ? (
-                <div className="h-3.5 w-14 bg-current opacity-20 rounded animate-pulse mt-0.5" />
-              ) : p ? (
-                <div className="flex items-center gap-1 mt-0.5">
-                  <span className={cn("text-[11px] font-semibold tabular-nums", active ? "text-white/90" : "text-foreground")}>
-                    {formatPrice(p.price, s.symbol)}
-                  </span>
-                  <span className={cn(
-                    "text-[10px] font-bold",
-                    active
-                      ? (p.up ? "text-emerald-300" : "text-red-300")
-                      : (p.up ? "text-emerald-600" : "text-red-500"),
-                  )}>
-                    {p.up ? "+" : ""}{p.change}%
-                  </span>
-                </div>
-              ) : (
-                <span className={cn("text-[11px]", active ? "text-white/50" : "text-muted-foreground")}>—</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
       {/* ── Chart card ─────────────────────────────────────────── */}
       <Card className="flex-1 shadow-xs border-border flex flex-col min-h-0">
         {/* Chart header */}
@@ -379,52 +331,6 @@ export default function Trading() {
         </CardContent>
       </Card>
 
-      {/* ── Price ticker row ─────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {SYMBOLS.slice(0, 4).map((s) => {
-          const p = prices?.[s.symbol];
-          return (
-            <button
-              key={s.symbol}
-              onClick={() => setActiveSymbol(s.symbol)}
-              className={cn(
-                "flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left",
-                activeSymbol === s.symbol
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-border bg-card hover:border-primary/20 hover:bg-secondary/50",
-              )}
-            >
-              <div className={cn(
-                "w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0",
-                p?.up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600",
-              )}>
-                {s.emoji}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-foreground">{s.symbol}</p>
-                <p className="text-[11px] text-muted-foreground truncate">{s.name}</p>
-              </div>
-              <div className="text-right shrink-0">
-                {pricesLoading ? (
-                  <div className="space-y-1.5">
-                    <div className="h-3.5 w-16 bg-secondary rounded animate-pulse" />
-                    <div className="h-3 w-10 bg-secondary rounded animate-pulse ml-auto" />
-                  </div>
-                ) : p ? (
-                  <>
-                    <p className="text-xs font-bold text-foreground tabular-nums">{formatPrice(p.price, s.symbol)}</p>
-                    <p className={cn("text-[11px] font-semibold flex items-center justify-end gap-0.5",
-                      p.up ? "text-emerald-600" : "text-red-500")}>
-                      {p.up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                      {p.up ? "+" : ""}{p.change}%
-                    </p>
-                  </>
-                ) : <p className="text-xs text-muted-foreground">—</p>}
-              </div>
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
