@@ -1,27 +1,12 @@
 import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CandlestickChart, type Candle, type ChartHandle } from "@/components/chart/CandlestickChart";
+import { useDerivLiveCandles } from "@/hooks/useDerivLiveCandles";
 import {
-  MousePointer2,
-  Crosshair,
-  Minus,
-  TrendingUp,
-  Pencil,
-  Type,
-  Ruler,
-  ZoomIn,
-  Trash2,
-  Square,
-  Circle,
-  GitBranch,
-  SlidersHorizontal,
-  Bell,
-  RotateCcw,
-  RotateCw,
-  RefreshCw,
-  ChevronDown,
-  Loader2,
-  WifiOff,
+  MousePointer2, Crosshair, Minus, TrendingUp, Pencil, Type,
+  Ruler, ZoomIn, Trash2, Square, Circle, GitBranch,
+  SlidersHorizontal, Bell, RotateCcw, RotateCw,
+  RefreshCw, ChevronDown, Loader2, WifiOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -65,26 +50,18 @@ function formatPrice(price: number | undefined, symbol: string): string {
 
 export default function Trading() {
   const [activeSymbol, setActiveSymbol]       = useState("BTC/USD");
-  const [activeTimeframe, setActiveTimeframe] = useState<typeof TIMEFRAMES[number]>("1D");
+  const [activeTimeframe, setActiveTimeframe] = useState<typeof TIMEFRAMES[number]>("1m");
   const [activeTool, setActiveTool]           = useState("Cursor");
   const [tooltipCandle, setTooltipCandle]     = useState<Candle | null>(null);
   const [symbolOpen, setSymbolOpen]           = useState(false);
   const chartRef = useRef<ChartHandle>(null);
 
-  const { data: candles, isLoading, isError, refetch } = useQuery<Candle[]>({
-    queryKey: ["market-candles", activeSymbol, activeTimeframe],
-    queryFn: async ({ signal }) => {
-      const r = await fetch(
-        `/api/market/candles?symbol=${encodeURIComponent(activeSymbol)}&tf=${activeTimeframe}`,
-        { signal },
-      );
-      if (!r.ok) throw new Error("Failed");
-      return r.json() as Promise<Candle[]>;
-    },
-    staleTime: 30_000,
-    retry: 1,
-  });
+  /* ── Live WebSocket candle stream ── */
+  const { candles, status, refetch } = useDerivLiveCandles(activeSymbol, activeTimeframe);
+  const isLoading = status === "connecting" && candles.length === 0;
+  const isError   = status === "error"   && candles.length === 0;
 
+  /* ── Symbol price bar (REST, refreshed every minute) ── */
   const { data: prices } = useQuery<Prices>({
     queryKey: ["market-prices"],
     queryFn: async ({ signal }) => {
@@ -98,11 +75,16 @@ export default function Trading() {
   });
 
   const activeInfo    = SYMBOLS.find((s) => s.symbol === activeSymbol) ?? SYMBOLS[0];
-  const activePrice   = prices?.[activeSymbol];
-  const displayCandle = tooltipCandle ?? candles?.at(-1);
+  const livePrice     = candles.at(-1)?.close;
+  const prevClose     = candles.at(-2)?.close ?? candles.at(-1)?.open;
+  const liveChange    = livePrice && prevClose
+    ? (((livePrice - prevClose) / prevClose) * 100)
+    : null;
+  const livePriceUp   = liveChange !== null ? liveChange >= 0 : true;
+
+  const displayCandle = tooltipCandle ?? candles.at(-1);
   const isUp          = displayCandle ? displayCandle.close >= displayCandle.open : true;
 
-  /* ── OHLC fields ── */
   const ohlc = displayCandle
     ? [
         { k: "O", v: formatPrice(displayCandle.open,  activeSymbol) },
@@ -113,11 +95,10 @@ export default function Trading() {
     : [];
 
   return (
-    /* Full dark container — overrides page background */
     <div className="flex flex-col h-full bg-[#131722] text-white select-none overflow-hidden rounded-xl">
 
-      {/* ══ TOP BAR ════════════════════════════════════════════════ */}
-      <div className="flex items-center gap-0 h-[46px] border-b border-[#2a2e39] shrink-0 px-1">
+      {/* ══ TOP BAR ════════════════════════════════════════════ */}
+      <div className="flex items-center h-[46px] border-b border-[#2a2e39] shrink-0 px-1">
 
         {/* Symbol picker */}
         <div className="relative">
@@ -129,7 +110,7 @@ export default function Trading() {
             <ChevronDown className={cn("h-3.5 w-3.5 text-[#787b86] transition-transform", symbolOpen && "rotate-180")} />
           </button>
           {symbolOpen && (
-            <div className="absolute top-full left-0 z-50 bg-[#1e222d] border border-[#2a2e39] rounded-lg shadow-2xl py-1 w-52 mt-0.5">
+            <div className="absolute top-full left-0 z-50 bg-[#1e222d] border border-[#2a2e39] rounded-lg shadow-2xl py-1 w-56 mt-0.5">
               {SYMBOLS.map((s) => {
                 const p = prices?.[s.symbol];
                 return (
@@ -157,7 +138,6 @@ export default function Trading() {
           )}
         </div>
 
-        {/* Separator */}
         <div className="w-px h-5 bg-[#2a2e39] mx-1" />
 
         {/* Timeframes */}
@@ -178,7 +158,6 @@ export default function Trading() {
           ))}
         </div>
 
-        {/* Separator */}
         <div className="w-px h-5 bg-[#2a2e39] mx-1" />
 
         {/* Action buttons */}
@@ -200,7 +179,6 @@ export default function Trading() {
           ))}
         </div>
 
-        {/* Spacer */}
         <div className="flex-1" />
 
         {/* OHLC display */}
@@ -208,43 +186,61 @@ export default function Trading() {
           <div className="hidden lg:flex items-center gap-3 text-xs mr-3">
             {ohlc.map(({ k, v }) => (
               <span key={k} className="text-[#787b86]">
-                {k} <span className={cn("font-semibold", k === "H" ? "text-[#26a69a]" : k === "L" ? "text-[#ef5350]" : "text-white")}>{v}</span>
+                {k} <span className={cn("font-semibold tabular-nums",
+                  k === "H" ? "text-[#26a69a]" : k === "L" ? "text-[#ef5350]" : "text-white"
+                )}>{v}</span>
               </span>
             ))}
-            <span className={cn("font-bold text-xs", isUp ? "text-[#26a69a]" : "text-[#ef5350]")}>
+            <span className={cn("font-bold text-xs tabular-nums", isUp ? "text-[#26a69a]" : "text-[#ef5350]")}>
               {isUp ? "+" : ""}{(((displayCandle.close - displayCandle.open) / displayCandle.open) * 100).toFixed(2)}%
             </span>
           </div>
         )}
 
-        {/* Price + change */}
+        {/* Live price + status */}
         <div className="flex items-center gap-2 px-3 border-l border-[#2a2e39] h-full">
-          {activePrice ? (
+          {livePrice != null ? (
             <>
-              <span className="font-bold text-sm text-white tabular-nums">
-                {formatPrice(activePrice.price, activeSymbol)}
+              <span className={cn(
+                "font-bold text-sm tabular-nums transition-colors",
+                livePriceUp ? "text-[#26a69a]" : "text-[#ef5350]",
+              )}>
+                {formatPrice(livePrice, activeSymbol)}
               </span>
-              <span className={cn("text-xs font-bold", activePrice.up ? "text-[#26a69a]" : "text-[#ef5350]")}>
-                {activePrice.up ? "+" : ""}{activePrice.change}%
-              </span>
+              {liveChange !== null && (
+                <span className={cn("text-xs font-bold tabular-nums", livePriceUp ? "text-[#26a69a]" : "text-[#ef5350]")}>
+                  {livePriceUp ? "+" : ""}{liveChange.toFixed(2)}%
+                </span>
+              )}
             </>
           ) : (
             <span className="text-[#787b86] text-xs">{activeInfo.market}</span>
           )}
-          <button
-            onClick={() => refetch()}
-            title="Refresh"
-            className="text-[#787b86] hover:text-white transition-colors ml-1"
-          >
+
+          {/* Live indicator dot */}
+          <div className="flex items-center gap-1 ml-1" title={`Status: ${status}`}>
+            {status === "live" ? (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#26a69a] opacity-60" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#26a69a]" />
+              </span>
+            ) : status === "connecting" || status === "closed" ? (
+              <span className="h-2 w-2 rounded-full bg-[#f0b90b] animate-pulse" />
+            ) : (
+              <span className="h-2 w-2 rounded-full bg-[#ef5350]" />
+            )}
+          </div>
+
+          <button onClick={refetch} title="Reconnect" className="text-[#787b86] hover:text-white transition-colors">
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
-      {/* ══ MAIN AREA ══════════════════════════════════════════════ */}
+      {/* ══ MAIN AREA ════════════════════════════════════════════ */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── Left toolbar ────────────────────────────────────── */}
+        {/* ── Left toolbar ─────────────────────────────────── */}
         <div className="w-10 border-r border-[#2a2e39] flex flex-col items-center pt-2 pb-2 gap-0.5 shrink-0">
           {LEFT_TOOLS.map(({ icon: Icon, label }, i) => {
             const prev = LEFT_TOOLS[i - 1];
@@ -268,12 +264,11 @@ export default function Trading() {
             );
           })}
 
-          {/* Push delete to bottom */}
           <div className="flex-1" />
           <div className="w-6 h-px bg-[#2a2e39] mb-1" />
-          {/* Delete mode button — select to click-erase individual drawings */}
+
           <button
-            title="Delete drawing (click one)"
+            title="Delete drawing"
             onClick={() => setActiveTool("Delete")}
             className={cn(
               "w-8 h-8 flex items-center justify-center rounded transition-colors",
@@ -284,7 +279,6 @@ export default function Trading() {
           >
             <Trash2 className="h-4 w-4" />
           </button>
-          {/* Clear all drawings */}
           <button
             title="Clear all drawings"
             onClick={() => chartRef.current?.clearDrawings()}
@@ -294,13 +288,17 @@ export default function Trading() {
           </button>
         </div>
 
-        {/* ── Chart canvas ────────────────────────────────────── */}
+        {/* ── Chart area ───────────────────────────────────── */}
         <div className="flex-1 relative min-w-0 min-h-0">
-          {/* Symbol + market label overlay */}
-          <div className="absolute top-2 left-3 z-10 pointer-events-none">
+
+          {/* Overlay label */}
+          <div className="absolute top-2 left-3 z-10 pointer-events-none flex items-center gap-2">
             <span className="text-[#787b86] text-[11px] font-medium">
               {activeInfo.symbol} · {activeInfo.market} · {activeTimeframe}
             </span>
+            {status === "live" && (
+              <span className="text-[10px] font-bold text-[#26a69a] uppercase tracking-wider">LIVE</span>
+            )}
           </div>
 
           {/* Loading */}
@@ -308,29 +306,26 @@ export default function Trading() {
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#131722]/90">
               <Loader2 className="h-8 w-8 text-[#2962ff] animate-spin" />
               <p className="text-sm text-[#787b86]">
-                Loading {activeSymbol} · {activeTimeframe}…
+                Connecting to {activeSymbol} · {activeTimeframe}…
               </p>
             </div>
           )}
 
-          {/* Error */}
-          {isError && !isLoading && (
+          {/* Error (no data fallback) */}
+          {isError && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4">
               <WifiOff className="h-8 w-8 text-[#ef5350]" />
               <div className="text-center">
                 <p className="text-sm font-semibold text-white">Chart data unavailable</p>
                 <p className="text-xs text-[#787b86] mt-1">Market may be closed or Deriv is unreachable</p>
               </div>
-              <button
-                onClick={() => refetch()}
-                className="text-xs font-semibold text-[#2962ff] hover:underline"
-              >
+              <button onClick={refetch} className="text-xs font-semibold text-[#2962ff] hover:underline">
                 Try again
               </button>
             </div>
           )}
 
-          {candles && candles.length > 0 && (
+          {candles.length > 0 && (
             <CandlestickChart
               ref={chartRef}
               candles={candles}
