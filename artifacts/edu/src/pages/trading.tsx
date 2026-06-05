@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CandlestickChart, type Candle } from "@/components/chart/CandlestickChart";
+import { CandlestickChart, type Candle, type ChartHandle } from "@/components/chart/CandlestickChart";
 import {
   MousePointer2,
   Crosshair,
@@ -46,7 +46,7 @@ const LEFT_TOOLS = [
   { icon: Crosshair,     label: "Crosshair",   group: 1 },
   { icon: TrendingUp,    label: "Trend Line",  group: 2 },
   { icon: Minus,         label: "Horiz. Line", group: 2 },
-  { icon: GitBranch,     label: "Ray",         group: 2 },
+  { icon: GitBranch,     label: "Vert. Line",  group: 2 },
   { icon: Pencil,        label: "Brush",       group: 3 },
   { icon: Square,        label: "Rectangle",   group: 3 },
   { icon: Circle,        label: "Circle",      group: 3 },
@@ -69,6 +69,7 @@ export default function Trading() {
   const [activeTool, setActiveTool]           = useState("Cursor");
   const [tooltipCandle, setTooltipCandle]     = useState<Candle | null>(null);
   const [symbolOpen, setSymbolOpen]           = useState(false);
+  const chartRef = useRef<ChartHandle>(null);
 
   const { data: candles, isLoading, isError, refetch } = useQuery<Candle[]>({
     queryKey: ["market-candles", activeSymbol, activeTimeframe],
@@ -270,11 +271,26 @@ export default function Trading() {
           {/* Push delete to bottom */}
           <div className="flex-1" />
           <div className="w-6 h-px bg-[#2a2e39] mb-1" />
+          {/* Delete mode button — select to click-erase individual drawings */}
           <button
-            title="Delete"
-            className="w-8 h-8 flex items-center justify-center rounded text-[#787b86] hover:text-[#ef5350] hover:bg-[#1e222d] transition-colors"
+            title="Delete drawing (click one)"
+            onClick={() => setActiveTool("Delete")}
+            className={cn(
+              "w-8 h-8 flex items-center justify-center rounded transition-colors",
+              activeTool === "Delete"
+                ? "bg-[#ef5350]/20 text-[#ef5350]"
+                : "text-[#787b86] hover:text-[#ef5350] hover:bg-[#1e222d]",
+            )}
           >
             <Trash2 className="h-4 w-4" />
+          </button>
+          {/* Clear all drawings */}
+          <button
+            title="Clear all drawings"
+            onClick={() => chartRef.current?.clearDrawings()}
+            className="w-8 h-8 flex items-center justify-center rounded text-[#787b86] hover:text-white hover:bg-[#1e222d] transition-colors text-[9px] font-bold mt-0.5"
+          >
+            ALL
           </button>
         </div>
 
@@ -316,9 +332,11 @@ export default function Trading() {
 
           {candles && candles.length > 0 && (
             <CandlestickChart
+              ref={chartRef}
               candles={candles}
               symbol={activeSymbol}
               timeframe={activeTimeframe}
+              activeTool={activeTool}
               onCrosshairMove={setTooltipCandle}
             />
           )}

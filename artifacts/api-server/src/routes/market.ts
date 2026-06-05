@@ -16,13 +16,13 @@ const SYMBOL_MAP: Record<string, string> = {
 };
 
 const GRANULARITY_MAP: Record<string, { granularity: number; count: number; cacheTtlSec: number }> = {
-  "1m":  { granularity: 60,    count: 180, cacheTtlSec: 60    },
-  "5m":  { granularity: 300,   count: 180, cacheTtlSec: 120   },
-  "15m": { granularity: 900,   count: 180, cacheTtlSec: 300   },
-  "1h":  { granularity: 3600,  count: 168, cacheTtlSec: 600   },
-  "4h":  { granularity: 14400, count: 120, cacheTtlSec: 1800  },
-  "1D":  { granularity: 86400, count: 200, cacheTtlSec: 3600  },
-  "1W":  { granularity: 86400, count: 200, cacheTtlSec: 7200  },
+  "1m":  { granularity: 60,    count: 500,  cacheTtlSec: 60    },
+  "5m":  { granularity: 300,   count: 500,  cacheTtlSec: 120   },
+  "15m": { granularity: 900,   count: 500,  cacheTtlSec: 300   },
+  "1h":  { granularity: 3600,  count: 500,  cacheTtlSec: 600   },
+  "4h":  { granularity: 14400, count: 500,  cacheTtlSec: 1800  },
+  "1D":  { granularity: 86400, count: 1000, cacheTtlSec: 3600  },
+  "1W":  { granularity: 604800,count: 300,  cacheTtlSec: 7200  },
 };
 
 interface DerivCandle {
