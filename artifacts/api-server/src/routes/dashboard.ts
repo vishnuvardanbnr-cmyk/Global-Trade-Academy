@@ -12,7 +12,7 @@ import {
   coursesTable,
   lessonProgressTable,
 } from "@workspace/db";
-import { eq, and, gte, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, gt, gte, desc, sql, inArray } from "drizzle-orm";
 import { computeStreak } from "../lib/lms";
 
 const router = Router();
@@ -57,6 +57,7 @@ router.get("/dashboard/leaderboard", async (req, res): Promise<void> => {
     const users = await db
       .select()
       .from(usersTable)
+      .where(and(eq(usersTable.role, "student"), gt(usersTable.xp, 0)))
       .orderBy(desc(usersTable.xp))
       .limit(20);
 
