@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { useUser } from "@/lib/authContext";
 import {
@@ -30,7 +30,7 @@ import {
   useParticipants,
   useLocalParticipant,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { Track, Room, VideoPresets } from "livekit-client";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 function formatTime(d: string | Date) {
@@ -564,7 +564,7 @@ function LiveKitGrid({
       { source: Track.Source.Camera, withPlaceholder: true },
       { source: Track.Source.ScreenShare, withPlaceholder: false },
     ],
-    { onlySubscribed: false },
+    { onlySubscribed: true },
   );
 
   const joined = useRef(false);
@@ -619,8 +619,34 @@ function LiveKitVideoArea({
   onAudioMuted: (m: boolean) => void;
   onVideoMuted: (m: boolean) => void;
 }) {
+  const room = useMemo(() => new Room({
+    adaptiveStream: true,
+    dynacast: true,
+    publishDefaults: {
+      simulcast: true,
+      videoSimulcastLayers: [
+        VideoPresets.h180,
+        VideoPresets.h360,
+        VideoPresets.h720,
+      ],
+      videoEncoding: VideoPresets.h720.encoding,
+      videoCodec: "vp9",
+      dtx: true,
+      red: false,
+    },
+    audioCaptureDefaults: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+    videoCaptureDefaults: {
+      resolution: VideoPresets.h720.resolution,
+    },
+  }), []);
+
   return (
     <LiveKitRoom
+      room={room}
       serverUrl={serverUrl}
       token={token}
       connect
