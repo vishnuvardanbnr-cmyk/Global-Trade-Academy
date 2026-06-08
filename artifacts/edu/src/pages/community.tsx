@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   useListChannels, useListPosts, useCreatePost, useLikePost,
   useListComments, useCreateComment, useDeletePost,
@@ -15,8 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
-  Heart, MessageCircle, Plus, Hash, ChevronRight, Lock, Users,
-  BookOpen, Trash2, Send, ImageIcon, X,
+  Heart, MessageCircle, Plus, Hash, BookOpen, Users,
+  Trash2, Send, ImageIcon, X,
 } from "lucide-react";
 
 function formatTime(d: string | Date) {
@@ -77,12 +77,9 @@ function ChannelSidebar({
   );
 }
 
-/* ── Post Composer Dialog ─────────────────────────────────────── */
+/* ── New Post Dialog (admin/instructor only) ──────────────────── */
 function NewPostDialog({
-  channel,
-  open,
-  onOpenChange,
-  onSuccess,
+  channel, open, onOpenChange, onSuccess,
 }: {
   channel: CommunityChannel;
   open: boolean;
@@ -107,7 +104,7 @@ function NewPostDialog({
 
   const submit = () => {
     if (!title.trim()) { toast({ title: "Title is required", variant: "destructive" }); return; }
-    createPost.mutate({ data: { title: title.trim(), content, channelId: channel.id, category: channel.slug } });
+    createPost.mutate({ data: { title: title.trim(), content, imageUrl: imageUrl || undefined, channelId: channel.id, category: channel.slug } });
   };
 
   return (
@@ -120,12 +117,7 @@ function NewPostDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3 pt-1">
-          <Input
-            placeholder="Title *"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-          />
+          <Input placeholder="Title *" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
           <Textarea
             placeholder="Share your analysis, insight, or update…"
             rows={5}
@@ -133,11 +125,7 @@ function NewPostDialog({
             onChange={(e) => setContent(e.target.value)}
           />
           {showImage && (
-            <Input
-              placeholder="Image URL (optional)"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-            />
+            <Input placeholder="Image URL (optional)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
           )}
           <div className="flex items-center justify-between">
             <button
@@ -219,7 +207,49 @@ function CommentsSection({ postId }: { postId: number }) {
   );
 }
 
-/* ── Post Card ────────────────────────────────────────────────── */
+/* ── Chat Message Bubble ──────────────────────────────────────── */
+function ChatBubble({
+  post, canDelete, onDelete, isOwn,
+}: {
+  post: Post;
+  canDelete: boolean;
+  onDelete: (id: number) => void;
+  isOwn: boolean;
+}) {
+  return (
+    <div className={cn("flex items-end gap-2 group", isOwn && "flex-row-reverse")}>
+      <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0 mb-0.5">
+        {(post.authorName ?? "U").charAt(0).toUpperCase()}
+      </div>
+      <div className={cn("flex flex-col gap-0.5 max-w-[70%]", isOwn && "items-end")}>
+        <span className={cn("text-[10px] text-muted-foreground px-1", isOwn && "text-right")}>
+          {isOwn ? "You" : (post.authorName ?? "User")} · {post.createdAt ? formatTime(post.createdAt) : ""}
+        </span>
+        <div className={cn(
+          "rounded-2xl px-3.5 py-2 text-sm leading-relaxed break-words",
+          isOwn
+            ? "bg-primary text-primary-foreground rounded-br-sm"
+            : "bg-muted text-foreground rounded-bl-sm",
+        )}>
+          {post.title}
+          {post.imageUrl && (
+            <img src={post.imageUrl} alt="" className="mt-2 rounded-lg max-h-48 object-cover" />
+          )}
+        </div>
+      </div>
+      {canDelete && (
+        <button
+          onClick={() => onDelete(post.id)}
+          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all self-center"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── Post Card (for instructor/admin posts) ───────────────────── */
 function PostCard({
   post, canDelete, onDelete,
 }: {
@@ -236,7 +266,6 @@ function PostCard({
       "rounded-xl border border-border bg-white p-4 space-y-3 transition-shadow hover:shadow-sm",
       post.isPinned && "border-amber-300 bg-amber-50/30",
     )}>
-      {/* Header */}
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold text-sm shrink-0">
           {(post.authorName ?? "U").charAt(0).toUpperCase()}
@@ -259,8 +288,6 @@ function PostCard({
           </button>
         )}
       </div>
-
-      {/* Content */}
       <div>
         <h3 className="font-semibold text-base text-foreground mb-1">{post.title}</h3>
         {post.content && <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{post.content}</p>}
@@ -268,8 +295,6 @@ function PostCard({
           <img src={post.imageUrl} alt="" className="mt-2 rounded-lg w-full max-h-64 object-cover" />
         )}
       </div>
-
-      {/* Actions */}
       <div className="flex items-center gap-4">
         <button
           onClick={() => like.mutate({ postId: post.id })}
@@ -289,18 +314,54 @@ function PostCard({
           <span>{post.commentCount ?? 0}</span>
         </button>
       </div>
-
       {showComments && <CommentsSection postId={post.id} />}
+    </div>
+  );
+}
+
+/* ── Chat Bar ─────────────────────────────────────────────────── */
+function ChatBar({ channel, onSent }: { channel: CommunityChannel; onSent: () => void }) {
+  const [msg, setMsg] = useState("");
+  const { toast } = useToast();
+  const createPost = useCreatePost({
+    mutation: {
+      onSuccess: () => { setMsg(""); onSent(); },
+      onError: () => toast({ title: "Could not send message", variant: "destructive" }),
+    },
+  });
+
+  const send = () => {
+    if (!msg.trim() || createPost.isPending) return;
+    createPost.mutate({ data: { title: msg.trim(), channelId: channel.id, category: "chat" } });
+  };
+
+  return (
+    <div className="px-4 py-3 border-t border-border bg-background shrink-0">
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder={`Message #${channel.name}…`}
+          value={msg}
+          onChange={(e) => setMsg(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          className="flex-1 rounded-xl bg-muted/50 border-border"
+          autoComplete="off"
+        />
+        <Button
+          size="icon"
+          className="h-9 w-9 rounded-xl shrink-0"
+          onClick={send}
+          disabled={!msg.trim() || createPost.isPending}
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
 
 /* ── Channel Feed ─────────────────────────────────────────────── */
 function ChannelFeed({
-  channel,
-  canPost,
-  userId,
-  userRole,
+  channel, canPost, userId, userRole,
 }: {
   channel: CommunityChannel;
   canPost: boolean;
@@ -310,6 +371,7 @@ function ChannelFeed({
   const qc = useQueryClient();
   const [composerOpen, setComposerOpen] = useState(false);
   const { toast } = useToast();
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: posts, isLoading } = useListPosts(
     { channelId: channel.id },
@@ -320,15 +382,23 @@ function ChannelFeed({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) });
-        toast({ title: "Post deleted" });
+        toast({ title: "Deleted" });
       },
     },
   });
 
   const handleDelete = (id: number) => {
-    if (!confirm("Delete this post?")) return;
+    if (!confirm("Delete this message?")) return;
     deletePost.mutate({ postId: id });
   };
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) });
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [posts?.length]);
+
+  const allPosts = posts ?? [];
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -359,42 +429,49 @@ function ChannelFeed({
         )}
       </div>
 
-      {/* Posts */}
+      {/* Feed */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
         {isLoading
-          ? Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)
-          : (posts ?? []).length === 0
+          ? Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)
+          : allPosts.length === 0
           ? (
             <div className="flex flex-col items-center justify-center h-48 text-center">
               <span className="text-4xl mb-3">{channel.emoji}</span>
-              <p className="text-sm font-medium text-foreground mb-1">No posts yet in #{channel.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {canPost ? "Be the first to post here." : "Check back later for updates."}
-              </p>
-              {canPost && (
-                <Button size="sm" className="mt-3" onClick={() => setComposerOpen(true)}>
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Create first post
-                </Button>
-              )}
+              <p className="text-sm font-medium text-foreground mb-1">No messages yet in #{channel.name}</p>
+              <p className="text-xs text-muted-foreground">Be the first to say something!</p>
             </div>
           )
-          : (posts ?? []).map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              canDelete={userRole === "admin" || post.authorId === userId}
-              onDelete={handleDelete}
-            />
-          ))
+          : allPosts.map((post) =>
+            post.category === "chat" ? (
+              <ChatBubble
+                key={post.id}
+                post={post}
+                isOwn={post.authorId === userId}
+                canDelete={userRole === "admin" || post.authorId === userId}
+                onDelete={handleDelete}
+              />
+            ) : (
+              <PostCard
+                key={post.id}
+                post={post}
+                canDelete={userRole === "admin" || post.authorId === userId}
+                onDelete={handleDelete}
+              />
+            )
+          )
         }
+        <div ref={bottomRef} />
       </div>
+
+      {/* Chat bar — always visible for all users */}
+      <ChatBar channel={channel} onSent={invalidate} />
 
       {canPost && (
         <NewPostDialog
           channel={channel}
           open={composerOpen}
           onOpenChange={setComposerOpen}
-          onSuccess={() => qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) })}
+          onSuccess={invalidate}
         />
       )}
     </div>
@@ -409,9 +486,7 @@ export default function Community() {
     query: { queryKey: getListChannelsQueryKey() },
   });
 
-  const canPost = !!me;
-
-  // Auto-select first channel
+  const isAdminOrInstructor = me?.role === "admin" || me?.role === "instructor";
   const displayChannels = channels ?? [];
   const active = activeChannel ?? displayChannels[0] ?? null;
 
@@ -428,7 +503,7 @@ export default function Community() {
           <ChannelFeed
             key={active.id}
             channel={active}
-            canPost={canPost}
+            canPost={isAdminOrInstructor}
             userId={me?.id ?? ""}
             userRole={me?.role ?? "student"}
           />
