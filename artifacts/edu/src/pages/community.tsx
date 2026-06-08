@@ -1,25 +1,26 @@
 import { useState } from "react";
-import { useListPosts, useCreatePost, useLikePost, useListComments, useCreateComment, getListPostsQueryKey, getListCommentsQueryKey } from "@workspace/api-client-react";
-import type { Post } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  useListChannels, useListPosts, useCreatePost, useLikePost,
+  useListComments, useCreateComment, useDeletePost,
+  getListPostsQueryKey, getListCommentsQueryKey, getListChannelsQueryKey,
+  type CommunityChannel, type Post,
+} from "@workspace/api-client-react";
+import { useGetMe } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
-import { Heart, MessageCircle, Plus, ImageIcon } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import {
+  Heart, MessageCircle, Plus, Hash, ChevronRight, Lock, Users,
+  BookOpen, Trash2, Send, ImageIcon, X,
+} from "lucide-react";
 
-const CATEGORIES = ["all", "forex", "crypto", "analysis", "news", "general"];
-
-function formatTime(dateStr: string | Date) {
-  const date = new Date(dateStr);
-  const diff = Date.now() - date.getTime();
+function formatTime(d: string | Date) {
+  const diff = Date.now() - new Date(d).getTime();
   const m = Math.floor(diff / 60000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
@@ -28,248 +29,421 @@ function formatTime(dateStr: string | Date) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function PostCard({ post }: { post: Post }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [showComments, setShowComments] = useState(false);
-  const [comment, setComment] = useState("");
+function accessIcon(ch: CommunityChannel) {
+  if (ch.accessType === "course") return <BookOpen className="h-3 w-3 shrink-0" />;
+  if (ch.accessType === "batch") return <Users className="h-3 w-3 shrink-0" />;
+  return null;
+}
 
-  const like = useLikePost({ mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListPostsQueryKey() }) } });
-  const { data: comments } = useListComments(post.id, { query: { enabled: showComments, queryKey: getListCommentsQueryKey(post.id) } });
-  const addComment = useCreateComment({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["comments", post.id] });
-        setComment("");
-        toast({ title: "Comment posted" });
-      },
-    },
-  });
-
-  const categoryColor: { [key: string]: string } = {
-    forex: "text-blue-400 border-blue-400/30 bg-blue-400/10",
-    crypto: "text-orange-400 border-orange-400/30 bg-orange-400/10",
-    analysis: "text-purple-400 border-purple-400/30 bg-purple-400/10",
-    news: "text-red-400 border-red-400/30 bg-red-400/10",
-    general: "text-muted-foreground",
-  };
-
+/* ── Channel Sidebar ──────────────────────────────────────────── */
+function ChannelSidebar({
+  channels, active, onSelect, loading,
+}: {
+  channels: CommunityChannel[];
+  active: CommunityChannel | null;
+  onSelect: (ch: CommunityChannel) => void;
+  loading: boolean;
+}) {
   return (
-    <Card data-testid={`card-post-${post.id}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-              {(post.authorName ?? "U").charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold text-sm">{post.authorName ?? "Anonymous"}</p>
-              <p className="text-xs text-muted-foreground">{post.createdAt ? formatTime(post.createdAt) : ""}</p>
-            </div>
-          </div>
-          <Badge variant="outline" className={`text-[10px] shrink-0 ${categoryColor[post.category] ?? ""}`}>
-            {post.category}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <h3 className="font-semibold mb-1.5">{post.title}</h3>
-          {post.content && <p className="text-sm text-muted-foreground leading-relaxed">{post.content}</p>}
-        </div>
-        <div className="flex items-center gap-4 pt-1">
-          <button
-            data-testid={`button-like-${post.id}`}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-red-400 transition-colors"
-            onClick={() => like.mutate({ postId: post.id })}
-          >
-            <Heart className="h-4 w-4" />
-            <span>{post.likes}</span>
-          </button>
-          <button
-            data-testid={`button-comment-${post.id}`}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
-            onClick={() => setShowComments(!showComments)}
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span>{post.commentCount}</span>
-          </button>
-        </div>
-
-        {showComments && (
-          <div className="space-y-3 pt-2 border-t border-border">
-            {comments?.map((c) => (
-              <div key={c.id} className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-xs shrink-0">
-                  {(c.authorName ?? "U").charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 bg-secondary/50 rounded-lg px-3 py-2">
-                  <p className="text-xs font-semibold">{c.authorName ?? "Anonymous"}</p>
-                  <p className="text-sm">{c.content}</p>
-                </div>
-              </div>
-            ))}
-            <div className="flex gap-2">
-              <Input
-                data-testid="input-comment"
-                placeholder="Add a comment..."
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                className="h-8 text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && comment.trim()) {
-                    addComment.mutate({ postId: post.id, data: { content: comment } });
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                data-testid="button-submit-comment"
-                disabled={!comment.trim() || addComment.isPending}
-                onClick={() => addComment.mutate({ postId: post.id, data: { content: comment } })}
-              >
-                Post
-              </Button>
-            </div>
-          </div>
+    <div className="w-56 shrink-0 flex flex-col bg-muted/40 border-r border-border rounded-l-xl overflow-hidden">
+      <div className="px-3 py-3 border-b border-border/60">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Channels</p>
+      </div>
+      <div className="flex-1 overflow-y-auto py-1">
+        {loading
+          ? Array(5).fill(0).map((_, i) => <div key={i} className="mx-2 my-1 h-7 rounded-md bg-muted animate-pulse" />)
+          : channels.map((ch) => (
+            <button
+              key={ch.id}
+              onClick={() => onSelect(ch)}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md mx-1 my-0.5 transition-colors text-left",
+                active?.id === ch.id
+                  ? "bg-primary text-primary-foreground font-medium"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
+            >
+              <span className="text-base leading-none">{ch.emoji}</span>
+              <span className="flex-1 truncate">{ch.name}</span>
+              {accessIcon(ch)}
+            </button>
+          ))
+        }
+        {!loading && channels.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-6 px-3">No channels available.</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-function CreatePostDialog({ onSuccess }: { onSuccess: () => void }) {
-  const [open, setOpen] = useState(false);
+/* ── Post Composer Dialog ─────────────────────────────────────── */
+function NewPostDialog({
+  channel,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  channel: CommunityChannel;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onSuccess: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [showImage, setShowImage] = useState(false);
   const { toast } = useToast();
   const createPost = useCreatePost({
     mutation: {
       onSuccess: () => {
-        setOpen(false);
+        setTitle(""); setContent(""); setImageUrl(""); setShowImage(false);
+        onOpenChange(false);
         onSuccess();
         toast({ title: "Post published" });
       },
     },
   });
 
-  const form = useForm({ defaultValues: { title: "", content: "", category: "general", imageUrl: "" } });
-
-  const onSubmit = (data: { title: string; content: string; category: string; imageUrl: string }) => {
-    createPost.mutate({ data: { title: data.title, content: data.content, category: data.category, imageUrl: data.imageUrl || undefined } });
+  const submit = () => {
+    if (!title.trim()) { toast({ title: "Title is required", variant: "destructive" }); return; }
+    createPost.mutate({ data: { title: title.trim(), content, channelId: channel.id, category: channel.slug } });
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button data-testid="button-new-post">
-          <Plus className="h-4 w-4 mr-2" />
-          New Post
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create a Post</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="text-lg">{channel.emoji}</span>
+            <span>Post in #{channel.name}</span>
+          </DialogTitle>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField control={form.control} name="category" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Category</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger data-testid="select-category">
-                      <SelectValue placeholder="Pick a category" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {CATEGORIES.filter(c => c !== "all").map(c => (
-                      <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="title" rules={{ required: "Title is required" }} render={({ field }) => (
-              <FormItem>
-                <FormLabel>Title</FormLabel>
-                <FormControl>
-                  <Input data-testid="input-post-title" placeholder="Your post headline" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="content" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Content</FormLabel>
-                <FormControl>
-                  <Textarea data-testid="input-post-content" placeholder="Share your thoughts, analysis, or news..." rows={5} {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="imageUrl" render={({ field }) => (
-              <FormItem>
-                <FormLabel className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Image URL <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
-                <FormControl>
-                  <Input placeholder="https://..." {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <Button type="submit" className="w-full" data-testid="button-submit-post" disabled={createPost.isPending}>
-              {createPost.isPending ? "Publishing..." : "Publish"}
-            </Button>
-          </form>
-        </Form>
+        <div className="space-y-3 pt-1">
+          <Input
+            placeholder="Title *"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
+          <Textarea
+            placeholder="Share your analysis, insight, or update…"
+            rows={5}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+          {showImage && (
+            <Input
+              placeholder="Image URL (optional)"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+            />
+          )}
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowImage(!showImage)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showImage ? <X className="h-3.5 w-3.5" /> : <ImageIcon className="h-3.5 w-3.5" />}
+              {showImage ? "Remove image" : "Add image"}
+            </button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button size="sm" onClick={submit} disabled={createPost.isPending}>
+                {createPost.isPending ? "Publishing…" : "Publish"}
+              </Button>
+            </div>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-export default function Community() {
+/* ── Comments Thread ──────────────────────────────────────────── */
+function CommentsSection({ postId }: { postId: number }) {
   const qc = useQueryClient();
-  const [activeCategory, setActiveCategory] = useState("all");
+  const [comment, setComment] = useState("");
+  const { data: comments, isLoading } = useListComments(postId, {
+    query: { queryKey: getListCommentsQueryKey(postId) },
+  });
+  const { toast } = useToast();
+  const addComment = useCreateComment({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListCommentsQueryKey(postId) });
+        setComment("");
+      },
+      onError: () => toast({ title: "Could not post comment", variant: "destructive" }),
+    },
+  });
 
-  const { data: posts, isLoading } = useListPosts(
-    activeCategory !== "all" ? { category: activeCategory } : {},
-    { query: { queryKey: getListPostsQueryKey(activeCategory !== "all" ? { category: activeCategory } : {}) } }
-  );
+  const submit = () => {
+    if (!comment.trim()) return;
+    addComment.mutate({ postId, data: { content: comment.trim() } });
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Community</h1>
-          <p className="text-muted-foreground">Discuss markets, share analysis, and connect with traders.</p>
+    <div className="pt-3 border-t border-border space-y-2.5">
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array(2).fill(0).map((_, i) => <div key={i} className="h-10 rounded-lg bg-secondary animate-pulse" />)}
         </div>
-        <CreatePostDialog onSuccess={() => qc.invalidateQueries({ queryKey: getListPostsQueryKey() })} />
+      ) : (
+        (comments ?? []).map((c) => (
+          <div key={c.id} className="flex gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+              {(c.authorName ?? "U").charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 bg-secondary/60 rounded-xl px-3 py-2">
+              <p className="text-xs font-semibold text-foreground leading-none mb-0.5">{c.authorName ?? "User"}</p>
+              <p className="text-sm text-foreground/90">{c.content}</p>
+            </div>
+          </div>
+        ))
+      )}
+      <div className="flex gap-2 pt-1">
+        <Input
+          placeholder="Reply…"
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          className="h-8 text-sm"
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+        />
+        <Button size="sm" className="h-8 px-3" onClick={submit} disabled={!comment.trim() || addComment.isPending}>
+          <Send className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Post Card ────────────────────────────────────────────────── */
+function PostCard({
+  post, canDelete, onDelete,
+}: {
+  post: Post;
+  canDelete: boolean;
+  onDelete: (id: number) => void;
+}) {
+  const qc = useQueryClient();
+  const [showComments, setShowComments] = useState(false);
+  const like = useLikePost({ mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListPostsQueryKey() }) } });
+
+  return (
+    <div className={cn(
+      "rounded-xl border border-border bg-white p-4 space-y-3 transition-shadow hover:shadow-sm",
+      post.isPinned && "border-amber-300 bg-amber-50/30",
+    )}>
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+          {(post.authorName ?? "U").charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-sm text-foreground">{post.authorName ?? "User"}</p>
+            {post.isPinned && (
+              <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">📌 Pinned</span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">{post.createdAt ? formatTime(post.createdAt) : ""}</p>
+        </div>
+        {canDelete && (
+          <button
+            onClick={() => onDelete(post.id)}
+            className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* Category Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {CATEGORIES.map((cat) => (
-          <Button
-            key={cat}
-            variant={activeCategory === cat ? "default" : "outline"}
-            size="sm"
-            data-testid={`filter-${cat}`}
-            onClick={() => setActiveCategory(cat)}
-            className="capitalize"
-          >
-            {cat}
+      {/* Content */}
+      <div>
+        <h3 className="font-semibold text-base text-foreground mb-1">{post.title}</h3>
+        {post.content && <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{post.content}</p>}
+        {post.imageUrl && (
+          <img src={post.imageUrl} alt="" className="mt-2 rounded-lg w-full max-h-64 object-cover" />
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => like.mutate({ postId: post.id })}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-rose-500 transition-colors"
+        >
+          <Heart className="h-4 w-4" />
+          <span>{post.likes ?? 0}</span>
+        </button>
+        <button
+          onClick={() => setShowComments(!showComments)}
+          className={cn(
+            "flex items-center gap-1.5 text-sm transition-colors",
+            showComments ? "text-primary" : "text-muted-foreground hover:text-primary",
+          )}
+        >
+          <MessageCircle className="h-4 w-4" />
+          <span>{post.commentCount ?? 0}</span>
+        </button>
+      </div>
+
+      {showComments && <CommentsSection postId={post.id} />}
+    </div>
+  );
+}
+
+/* ── Channel Feed ─────────────────────────────────────────────── */
+function ChannelFeed({
+  channel,
+  canPost,
+  userId,
+  userRole,
+}: {
+  channel: CommunityChannel;
+  canPost: boolean;
+  userId: string;
+  userRole: string;
+}) {
+  const qc = useQueryClient();
+  const [composerOpen, setComposerOpen] = useState(false);
+  const { toast } = useToast();
+
+  const { data: posts, isLoading } = useListPosts(
+    { channelId: channel.id },
+    { query: { queryKey: getListPostsQueryKey({ channelId: channel.id }) } },
+  );
+
+  const deletePost = useDeletePost({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) });
+        toast({ title: "Post deleted" });
+      },
+    },
+  });
+
+  const handleDelete = (id: number) => {
+    if (!confirm("Delete this post?")) return;
+    deletePost.mutate({ postId: id });
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {/* Channel header */}
+      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-white/80 backdrop-blur shrink-0">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">{channel.emoji}</span>
+          <div>
+            <h2 className="font-semibold text-base text-foreground leading-none">{channel.name}</h2>
+            {channel.description && (
+              <p className="text-xs text-muted-foreground mt-0.5">{channel.description}</p>
+            )}
+          </div>
+          {channel.accessType !== "common" && (
+            <span className={cn(
+              "text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1",
+              channel.accessType === "course" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700",
+            )}>
+              {channel.accessType === "course" ? <BookOpen className="h-2.5 w-2.5" /> : <Users className="h-2.5 w-2.5" />}
+              {channel.accessType === "course" ? (channel.courseName ?? "Course") : (channel.batchName ?? "Batch")}
+            </span>
+          )}
+        </div>
+        {canPost && (
+          <Button size="sm" onClick={() => setComposerOpen(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> New Post
           </Button>
-        ))}
+        )}
       </div>
 
       {/* Posts */}
-      <div className="space-y-4">
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
         {isLoading
-          ? Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)
-          : posts?.map((post) => <PostCard key={post.id} post={post} />)
+          ? Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)
+          : (posts ?? []).length === 0
+          ? (
+            <div className="flex flex-col items-center justify-center h-48 text-center">
+              <span className="text-4xl mb-3">{channel.emoji}</span>
+              <p className="text-sm font-medium text-foreground mb-1">No posts yet in #{channel.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {canPost ? "Be the first to post here." : "Check back later for updates."}
+              </p>
+              {canPost && (
+                <Button size="sm" className="mt-3" onClick={() => setComposerOpen(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Create first post
+                </Button>
+              )}
+            </div>
+          )
+          : (posts ?? []).map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              canDelete={userRole === "admin" || post.authorId === userId}
+              onDelete={handleDelete}
+            />
+          ))
         }
-        {posts?.length === 0 && !isLoading && (
-          <div className="py-16 text-center text-muted-foreground">
-            No posts yet in this category. Be the first to share.
+      </div>
+
+      {canPost && (
+        <NewPostDialog
+          channel={channel}
+          open={composerOpen}
+          onOpenChange={setComposerOpen}
+          onSuccess={() => qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) })}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Main Community Page ──────────────────────────────────────── */
+export default function Community() {
+  const [activeChannel, setActiveChannel] = useState<CommunityChannel | null>(null);
+  const { data: me } = useGetMe();
+  const { data: channels, isLoading: channelsLoading } = useListChannels({
+    query: { queryKey: getListChannelsQueryKey() },
+  });
+
+  const canPost = me?.role === "admin" || me?.role === "instructor";
+
+  // Auto-select first channel
+  const displayChannels = channels ?? [];
+  const active = activeChannel ?? displayChannels[0] ?? null;
+
+  return (
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Community</h1>
+          <p className="text-sm text-muted-foreground">Discuss markets, share analysis, and connect with traders.</p>
+        </div>
+      </div>
+      <div className="flex-1 flex rounded-xl border border-border overflow-hidden bg-background min-h-0">
+        <ChannelSidebar
+          channels={displayChannels}
+          active={active}
+          onSelect={setActiveChannel}
+          loading={channelsLoading}
+        />
+        {active ? (
+          <ChannelFeed
+            key={active.id}
+            channel={active}
+            canPost={canPost}
+            userId={me?.id ?? ""}
+            userRole={me?.role ?? "student"}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <Hash className="h-10 w-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">Select a channel to start</p>
+            </div>
           </div>
         )}
       </div>

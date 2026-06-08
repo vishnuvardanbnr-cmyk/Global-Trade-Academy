@@ -255,6 +255,7 @@ export interface LiveClassInput {
   scheduledAt: string;
   duration?: number;
   courseId?: number;
+  batchId?: number;
   meetingUrl?: string;
   category?: string;
   maxAttendees?: number;
@@ -382,8 +383,43 @@ export interface AttendanceInput {
   durationMinutes?: number;
 }
 
+export interface CommunityChannel {
+  id: number;
+  name: string;
+  emoji: string;
+  slug: string;
+  /** @nullable */
+  description?: string | null;
+  position: number;
+  accessType: string;
+  /** @nullable */
+  courseId?: number | null;
+  /** @nullable */
+  batchId?: number | null;
+  /** @nullable */
+  courseName?: string | null;
+  /** @nullable */
+  batchName?: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface ChannelInput {
+  /** @minLength 1 */
+  name: string;
+  emoji?: string;
+  slug?: string;
+  description?: string;
+  position?: number;
+  accessType: string;
+  courseId?: number;
+  batchId?: number;
+}
+
 export interface Post {
   id: number;
+  /** @nullable */
+  channelId?: number | null;
   authorId: string;
   /** @nullable */
   authorName?: string | null;
@@ -402,6 +438,7 @@ export interface Post {
 }
 
 export interface PostInput {
+  channelId?: number;
   /** @minLength 1 */
   title: string;
   content?: string;
@@ -410,6 +447,7 @@ export interface PostInput {
 }
 
 export interface PostUpdate {
+  channelId?: number;
   title?: string;
   content?: string;
   category?: string;
@@ -944,6 +982,7 @@ userId?: string;
 };
 
 export type ListPostsParams = {
+channelId?: number;
 category?: string;
 authorId?: string;
 };

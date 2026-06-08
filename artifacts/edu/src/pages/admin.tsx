@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useSearch } from "wouter";
-import { useGetAdminStats, useListUsers, getGetAdminStatsQueryKey, useListLiveClasses, useCreateLiveClass, getListLiveClassesQueryKey } from "@workspace/api-client-react";
+import { useGetAdminStats, useListUsers, getGetAdminStatsQueryKey, useListLiveClasses, useCreateLiveClass, getListLiveClassesQueryKey, useListChannels, useCreateChannel, useUpdateChannel, useDeleteChannel, getListChannelsQueryKey, useListCourses, type CommunityChannel } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import {
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
+  Hash, Pencil, Plus,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -777,11 +778,230 @@ function ActivityTab() {
 /* ════════════════════════════════════════════
    COMMUNITY MODERATION TAB
 ════════════════════════════════════════════ */
-type CommunityView = "posts" | "comments";
+type CommunityView = "posts" | "comments" | "channels";
+
+/* ── Channel Form Dialog ── */
+function ChannelFormDialog({
+  open, onOpenChange, existing, onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  existing?: CommunityChannel;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [name, setName] = useState(existing?.name ?? "");
+  const [emoji, setEmoji] = useState(existing?.emoji ?? "💬");
+  const [slug, setSlug] = useState(existing?.slug ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [accessType, setAccessType] = useState<string>(existing?.accessType ?? "common");
+  const [courseId, setCourseId] = useState<string>(existing?.courseId ? String(existing.courseId) : "");
+  const [position, setPosition] = useState<string>(existing?.position ? String(existing.position) : "0");
+  const { data: courses } = useListCourses();
+
+  useEffect(() => {
+    if (open && existing) {
+      setName(existing.name ?? ""); setEmoji(existing.emoji ?? "💬");
+      setSlug(existing.slug ?? ""); setDescription(existing.description ?? "");
+      setAccessType(existing.accessType ?? "common");
+      setCourseId(existing.courseId ? String(existing.courseId) : "");
+      setPosition(existing.position ? String(existing.position) : "0");
+    } else if (open && !existing) {
+      setName(""); setEmoji("💬"); setSlug(""); setDescription("");
+      setAccessType("common"); setCourseId(""); setPosition("0");
+    }
+  }, [open, existing]);
+
+  const createChannel = useCreateChannel({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        toast({ title: "Channel created" });
+        onOpenChange(false); onSuccess();
+      },
+      onError: () => toast({ title: "Failed to create channel", variant: "destructive" }),
+    },
+  });
+  const updateChannel = useUpdateChannel({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        toast({ title: "Channel updated" });
+        onOpenChange(false); onSuccess();
+      },
+      onError: () => toast({ title: "Failed to update channel", variant: "destructive" }),
+    },
+  });
+
+  const handleSubmit = () => {
+    if (!name.trim() || !slug.trim()) {
+      toast({ title: "Name and slug are required", variant: "destructive" }); return;
+    }
+    const data = {
+      name: name.trim(), emoji: emoji.trim() || "💬",
+      slug: slug.trim().toLowerCase().replace(/\s+/g, "-"),
+      description: description.trim() || undefined,
+      accessType: accessType as "common" | "course" | "batch",
+      courseId: accessType === "course" && courseId ? Number(courseId) : undefined,
+      position: Number(position) || 0,
+    };
+    if (existing) {
+      updateChannel.mutate({ channelId: existing.id, data });
+    } else {
+      createChannel.mutate({ data });
+    }
+  };
+
+  const isPending = createChannel.isPending || updateChannel.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{existing ? "Edit Channel" : "New Channel"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <div className="flex gap-2">
+            <Input placeholder="Emoji" value={emoji} onChange={(e) => setEmoji(e.target.value)} className="w-20 text-center text-lg" />
+            <Input placeholder="Channel name *" value={name} onChange={(e) => { setName(e.target.value); if (!existing) setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")); }} className="flex-1" />
+          </div>
+          <Input placeholder="slug (url-safe, e.g. forex-analysis) *" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""))} />
+          <Textarea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Access type</label>
+              <Select value={accessType} onValueChange={setAccessType}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="common">Common (all members)</SelectItem>
+                  <SelectItem value="course">Course-only</SelectItem>
+                  <SelectItem value="batch">Batch-only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Position</label>
+              <Input type="number" value={position} onChange={(e) => setPosition(e.target.value)} className="h-9" />
+            </div>
+          </div>
+          {accessType === "course" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Course</label>
+              <Select value={courseId} onValueChange={setCourseId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select course…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(courses ?? []).map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleSubmit} disabled={isPending}>
+              {isPending ? "Saving…" : existing ? "Save changes" : "Create channel"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Channels Sub-Tab ── */
+function ChannelsSubTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data: channels, isLoading } = useListChannels();
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<CommunityChannel | undefined>(undefined);
+
+  const deleteChannel = useDeleteChannel({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        toast({ title: "Channel deleted" });
+      },
+      onError: () => toast({ title: "Failed to delete channel", variant: "destructive" }),
+    },
+  });
+
+  const handleDelete = (ch: CommunityChannel) => {
+    if (!confirm(`Delete #${ch.name}? All posts in this channel will remain but become unattached.`)) return;
+    deleteChannel.mutate({ channelId: ch.id });
+  };
+
+  const accessBadge = (ch: CommunityChannel) => {
+    if (ch.accessType === "course") return <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Course</span>;
+    if (ch.accessType === "batch") return <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Batch</span>;
+    return <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Common</span>;
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{(channels ?? []).length} channel{(channels ?? []).length !== 1 ? "s" : ""}</p>
+        <Button size="sm" onClick={() => { setEditing(undefined); setFormOpen(true); }}>
+          <Plus className="h-4 w-4 mr-1.5" /> Add Channel
+        </Button>
+      </div>
+      {isLoading ? (
+        Array(4).fill(0).map((_, i) => <div key={i} className="h-14 rounded-xl bg-secondary animate-pulse" />)
+      ) : (channels ?? []).length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Hash className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No channels yet. Create the first one.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
+          {(channels ?? []).map((ch) => (
+            <div key={ch.id} className="flex items-center gap-3 px-4 py-3 bg-white hover:bg-secondary/20 transition-colors">
+              <span className="text-xl">{ch.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm">#{ch.name}</span>
+                  {accessBadge(ch)}
+                  <span className="text-[10px] text-muted-foreground">pos {ch.position}</span>
+                </div>
+                {ch.description && <p className="text-xs text-muted-foreground truncate">{ch.description}</p>}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => { setEditing(ch); setFormOpen(true); }}
+                  className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => handleDelete(ch)}
+                  className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <ChannelFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        existing={editing}
+        onSuccess={() => setEditing(undefined)}
+      />
+    </div>
+  );
+}
 
 function CommunityTab() {
   const { toast } = useToast();
-  const [view, setView] = useState<CommunityView>("posts");
+  const [view, setView] = useState<CommunityView>("channels");
   const [posts, setPosts] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
@@ -804,7 +1024,7 @@ function CommunityTab() {
     } finally { setLoadingComments(false); }
   }, []);
 
-  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+  useEffect(() => { if (view === "posts") fetchPosts(); }, [view, fetchPosts]);
   useEffect(() => { if (view === "comments") fetchComments(); }, [view, fetchComments]);
 
   const deletePost = async (id: number) => {
@@ -838,23 +1058,27 @@ function CommunityTab() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex gap-1 bg-secondary rounded-xl p-1">
-          {(["posts", "comments"] as CommunityView[]).map((v) => (
+          {(["channels", "posts", "comments"] as CommunityView[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
               className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${view === v ? "bg-white shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
-              {v === "posts" ? `Posts (${posts.length})` : `Comments (${comments.length})`}
+              {v === "posts" ? `Posts (${posts.length})` : v === "comments" ? `Comments (${comments.length})` : "Channels"}
             </button>
           ))}
         </div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${view}…`}
-          className="flex-1 min-w-[180px] h-9 px-3 rounded-lg border border-border text-sm bg-background focus:outline-none focus:border-primary"
-        />
+        {view !== "channels" && (
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${view}…`}
+            className="flex-1 min-w-[180px] h-9 px-3 rounded-lg border border-border text-sm bg-background focus:outline-none focus:border-primary"
+          />
+        )}
       </div>
+
+      {view === "channels" && <ChannelsSubTab />}
 
       {view === "posts" && (
         <div className="space-y-2">

@@ -7,6 +7,7 @@
  */
 
 export interface PostInput {
+  channelId?: number;
   /** @minLength 1 */
   title: string;
   content?: string;

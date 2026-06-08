@@ -8,6 +8,8 @@
 
 export interface Post {
   id: number;
+  /** @nullable */
+  channelId?: number | null;
   authorId: string;
   /** @nullable */
   authorName?: string | null;

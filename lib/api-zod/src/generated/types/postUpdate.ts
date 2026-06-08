@@ -7,6 +7,7 @@
  */
 
 export interface PostUpdate {
+  channelId?: number;
   title?: string;
   content?: string;
   category?: string;

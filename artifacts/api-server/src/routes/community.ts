@@ -1,10 +1,19 @@
 import { Router } from "express";
 import { getAuth } from "../lib/auth";
 import { db } from "@workspace/db";
-import { postsTable, commentsTable, postLikesTable, usersTable } from "@workspace/db";
+import {
+  postsTable, commentsTable, postLikesTable, usersTable,
+  communityChannelsTable,
+} from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
+import { canAccessChannel } from "./channels";
 
 const router = Router();
+
+async function getUserWithRole(clerkId: string) {
+  return db.select({ role: usersTable.role, displayName: usersTable.displayName, avatarUrl: usersTable.avatarUrl })
+    .from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0] ?? null);
+}
 
 async function buildPostResponse(post: typeof postsTable.$inferSelect) {
   const [author, commentCount] = await Promise.all([
@@ -13,6 +22,7 @@ async function buildPostResponse(post: typeof postsTable.$inferSelect) {
   ]);
   return {
     id: post.id,
+    channelId: post.channelId ?? null,
     authorId: post.authorId,
     authorName: author[0]?.displayName ?? null,
     authorAvatar: author[0]?.avatarUrl ?? null,
@@ -27,16 +37,22 @@ async function buildPostResponse(post: typeof postsTable.$inferSelect) {
   };
 }
 
-// GET /api/posts
+/* ── GET /api/posts ─────────────────────────────────────────── */
 router.get("/posts", async (req, res): Promise<void> => {
   try {
-    const { category, authorId } = req.query as Record<string, string>;
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { category, authorId, channelId } = req.query as Record<string, string>;
     let query = db.select().from(postsTable).$dynamic();
     const conditions = [];
     if (category) conditions.push(eq(postsTable.category, category));
     if (authorId) conditions.push(eq(postsTable.authorId, authorId));
+    if (channelId) {
+      const cid = parseInt(channelId);
+      if (!isNaN(cid)) conditions.push(eq(postsTable.channelId, cid));
+    }
     if (conditions.length) query = query.where(and(...conditions));
-    const posts = await query.orderBy(postsTable.createdAt).limit(50);
+    const posts = await query.orderBy(postsTable.isPinned, postsTable.createdAt).limit(100);
     const results = await Promise.all(posts.map(buildPostResponse));
     res.json(results);
   } catch (err) {
@@ -45,19 +61,27 @@ router.get("/posts", async (req, res): Promise<void> => {
   }
 });
 
-// POST /api/posts
+/* ── POST /api/posts — admin + instructor only ──────────────── */
 router.post("/posts", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
-
-    const { title, content, category, imageUrl } = req.body;
-    if (!title || !category) { res.status(400).json({ error: "title and category required" }); return; }
-
+    const user = await getUserWithRole(clerkId);
+    if (!user || !["admin", "instructor"].includes(user.role)) {
+      res.status(403).json({ error: "Only admins and instructors can post" }); return;
+    }
+    const { title, content, category, imageUrl, channelId } = req.body;
+    if (!title) { res.status(400).json({ error: "title required" }); return; }
+    if (channelId != null) {
+      const channel = await db.select().from(communityChannelsTable).where(eq(communityChannelsTable.id, channelId)).limit(1).then((r) => r[0]);
+      if (!channel) { res.status(404).json({ error: "Channel not found" }); return; }
+      const ok = await canAccessChannel(clerkId, user.role, channel);
+      if (!ok) { res.status(403).json({ error: "No access to this channel" }); return; }
+    }
     const inserted = await db.insert(postsTable).values({
-      authorId: clerkId, title, content, category, imageUrl,
+      authorId: clerkId, title, content, category: category || "general",
+      imageUrl, channelId: channelId ?? null,
     }).returning();
-
     res.status(201).json(await buildPostResponse(inserted[0]));
   } catch (err) {
     req.log.error({ err }, "Error creating post");
@@ -65,7 +89,7 @@ router.post("/posts", async (req, res): Promise<void> => {
   }
 });
 
-// GET /api/posts/:postId
+/* ── GET /api/posts/:postId ─────────────────────────────────── */
 router.get("/posts/:postId", async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.postId);
@@ -79,18 +103,21 @@ router.get("/posts/:postId", async (req, res): Promise<void> => {
   }
 });
 
-// PATCH /api/posts/:postId
+/* ── PATCH /api/posts/:postId ───────────────────────────────── */
 router.patch("/posts/:postId", async (req, res): Promise<void> => {
   try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const id = parseInt(req.params.postId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { title, content, category, imageUrl, isPinned } = req.body;
+    const { title, content, category, imageUrl, isPinned, channelId } = req.body;
     const updated = await db.update(postsTable).set({
       ...(title !== undefined && { title }),
       ...(content !== undefined && { content }),
       ...(category !== undefined && { category }),
       ...(imageUrl !== undefined && { imageUrl }),
       ...(isPinned !== undefined && { isPinned }),
+      ...(channelId !== undefined && { channelId }),
     }).where(eq(postsTable.id, id)).returning();
     if (!updated[0]) { res.status(404).json({ error: "Post not found" }); return; }
     res.json(await buildPostResponse(updated[0]));
@@ -100,11 +127,17 @@ router.patch("/posts/:postId", async (req, res): Promise<void> => {
   }
 });
 
-// DELETE /api/posts/:postId
+/* ── DELETE /api/posts/:postId ──────────────────────────────── */
 router.delete("/posts/:postId", async (req, res): Promise<void> => {
   try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const id = parseInt(req.params.postId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const post = await db.select({ authorId: postsTable.authorId }).from(postsTable).where(eq(postsTable.id, id)).limit(1).then((r) => r[0]);
+    if (!post) { res.status(404).json({ error: "Post not found" }); return; }
+    const user = await getUserWithRole(clerkId);
+    if (post.authorId !== clerkId && user?.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
     await db.delete(postsTable).where(eq(postsTable.id, id));
     res.status(204).send();
   } catch (err) {
@@ -113,22 +146,18 @@ router.delete("/posts/:postId", async (req, res): Promise<void> => {
   }
 });
 
-// POST /api/posts/:postId/like
+/* ── POST /api/posts/:postId/like ───────────────────────────── */
 router.post("/posts/:postId/like", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
-
     const postId = parseInt(req.params.postId);
     if (isNaN(postId)) { res.status(400).json({ error: "Invalid id" }); return; }
-
     const existingLike = await db.select().from(postLikesTable)
       .where(and(eq(postLikesTable.postId, postId), eq(postLikesTable.userId, clerkId)))
       .limit(1).then((r) => r[0]);
-
     const post = await db.select().from(postsTable).where(eq(postsTable.id, postId)).limit(1).then((r) => r[0]);
     if (!post) { res.status(404).json({ error: "Post not found" }); return; }
-
     if (existingLike) {
       await db.delete(postLikesTable).where(and(eq(postLikesTable.postId, postId), eq(postLikesTable.userId, clerkId)));
       const updated = await db.update(postsTable).set({ likes: Math.max(0, post.likes - 1) }).where(eq(postsTable.id, postId)).returning();
@@ -144,12 +173,11 @@ router.post("/posts/:postId/like", async (req, res): Promise<void> => {
   }
 });
 
-// GET /api/posts/:postId/comments
+/* ── GET /api/posts/:postId/comments ───────────────────────── */
 router.get("/posts/:postId/comments", async (req, res): Promise<void> => {
   try {
     const postId = parseInt(req.params.postId);
     if (isNaN(postId)) { res.status(400).json({ error: "Invalid id" }); return; }
-
     const comments = await db.select().from(commentsTable).where(eq(commentsTable.postId, postId)).limit(100);
     const results = await Promise.all(comments.map(async (c) => {
       const author = await db.select({ displayName: usersTable.displayName, avatarUrl: usersTable.avatarUrl }).from(usersTable).where(eq(usersTable.id, c.authorId)).limit(1);
@@ -167,22 +195,18 @@ router.get("/posts/:postId/comments", async (req, res): Promise<void> => {
   }
 });
 
-// POST /api/posts/:postId/comments
+/* ── POST /api/posts/:postId/comments ──────────────────────── */
 router.post("/posts/:postId/comments", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
-
     const postId = parseInt(req.params.postId);
     if (isNaN(postId)) { res.status(400).json({ error: "Invalid id" }); return; }
-
     const { content } = req.body;
     if (!content) { res.status(400).json({ error: "content required" }); return; }
-
     const inserted = await db.insert(commentsTable).values({ postId, authorId: clerkId, content }).returning();
     const c = inserted[0];
     const author = await db.select({ displayName: usersTable.displayName, avatarUrl: usersTable.avatarUrl }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1);
-
     res.status(201).json({
       id: c.id, postId: c.postId, authorId: c.authorId,
       authorName: author[0]?.displayName ?? null,

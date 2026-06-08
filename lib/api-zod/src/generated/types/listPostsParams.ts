@@ -7,6 +7,7 @@
  */
 
 export type ListPostsParams = {
+channelId?: number;
 category?: string;
 authorId?: string;
 };

@@ -924,15 +924,102 @@ export const GetMyAttendanceResponse = zod.array(GetMyAttendanceResponseItem)
 
 
 /**
+ * @summary List community channels (filtered by user access)
+ */
+export const ListChannelsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "emoji": zod.string(),
+  "slug": zod.string(),
+  "description": zod.string().nullish(),
+  "position": zod.number(),
+  "accessType": zod.string(),
+  "courseId": zod.number().nullish(),
+  "batchId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
+  "batchName": zod.string().nullish(),
+  "createdBy": zod.string(),
+  "createdAt": zod.string()
+})
+export const ListChannelsResponse = zod.array(ListChannelsResponseItem)
+
+
+/**
+ * @summary Create a channel (admin only)
+ */
+
+
+
+export const CreateChannelBody = zod.object({
+  "name": zod.string().min(1),
+  "emoji": zod.string().optional(),
+  "slug": zod.string().optional(),
+  "description": zod.string().optional(),
+  "position": zod.number().optional(),
+  "accessType": zod.string(),
+  "courseId": zod.number().optional(),
+  "batchId": zod.number().optional()
+})
+
+
+/**
+ * @summary Update channel (admin only)
+ */
+export const UpdateChannelParams = zod.object({
+  "channelId": zod.coerce.number()
+})
+
+
+
+
+export const UpdateChannelBody = zod.object({
+  "name": zod.string().min(1),
+  "emoji": zod.string().optional(),
+  "slug": zod.string().optional(),
+  "description": zod.string().optional(),
+  "position": zod.number().optional(),
+  "accessType": zod.string(),
+  "courseId": zod.number().optional(),
+  "batchId": zod.number().optional()
+})
+
+export const UpdateChannelResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "emoji": zod.string(),
+  "slug": zod.string(),
+  "description": zod.string().nullish(),
+  "position": zod.number(),
+  "accessType": zod.string(),
+  "courseId": zod.number().nullish(),
+  "batchId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
+  "batchName": zod.string().nullish(),
+  "createdBy": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete channel (admin only)
+ */
+export const DeleteChannelParams = zod.object({
+  "channelId": zod.coerce.number()
+})
+
+
+/**
  * @summary List community posts
  */
 export const ListPostsQueryParams = zod.object({
+  "channelId": zod.coerce.number().optional(),
   "category": zod.coerce.string().optional(),
   "authorId": zod.coerce.string().optional()
 })
 
 export const ListPostsResponseItem = zod.object({
   "id": zod.number(),
+  "channelId": zod.number().nullish(),
   "authorId": zod.string(),
   "authorName": zod.string().nullish(),
   "authorAvatar": zod.string().nullish(),
@@ -955,6 +1042,7 @@ export const ListPostsResponse = zod.array(ListPostsResponseItem)
 
 
 export const CreatePostBody = zod.object({
+  "channelId": zod.number().optional(),
   "title": zod.string().min(1),
   "content": zod.string().optional(),
   "category": zod.string(),
@@ -971,6 +1059,7 @@ export const GetPostParams = zod.object({
 
 export const GetPostResponse = zod.object({
   "id": zod.number(),
+  "channelId": zod.number().nullish(),
   "authorId": zod.string(),
   "authorName": zod.string().nullish(),
   "authorAvatar": zod.string().nullish(),
@@ -993,6 +1082,7 @@ export const UpdatePostParams = zod.object({
 })
 
 export const UpdatePostBody = zod.object({
+  "channelId": zod.number().optional(),
   "title": zod.string().optional(),
   "content": zod.string().optional(),
   "category": zod.string().optional(),
@@ -1002,6 +1092,7 @@ export const UpdatePostBody = zod.object({
 
 export const UpdatePostResponse = zod.object({
   "id": zod.number(),
+  "channelId": zod.number().nullish(),
   "authorId": zod.string(),
   "authorName": zod.string().nullish(),
   "authorAvatar": zod.string().nullish(),
@@ -1033,6 +1124,7 @@ export const LikePostParams = zod.object({
 
 export const LikePostResponse = zod.object({
   "id": zod.number(),
+  "channelId": zod.number().nullish(),
   "authorId": zod.string(),
   "authorName": zod.string().nullish(),
   "authorAvatar": zod.string().nullish(),

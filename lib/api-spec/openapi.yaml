@@ -892,12 +892,86 @@ paths:
                   $ref: "#/components/schemas/Attendance"
 
   # ── COMMUNITY ──────────────────────────────────────────────────────────────
+  /channels:
+    get:
+      operationId: listChannels
+      tags: [community]
+      summary: List community channels (filtered by user access)
+      responses:
+        "200":
+          description: Channels list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommunityChannel"
+    post:
+      operationId: createChannel
+      tags: [community]
+      summary: Create a channel (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelInput"
+      responses:
+        "201":
+          description: Created channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityChannel"
+
+  /channels/{channelId}:
+    patch:
+      operationId: updateChannel
+      tags: [community]
+      summary: Update channel (admin only)
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelInput"
+      responses:
+        "200":
+          description: Updated channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityChannel"
+    delete:
+      operationId: deleteChannel
+      tags: [community]
+      summary: Delete channel (admin only)
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   /posts:
     get:
       operationId: listPosts
       tags: [community]
       summary: List community posts
       parameters:
+        - name: channelId
+          in: query
+          schema:
+            type: integer
         - name: category
           in: query
           schema:
@@ -2371,11 +2445,43 @@ components:
         leftAt: { type: string }
         durationMinutes: { type: integer }
 
+    CommunityChannel:
+      type: object
+      required: [id, name, emoji, slug, position, accessType, createdBy, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        emoji: { type: string }
+        slug: { type: string }
+        description: { type: ["string", "null"] }
+        position: { type: integer }
+        accessType: { type: string }
+        courseId: { type: ["integer", "null"] }
+        batchId: { type: ["integer", "null"] }
+        courseName: { type: ["string", "null"] }
+        batchName: { type: ["string", "null"] }
+        createdBy: { type: string }
+        createdAt: { type: string }
+
+    ChannelInput:
+      type: object
+      required: [name, accessType]
+      properties:
+        name: { type: string, minLength: 1 }
+        emoji: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        position: { type: integer }
+        accessType: { type: string }
+        courseId: { type: integer }
+        batchId: { type: integer }
+
     Post:
       type: object
       required: [id, authorId, title, category]
       properties:
         id: { type: integer }
+        channelId: { type: ["integer", "null"] }
         authorId: { type: string }
         authorName: { type: ["string", "null"] }
         authorAvatar: { type: ["string", "null"] }
@@ -2392,6 +2498,7 @@ components:
       type: object
       required: [title, category]
       properties:
+        channelId: { type: integer }
         title: { type: string, minLength: 1 }
         content: { type: string }
         category: { type: string }
@@ -2400,6 +2507,7 @@ components:
     PostUpdate:
       type: object
       properties:
+        channelId: { type: integer }
         title: { type: string }
         content: { type: string }
         category: { type: string }
