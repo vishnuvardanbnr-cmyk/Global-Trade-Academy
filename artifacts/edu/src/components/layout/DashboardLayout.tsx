@@ -52,7 +52,6 @@ const studentNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trading", label: "Markets", icon: LineChart },
   { href: "/courses", label: "Academy", icon: BookOpen },
-  { href: "/live", label: "Live Sessions", icon: Video },
   { href: "/copy-trading", label: "Copy Trading", icon: TrendingUp },
   { href: "/community", label: "Community", icon: MessageSquare },
 ];
@@ -66,7 +65,7 @@ const instructorNav = [
   { href: "/instructor", label: "Batches", icon: Layers, tab: "batches" },
   { href: "/instructor", label: "Reviews", icon: ClipboardCheck, tab: "reviews" },
   { href: "/courses", label: "Academy", icon: BookOpen, divider: true },
-  { href: "/live", label: "Live Sessions", icon: Video },
+
 ];
 
 const adminNav = [
@@ -80,7 +79,7 @@ const adminNav = [
   { href: "/admin", label: "Broadcast", icon: Megaphone, tab: "broadcast" },
   { href: "/admin", label: "Activity", icon: Activity, tab: "activity" },
   { href: "/courses", label: "Academy", icon: BookOpen, divider: true },
-  { href: "/live", label: "Live Sessions", icon: Video },
+
 ];
 
 const XP_PER_LEVEL = 500;

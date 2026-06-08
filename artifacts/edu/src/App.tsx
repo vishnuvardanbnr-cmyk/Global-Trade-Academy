@@ -21,7 +21,6 @@ const CourseDetail     = lazy(() => import("@/pages/course-detail"));
 const Trading          = lazy(() => import("@/pages/trading"));
 const CopyTrading      = lazy(() => import("@/pages/copy-trading"));
 const Community        = lazy(() => import("@/pages/community"));
-const LiveClasses      = lazy(() => import("@/pages/live-classes"));
 const LiveRoom         = lazy(() => import("@/pages/live-room"));
 const InstructorPanel  = lazy(() => import("@/pages/instructor"));
 const AdminPanel       = lazy(() => import("@/pages/admin"));
@@ -96,7 +95,6 @@ function AppRoutes() {
       <Route path="/copy-trading"><ProtectedRoute component={CopyTrading} /></Route>
       <Route path="/community"><ProtectedRoute component={Community} /></Route>
       <Route path="/live/:classId/room"><ProtectedRouteFullScreen component={LiveRoom} /></Route>
-      <Route path="/live"><ProtectedRoute component={LiveClasses} /></Route>
       <Route path="/instructor"><RoleProtectedRoute component={InstructorPanel} allowedRoles={["instructor", "admin"]} /></Route>
       <Route path="/admin"><RoleProtectedRoute component={AdminPanel} allowedRoles={["admin"]} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
