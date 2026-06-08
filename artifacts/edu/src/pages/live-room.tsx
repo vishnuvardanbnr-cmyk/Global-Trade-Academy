@@ -32,7 +32,7 @@ import {
   useRoomContext,
   useStartAudio,
 } from "@livekit/components-react";
-import { Track, Room, VideoPresets, ConnectionQuality } from "livekit-client";
+import { Track, Room, RoomEvent, VideoPresets, ConnectionQuality } from "livekit-client";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 function formatTime(d: string | Date) {
@@ -749,6 +749,29 @@ function LiveKitGrid({
   );
 }
 
+// Room options defined OUTSIDE the component so the object reference is stable
+// across renders. Passing `options={{...}}` inline creates a new object every
+// render, which LiveKitRoom's internal effect sees as a change and calls
+// room.disconnect() → CLIENT_REQUEST_LEAVE every ~10-15 s.
+const ROOM_OPTIONS = {
+  adaptiveStream: true,
+  dynacast: true,
+  publishDefaults: {
+    simulcast: true,
+    videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360, VideoPresets.h720],
+    videoEncoding: VideoPresets.h720.encoding,
+    videoCodec: "vp9" as const,
+    dtx: true,
+    red: false,
+  },
+  audioCaptureDefaults: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+  videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
+};
+
 function LiveKitVideoArea({
   token,
   serverUrl,
@@ -767,6 +790,42 @@ function LiveKitVideoArea({
   onVideoMuted: (m: boolean) => void;
 }) {
   const [started, setStarted] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  // Create the Room once; never recreated while the component is mounted.
+  // This ensures LiveKitRoom's internal effects never see a changed `room`
+  // reference and therefore never trigger an unwanted disconnect.
+  const room = useMemo(() => new Room(ROOM_OPTIONS), []);
+
+  // Connect imperatively once when the user clicks "Join Room".
+  // We depend only on `started`; token/serverUrl are captured at join time
+  // and don't change (staleTime: 1 h on the token query).
+  useEffect(() => {
+    if (!started) return;
+
+    let alive = true;
+
+    const handleDisconnect = () => { if (alive) onDisconnected(); };
+    room.on(RoomEvent.Disconnected, handleDisconnect);
+
+    room.connect(serverUrl, token)
+      .then(() => {
+        if (!alive) return;
+        // Enable mic by default (camera starts off)
+        room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+        onJoined();
+      })
+      .catch((e: unknown) => {
+        if (alive) setConnectError((e as Error).message ?? "Connection failed");
+      });
+
+    return () => {
+      alive = false;
+      room.off(RoomEvent.Disconnected, handleDisconnect);
+      room.disconnect();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started]); // intentional: only run when user clicks Join, not on every render
 
   if (!started) {
     return (
@@ -777,9 +836,12 @@ function LiveKitVideoArea({
           </div>
           <p className="text-white/70 text-[15px] font-medium mb-1">Ready to join?</p>
           <p className="text-white/35 text-[12px]">Your mic will be enabled when you join</p>
+          {connectError && (
+            <p className="text-red-400 text-[11.5px] mt-2">{connectError}</p>
+          )}
         </div>
         <button
-          onClick={() => setStarted(true)}
+          onClick={() => { setConnectError(null); setStarted(true); }}
           className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-[14px] transition-colors"
         >
           <Mic className="h-4 w-4" />
@@ -789,33 +851,14 @@ function LiveKitVideoArea({
     );
   }
 
+  // Pass the already-connected `room` and `connect={false}` so LiveKitRoom
+  // acts purely as a context provider — it never calls room.connect() or
+  // room.disconnect() internally. All hooks (useLocalParticipant, useTracks,
+  // etc.) read from the stable room object via React context.
   return (
     <LiveKitRoom
-      serverUrl={serverUrl}
-      token={token}
-      connect
-      audio
-      video={false}
-      onConnected={onJoined}
-      onDisconnected={onDisconnected}
-      options={{
-        adaptiveStream: true,
-        dynacast: true,
-        publishDefaults: {
-          simulcast: true,
-          videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360, VideoPresets.h720],
-          videoEncoding: VideoPresets.h720.encoding,
-          videoCodec: "vp9",
-          dtx: true,
-          red: false,
-        },
-        audioCaptureDefaults: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
-      }}
+      room={room}
+      connect={false}
       style={{ height: "100%", background: "transparent" }}
     >
       <LiveKitGrid
