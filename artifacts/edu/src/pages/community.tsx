@@ -417,12 +417,6 @@ export default function Community() {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Community</h1>
-          <p className="text-sm text-muted-foreground">Discuss markets, share analysis, and connect with traders.</p>
-        </div>
-      </div>
       <div className="flex-1 flex rounded-xl border border-border overflow-hidden bg-background min-h-0">
         <ChannelSidebar
           channels={displayChannels}
