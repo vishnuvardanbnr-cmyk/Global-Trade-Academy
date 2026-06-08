@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { useUser } from "@/lib/authContext";
 import {
@@ -790,42 +790,6 @@ function LiveKitVideoArea({
   onVideoMuted: (m: boolean) => void;
 }) {
   const [started, setStarted] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-
-  // Create the Room once; never recreated while the component is mounted.
-  // This ensures LiveKitRoom's internal effects never see a changed `room`
-  // reference and therefore never trigger an unwanted disconnect.
-  const room = useMemo(() => new Room(ROOM_OPTIONS), []);
-
-  // Connect imperatively once when the user clicks "Join Room".
-  // We depend only on `started`; token/serverUrl are captured at join time
-  // and don't change (staleTime: 1 h on the token query).
-  useEffect(() => {
-    if (!started) return;
-
-    let alive = true;
-
-    const handleDisconnect = () => { if (alive) onDisconnected(); };
-    room.on(RoomEvent.Disconnected, handleDisconnect);
-
-    room.connect(serverUrl, token)
-      .then(() => {
-        if (!alive) return;
-        // Enable mic by default (camera starts off)
-        room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
-        onJoined();
-      })
-      .catch((e: unknown) => {
-        if (alive) setConnectError((e as Error).message ?? "Connection failed");
-      });
-
-    return () => {
-      alive = false;
-      room.off(RoomEvent.Disconnected, handleDisconnect);
-      room.disconnect();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started]); // intentional: only run when user clicks Join, not on every render
 
   if (!started) {
     return (
@@ -836,12 +800,9 @@ function LiveKitVideoArea({
           </div>
           <p className="text-white/70 text-[15px] font-medium mb-1">Ready to join?</p>
           <p className="text-white/35 text-[12px]">Your mic will be enabled when you join</p>
-          {connectError && (
-            <p className="text-red-400 text-[11.5px] mt-2">{connectError}</p>
-          )}
         </div>
         <button
-          onClick={() => { setConnectError(null); setStarted(true); }}
+          onClick={() => setStarted(true)}
           className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-[14px] transition-colors"
         >
           <Mic className="h-4 w-4" />
@@ -851,14 +812,20 @@ function LiveKitVideoArea({
     );
   }
 
-  // Pass the already-connected `room` and `connect={false}` so LiveKitRoom
-  // acts purely as a context provider — it never calls room.connect() or
-  // room.disconnect() internally. All hooks (useLocalParticipant, useTracks,
-  // etc.) read from the stable room object via React context.
+  // ROOM_OPTIONS is a module-level constant so JSON.stringify(options) inside
+  // useLiveKitRoom always returns the same string → the internal Room object
+  // is never recreated → its cleanup never calls room.disconnect() → no
+  // CLIENT_REQUEST_LEAVE cycles on re-renders from the 10 s class refetch.
   return (
     <LiveKitRoom
-      room={room}
-      connect={false}
+      serverUrl={serverUrl}
+      token={token}
+      connect
+      audio
+      video={false}
+      onConnected={onJoined}
+      onDisconnected={onDisconnected}
+      options={ROOM_OPTIONS}
       style={{ height: "100%", background: "transparent" }}
     >
       <LiveKitGrid
