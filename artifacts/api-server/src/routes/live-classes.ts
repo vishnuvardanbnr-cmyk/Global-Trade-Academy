@@ -524,8 +524,9 @@ router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
     const displayName = users[0]?.displayName ?? clerkId;
 
     const { AccessToken } = await import("livekit-server-sdk");
+    const sessionSuffix = Math.random().toString(36).slice(2, 7);
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity: clerkId,
+      identity: `${clerkId}-${sessionSuffix}`,
       name: displayName,
       ttl: 7200,
     });
