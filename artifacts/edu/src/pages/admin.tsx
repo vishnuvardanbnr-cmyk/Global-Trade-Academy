@@ -797,6 +797,9 @@ function ChannelFormDialog({
   const [description, setDescription] = useState(existing?.description ?? "");
   const [accessType, setAccessType] = useState<string>(existing?.accessType ?? "common");
   const [courseId, setCourseId] = useState<string>(existing?.courseId ? String(existing.courseId) : "");
+  const [batchId, setBatchId] = useState<string>(existing?.batchId ? String(existing.batchId) : "");
+  const [batches, setBatches] = useState<{ id: number; name: string }[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
   const [position, setPosition] = useState<string>(existing?.position ? String(existing.position) : "0");
   const { data: courses } = useListCourses();
 
@@ -806,12 +809,28 @@ function ChannelFormDialog({
       setSlug(existing.slug ?? ""); setDescription(existing.description ?? "");
       setAccessType(existing.accessType ?? "common");
       setCourseId(existing.courseId ? String(existing.courseId) : "");
+      setBatchId(existing.batchId ? String(existing.batchId) : "");
       setPosition(existing.position ? String(existing.position) : "0");
     } else if (open && !existing) {
       setName(""); setEmoji("💬"); setSlug(""); setDescription("");
-      setAccessType("common"); setCourseId(""); setPosition("0");
+      setAccessType("common"); setCourseId(""); setBatchId(""); setPosition("0");
     }
+    setBatches([]);
   }, [open, existing]);
+
+  useEffect(() => {
+    if (accessType === "batch" && courseId) {
+      setLoadingBatches(true);
+      setBatchId("");
+      fetch(`/api/instructor/courses/${courseId}/batches`)
+        .then((r) => r.json())
+        .then((d) => setBatches(Array.isArray(d) ? d.map((b: { id: number; name: string }) => ({ id: b.id, name: b.name })) : []))
+        .catch(() => setBatches([]))
+        .finally(() => setLoadingBatches(false));
+    } else {
+      setBatches([]);
+    }
+  }, [accessType, courseId]);
 
   const createChannel = useCreateChannel({
     mutation: {
@@ -843,7 +862,8 @@ function ChannelFormDialog({
       slug: slug.trim().toLowerCase().replace(/\s+/g, "-"),
       description: description.trim() || undefined,
       accessType: accessType as "common" | "course" | "batch",
-      courseId: accessType === "course" && courseId ? Number(courseId) : undefined,
+      courseId: (accessType === "course" || accessType === "batch") && courseId ? Number(courseId) : undefined,
+      batchId: accessType === "batch" && batchId ? Number(batchId) : undefined,
       position: Number(position) || 0,
     };
     if (existing) {
@@ -887,7 +907,7 @@ function ChannelFormDialog({
               <Input type="number" value={position} onChange={(e) => setPosition(e.target.value)} className="h-9" />
             </div>
           </div>
-          {accessType === "course" && (
+          {(accessType === "course" || accessType === "batch") && (
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Course</label>
               <Select value={courseId} onValueChange={setCourseId}>
@@ -900,6 +920,27 @@ function ChannelFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+          {accessType === "batch" && courseId && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Batch</label>
+              {loadingBatches ? (
+                <div className="h-9 rounded-md border animate-pulse bg-secondary/30" />
+              ) : batches.length === 0 ? (
+                <p className="text-sm text-muted-foreground bg-secondary/30 rounded-md px-3 py-2">No batches for this course.</p>
+              ) : (
+                <Select value={batchId} onValueChange={setBatchId}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select batch…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {batches.map((b) => (
+                      <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           )}
           <div className="flex justify-end gap-2 pt-2">
