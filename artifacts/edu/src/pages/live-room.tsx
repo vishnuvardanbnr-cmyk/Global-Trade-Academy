@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
-  ArrowLeft, Users, Clock, Video, VideoOff, Mic, MicOff,
+  ArrowLeft, Users, Clock, Video, VideoOff, Mic, MicOff, Monitor, MonitorOff,
   MessageSquare, PhoneOff, AlertTriangle,
   BookOpen, Calendar, Wifi, WifiOff, Loader2, Play,
   ChevronRight, Send, ThumbsUp, Pin, CheckCircle2, BarChart2,
@@ -26,11 +26,11 @@ import {
   GridLayout,
   ParticipantTile,
   RoomAudioRenderer,
-  ControlBar,
   useTracks,
   useParticipants,
   useLocalParticipant,
   useRoomContext,
+  useStartAudio,
 } from "@livekit/components-react";
 import { Track, Room, VideoPresets, ConnectionQuality } from "livekit-client";
 
@@ -586,8 +586,10 @@ function LiveKitGrid({
 }) {
   const room = useRoomContext();
   const participants = useParticipants();
-  const { localParticipant } = useLocalParticipant();
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   const [lowBw, setLowBw] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const { canPlayAudio, startAudio } = useStartAudio({ room });
 
   const tracks = useTracks(
     [
@@ -610,10 +612,9 @@ function LiveKitGrid({
   }, [participants.length, onParticipantCount]);
 
   useEffect(() => {
-    if (!localParticipant) return;
-    onAudioMuted(!localParticipant.isMicrophoneEnabled);
-    onVideoMuted(!localParticipant.isCameraEnabled);
-  }, [localParticipant?.isMicrophoneEnabled, localParticipant?.isCameraEnabled, onAudioMuted, onVideoMuted, localParticipant]);
+    onAudioMuted(!isMicrophoneEnabled);
+    onVideoMuted(!isCameraEnabled);
+  }, [isMicrophoneEnabled, isCameraEnabled, onAudioMuted, onVideoMuted]);
 
   const setRemoteVideoSubscribed = useCallback((subscribed: boolean) => {
     for (const p of room.remoteParticipants.values()) {
@@ -636,23 +637,95 @@ function LiveKitGrid({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [lowBw, setRemoteVideoSubscribed]);
 
+  const toggleMic = useCallback(async () => {
+    if (localParticipant) await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+  }, [localParticipant, isMicrophoneEnabled]);
+
+  const toggleCamera = useCallback(async () => {
+    if (localParticipant) await localParticipant.setCameraEnabled(!isCameraEnabled);
+  }, [localParticipant, isCameraEnabled]);
+
+  const toggleScreenShare = useCallback(async () => {
+    if (!localParticipant) return;
+    try {
+      await localParticipant.setScreenShareEnabled(!isScreenSharing);
+      setIsScreenSharing(v => !v);
+    } catch {
+      // user cancelled or permission denied
+    }
+  }, [localParticipant, isScreenSharing]);
+
   const quality = localParticipant?.connectionQuality;
 
   return (
-    <div className="flex flex-col h-full" data-lk-theme="default">
-      <div className="flex-1 min-h-0">
+    <div className="flex flex-col h-full">
+      <div className="flex-1 min-h-0" data-lk-theme="default">
         <GridLayout tracks={tracks} style={{ height: "100%" }}>
           <ParticipantTile />
         </GridLayout>
       </div>
-      <div className="shrink-0 bg-slate-900 border-t border-slate-700/50 flex items-center">
-        <div className="flex-1">
-          <ControlBar
-            variation="verbose"
-            controls={{ microphone: true, camera: true, screenShare: true, leave: false, chat: false }}
-          />
+
+      {/* Audio unlock banner */}
+      {!canPlayAudio && (
+        <div className="shrink-0 bg-blue-600/20 border-t border-blue-500/30 px-4 py-2 flex items-center justify-between">
+          <span className="text-[12px] text-blue-300">Click to enable audio from other participants</span>
+          <button onClick={startAudio}
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors">
+            Enable Audio
+          </button>
         </div>
-        <div className="flex items-center gap-3 px-4 border-l border-slate-700/50">
+      )}
+
+      {/* Custom controls */}
+      <div className="shrink-0 bg-slate-900 border-t border-slate-700/50 px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {/* Mic */}
+          <button
+            onClick={toggleMic}
+            title={isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-semibold transition-colors",
+              isMicrophoneEnabled
+                ? "bg-slate-700 text-white hover:bg-slate-600"
+                : "bg-red-600/30 text-red-400 border border-red-500/40 hover:bg-red-600/40"
+            )}
+          >
+            {isMicrophoneEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            {isMicrophoneEnabled ? "Mute" : "Unmute"}
+          </button>
+
+          {/* Camera */}
+          <button
+            onClick={toggleCamera}
+            title={isCameraEnabled ? "Turn off camera" : "Turn on camera"}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-semibold transition-colors",
+              isCameraEnabled
+                ? "bg-slate-700 text-white hover:bg-slate-600"
+                : "bg-red-600/30 text-red-400 border border-red-500/40 hover:bg-red-600/40"
+            )}
+          >
+            {isCameraEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+            {isCameraEnabled ? "Camera" : "Cam Off"}
+          </button>
+
+          {/* Screen Share */}
+          <button
+            onClick={toggleScreenShare}
+            title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-semibold transition-colors",
+              isScreenSharing
+                ? "bg-green-600/30 text-green-400 border border-green-500/40 hover:bg-green-600/40"
+                : "bg-slate-700 text-white hover:bg-slate-600"
+            )}
+          >
+            {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+            {isScreenSharing ? "Stop Share" : "Share Screen"}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
           <ConnectionQualityDot quality={quality} />
           <button
             onClick={() => setLowBw(v => !v)}
