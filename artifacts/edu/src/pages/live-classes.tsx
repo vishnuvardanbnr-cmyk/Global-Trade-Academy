@@ -80,10 +80,6 @@ export default function LiveClasses() {
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-[26px] font-extrabold text-slate-900 tracking-tight">Live Sessions</h1>
-          <p className="text-slate-500 text-[13.5px] mt-1">Real-time market analysis and expert Q&amp;A with top instructors.</p>
-        </div>
         {user && (
           <Link href="/instructor"
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-semibold transition-colors">

@@ -39,19 +39,6 @@ export default function Courses() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Header */}
-      <div className="border-b border-border pb-5">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-primary/10 shrink-0 mt-0.5">
-            <GraduationCap className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Academy</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Master trading from fundamentals to advanced strategies.</p>
-          </div>
-        </div>
-      </div>
-
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 sm:max-w-xs">

@@ -75,10 +75,6 @@ export default function CopyTrading() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Copy Trading</h1>
-          <p className="text-muted-foreground">Follow top performing traders and automatically replicate their trades.</p>
-        </div>
         {subscriptions && subscriptions.length > 0 && (
           <Badge variant="secondary" className="text-sm px-3 py-1">
             {subscriptions.length} active {subscriptions.length === 1 ? "subscription" : "subscriptions"}
