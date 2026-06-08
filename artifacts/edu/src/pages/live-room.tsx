@@ -792,7 +792,7 @@ export default function LiveRoom() {
   const handleLiveKitJoined = useCallback(() => setRoomJoined(true), []);
   const handleLiveKitDisconnected = useCallback(() => {
     setRoomJoined(false);
-    if (!isInstructor) navigate("/live");
+    if (!isInstructor) navigate("/dashboard");
   }, [isInstructor, navigate]);
 
   const handleStart = async () => {
@@ -811,7 +811,7 @@ export default function LiveRoom() {
       await endClass({ classId });
       await qc.invalidateQueries({ queryKey: getGetLiveClassQueryKey(classId) });
       toast({ title: "Session ended." });
-      setTimeout(() => navigate("/live"), 1500);
+      setTimeout(() => navigate("/dashboard"), 1500);
     } catch {
       toast({ title: "Could not end session", variant: "destructive" });
     }
@@ -841,7 +841,7 @@ export default function LiveRoom() {
 
       {/* ── Top bar ──────────────────────────────────────────────── */}
       <div className="shrink-0 bg-slate-900 border-b border-slate-700/50 px-4 py-2.5 flex items-center gap-3">
-        <Link href="/live"
+        <Link href="/dashboard"
           className="flex items-center gap-1.5 text-white/40 hover:text-white text-[12px] font-medium transition-colors shrink-0">
           <ArrowLeft className="h-3.5 w-3.5" />
           Sessions
