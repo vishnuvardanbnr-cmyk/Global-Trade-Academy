@@ -233,6 +233,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const isFullBleed  = location.startsWith("/courses/");
   const isChartPage  = location === "/trading" || location === "/community";
+  const isWidePage   = location === "/courses" || location === "/copy-trading";
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
@@ -471,6 +472,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               children
             ) : isChartPage ? (
               <div className="h-full p-4 md:p-5">
+                {children}
+              </div>
+            ) : isWidePage ? (
+              <div className="p-4 md:p-5">
                 {children}
               </div>
             ) : (
