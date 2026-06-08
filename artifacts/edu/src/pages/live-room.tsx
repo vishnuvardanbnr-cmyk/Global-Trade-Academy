@@ -789,10 +789,14 @@ export default function LiveRoom() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const handleLiveKitJoined = useCallback(() => setRoomJoined(true), []);
+  const didJoin = useRef(false);
+  const handleLiveKitJoined = useCallback(() => {
+    didJoin.current = true;
+    setRoomJoined(true);
+  }, []);
   const handleLiveKitDisconnected = useCallback(() => {
     setRoomJoined(false);
-    if (!isInstructor) navigate("/dashboard");
+    if (!isInstructor && didJoin.current) navigate("/dashboard");
   }, [isInstructor, navigate]);
 
   const handleStart = async () => {
