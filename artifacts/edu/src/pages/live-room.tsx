@@ -574,12 +574,10 @@ function ConnectionQualityDot({ quality }: { quality: ConnectionQuality | undefi
 }
 
 function LiveKitGrid({
-  onJoined,
   onParticipantCount,
   onAudioMuted,
   onVideoMuted,
 }: {
-  onJoined: () => void;
   onParticipantCount: (n: number) => void;
   onAudioMuted: (m: boolean) => void;
   onVideoMuted: (m: boolean) => void;
@@ -598,14 +596,6 @@ function LiveKitGrid({
     ],
     { onlySubscribed: true },
   );
-
-  const joined = useRef(false);
-  useEffect(() => {
-    if (!joined.current && localParticipant) {
-      joined.current = true;
-      onJoined();
-    }
-  }, [localParticipant, onJoined]);
 
   useEffect(() => {
     onParticipantCount(participants.length);
@@ -763,6 +753,10 @@ function LiveKitVideoArea({
   onAudioMuted: (m: boolean) => void;
   onVideoMuted: (m: boolean) => void;
 }) {
+  const [joined, setJoined] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+
   const room = useMemo(() => new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -788,19 +782,58 @@ function LiveKitVideoArea({
     },
   }), []);
 
+  const handleJoin = useCallback(async () => {
+    setJoining(true);
+    setJoinError(null);
+    try {
+      await room.connect(serverUrl, token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+      setJoined(true);
+      onJoined();
+    } catch (e) {
+      setJoinError((e as Error).message ?? "Failed to connect");
+    } finally {
+      setJoining(false);
+    }
+  }, [room, serverUrl, token, onJoined]);
+
+  if (!joined) {
+    return (
+      <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center gap-6">
+        <div className="text-center">
+          <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-4">
+            <Users className="h-8 w-8 text-white/40" />
+          </div>
+          <p className="text-white/70 text-[15px] font-medium mb-1">Ready to join?</p>
+          <p className="text-white/35 text-[12px]">Your mic will be enabled when you join</p>
+        </div>
+        {joinError && (
+          <div className="bg-red-900/30 border border-red-500/30 rounded-lg px-4 py-2 text-red-300 text-[12px] max-w-xs text-center">
+            {joinError}
+          </div>
+        )}
+        <button
+          onClick={handleJoin}
+          disabled={joining}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl font-semibold text-[14px] transition-colors"
+        >
+          {joining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+          {joining ? "Joining…" : "Join Room"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <LiveKitRoom
       room={room}
       serverUrl={serverUrl}
       token={token}
-      connect
-      audio
-      video={false}
+      connect={false}
       onDisconnected={onDisconnected}
       style={{ height: "100%", background: "transparent" }}
     >
       <LiveKitGrid
-        onJoined={onJoined}
         onParticipantCount={onParticipantCount}
         onAudioMuted={onAudioMuted}
         onVideoMuted={onVideoMuted}
