@@ -52,7 +52,6 @@ const studentNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trading", label: "Markets", icon: LineChart },
   { href: "/courses", label: "Academy", icon: BookOpen },
-  { href: "/certificates", label: "Certificates", icon: Award },
   { href: "/live", label: "Live Sessions", icon: Video },
   { href: "/copy-trading", label: "Copy Trading", icon: TrendingUp },
   { href: "/community", label: "Community", icon: MessageSquare },

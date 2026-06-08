@@ -18,7 +18,6 @@ import DemoLoginPage from "@/pages/demo-login";
 const Dashboard        = lazy(() => import("@/pages/dashboard"));
 const Courses          = lazy(() => import("@/pages/courses"));
 const CourseDetail     = lazy(() => import("@/pages/course-detail"));
-const Certificates     = lazy(() => import("@/pages/certificates"));
 const Trading          = lazy(() => import("@/pages/trading"));
 const CopyTrading      = lazy(() => import("@/pages/copy-trading"));
 const Community        = lazy(() => import("@/pages/community"));
@@ -93,7 +92,6 @@ function AppRoutes() {
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
       <Route path="/courses/:id"><ProtectedRoute component={CourseDetail} /></Route>
       <Route path="/courses"><ProtectedRoute component={Courses} /></Route>
-      <Route path="/certificates"><ProtectedRoute component={Certificates} /></Route>
       <Route path="/trading"><ProtectedRoute component={Trading} /></Route>
       <Route path="/copy-trading"><ProtectedRoute component={CopyTrading} /></Route>
       <Route path="/community"><ProtectedRoute component={Community} /></Route>
