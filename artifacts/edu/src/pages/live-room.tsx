@@ -589,6 +589,11 @@ function LiveKitGrid({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const { canPlayAudio, startAudio } = useStartAudio({ room });
 
+  // Keep isScreenSharing in sync with what LiveKit actually has active
+  useEffect(() => {
+    setIsScreenSharing(localParticipant?.isScreenShareEnabled ?? false);
+  }, [localParticipant?.isScreenShareEnabled]);
+
   // Optimistic local state — flips instantly on click; resyncs from LiveKit when it settles
   const [micOpt, setMicOpt] = useState<boolean | null>(null);
   const [camOpt, setCamOpt] = useState<boolean | null>(null);
@@ -599,12 +604,16 @@ function LiveKitGrid({
   useEffect(() => { setMicOpt(null); }, [isMicrophoneEnabled]);
   useEffect(() => { setCamOpt(null); }, [isCameraEnabled]);
 
+  // onlySubscribed: false is required when adaptiveStream is enabled.
+  // With adaptiveStream, tracks start unsubscribed until a DOM element is
+  // visible. If we filter to onlySubscribed:true, no tile mounts → no element
+  // → adaptive stream never subscribes → participant stays invisible forever.
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
       { source: Track.Source.ScreenShare, withPlaceholder: false },
     ],
-    { onlySubscribed: true },
+    { onlySubscribed: false },
   );
 
   useEffect(() => {
@@ -760,7 +769,9 @@ const ROOM_OPTIONS = {
     simulcast: true,
     videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360, VideoPresets.h720],
     videoEncoding: VideoPresets.h720.encoding,
-    videoCodec: "vp9" as const,
+    // vp9 is NOT supported for WebRTC publishing on Safari/iOS — use vp8 which
+    // is universally supported, and let LiveKit negotiate the best codec.
+    videoCodec: "vp8" as const,
     dtx: true,
     red: false,
   },

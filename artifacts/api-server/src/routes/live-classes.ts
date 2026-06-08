@@ -524,9 +524,11 @@ router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
     const displayName = users[0]?.displayName ?? clerkId;
 
     const { AccessToken } = await import("livekit-server-sdk");
-    const sessionSuffix = Math.random().toString(36).slice(2, 7);
+    // Use a deterministic identity (clerkId) so that if the same user
+    // refreshes or reconnects, LiveKit recognises them as the same participant
+    // and replaces the old session instead of creating a ghost duplicate.
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity: `${clerkId}-${sessionSuffix}`,
+      identity: clerkId,
       name: displayName,
       ttl: 7200,
     });
