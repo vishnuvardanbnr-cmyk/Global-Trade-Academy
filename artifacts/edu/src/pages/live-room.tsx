@@ -3,6 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useUser } from "@/lib/authContext";
 import {
   useGetLiveClass, useStartLiveClass, useEndLiveClass,
+  useGetMe,
   useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,
   useListLiveClassQuestions, useCreateLiveClassQuestion, useUpdateLiveClassQuestion, useUpvoteLiveClassQuestion, getListLiveClassQuestionsQueryKey,
   useListLiveClassPolls, useCreateLiveClassPoll, useUpdateLiveClassPoll, useVoteLiveClassPoll, getListLiveClassPollsQueryKey,
@@ -647,7 +648,7 @@ function LiveKitGrid({
       <div className="shrink-0 bg-slate-900 border-t border-slate-700/50 flex items-center">
         <div className="flex-1">
           <ControlBar
-            variation="minimal"
+            variation="verbose"
             controls={{ microphone: true, camera: true, screenShare: true, leave: false, chat: false }}
           />
         </div>
@@ -759,8 +760,9 @@ export default function LiveRoom() {
 
   const { mutateAsync: startClass, isPending: starting } = useStartLiveClass();
   const { mutateAsync: endClass, isPending: ending } = useEndLiveClass();
+  const { data: me } = useGetMe();
 
-  const isInstructor = !!user && cls?.instructorId === user.id;
+  const isInstructor = (!!user && cls?.instructorId === user.id) || me?.role === "admin" || me?.role === "instructor";
 
   /* ─── LiveKit state ──────────────────────────────────────────── */
   const [roomJoined, setRoomJoined] = useState(false);
