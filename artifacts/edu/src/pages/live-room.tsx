@@ -589,6 +589,16 @@ function LiveKitGrid({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const { canPlayAudio, startAudio } = useStartAudio({ room });
 
+  // Optimistic local state — flips instantly on click; resyncs from LiveKit when it settles
+  const [micOpt, setMicOpt] = useState<boolean | null>(null);
+  const [camOpt, setCamOpt] = useState<boolean | null>(null);
+  const micOn = micOpt ?? isMicrophoneEnabled;
+  const camOn = camOpt ?? isCameraEnabled;
+
+  // Resync optimistic state when LiveKit confirms the real state
+  useEffect(() => { setMicOpt(null); }, [isMicrophoneEnabled]);
+  useEffect(() => { setCamOpt(null); }, [isCameraEnabled]);
+
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
@@ -627,22 +637,25 @@ function LiveKitGrid({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [lowBw, setRemoteVideoSubscribed]);
 
-  const toggleMic = useCallback(async () => {
-    if (localParticipant) await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
-  }, [localParticipant, isMicrophoneEnabled]);
-
-  const toggleCamera = useCallback(async () => {
-    if (localParticipant) await localParticipant.setCameraEnabled(!isCameraEnabled);
-  }, [localParticipant, isCameraEnabled]);
-
-  const toggleScreenShare = useCallback(async () => {
+  const toggleMic = useCallback(() => {
     if (!localParticipant) return;
-    try {
-      await localParticipant.setScreenShareEnabled(!isScreenSharing);
-      setIsScreenSharing(v => !v);
-    } catch {
-      // user cancelled or permission denied
-    }
+    const next = !micOn;
+    setMicOpt(next);
+    localParticipant.setMicrophoneEnabled(next).catch(() => setMicOpt(null));
+  }, [localParticipant, micOn]);
+
+  const toggleCamera = useCallback(() => {
+    if (!localParticipant) return;
+    const next = !camOn;
+    setCamOpt(next);
+    localParticipant.setCameraEnabled(next).catch(() => setCamOpt(null));
+  }, [localParticipant, camOn]);
+
+  const toggleScreenShare = useCallback(() => {
+    if (!localParticipant) return;
+    const next = !isScreenSharing;
+    setIsScreenSharing(next);
+    localParticipant.setScreenShareEnabled(next).catch(() => setIsScreenSharing(v => !v));
   }, [localParticipant, isScreenSharing]);
 
   const quality = localParticipant?.connectionQuality;
@@ -672,31 +685,31 @@ function LiveKitGrid({
           {/* Mic */}
           <button
             onClick={toggleMic}
-            title={isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"}
+            title={micOn ? "Mute microphone" : "Unmute microphone"}
             className={cn(
               "flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-semibold transition-colors",
-              isMicrophoneEnabled
+              micOn
                 ? "bg-slate-700 text-white hover:bg-slate-600"
                 : "bg-red-600/30 text-red-400 border border-red-500/40 hover:bg-red-600/40"
             )}
           >
-            {isMicrophoneEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-            {isMicrophoneEnabled ? "Mute" : "Unmute"}
+            {micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            {micOn ? "Mute" : "Unmute"}
           </button>
 
           {/* Camera */}
           <button
             onClick={toggleCamera}
-            title={isCameraEnabled ? "Turn off camera" : "Turn on camera"}
+            title={camOn ? "Turn off camera" : "Turn on camera"}
             className={cn(
               "flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-semibold transition-colors",
-              isCameraEnabled
+              camOn
                 ? "bg-slate-700 text-white hover:bg-slate-600"
                 : "bg-red-600/30 text-red-400 border border-red-500/40 hover:bg-red-600/40"
             )}
           >
-            {isCameraEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-            {isCameraEnabled ? "Camera" : "Cam Off"}
+            {camOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+            {camOn ? "Camera" : "Cam Off"}
           </button>
 
           {/* Screen Share */}
