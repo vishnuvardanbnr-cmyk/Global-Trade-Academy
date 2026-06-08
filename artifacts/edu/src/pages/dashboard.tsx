@@ -281,11 +281,12 @@ export default function Dashboard() {
                               ) : (
                                 <span className="text-[11px] font-medium text-yellow-600">{when}</span>
                               )}
-                              {session.meetingUrl && isLive && (
-                                <a href={session.meetingUrl} target="_blank" rel="noopener noreferrer"
-                                  className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5">
-                                  Join <ArrowUpRight className="h-3 w-3" />
-                                </a>
+                              {diff <= 0 && (
+                                <Link href={`/live/${session.id}/room`}>
+                                  <span className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5 cursor-pointer">
+                                    Join <ArrowUpRight className="h-3 w-3" />
+                                  </span>
+                                </Link>
                               )}
                             </div>
                           </div>
