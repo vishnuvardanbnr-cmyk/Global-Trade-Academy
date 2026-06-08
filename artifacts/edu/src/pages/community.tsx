@@ -409,7 +409,7 @@ export default function Community() {
     query: { queryKey: getListChannelsQueryKey() },
   });
 
-  const canPost = me?.role === "admin" || me?.role === "instructor";
+  const canPost = !!me;
 
   // Auto-select first channel
   const displayChannels = channels ?? [];

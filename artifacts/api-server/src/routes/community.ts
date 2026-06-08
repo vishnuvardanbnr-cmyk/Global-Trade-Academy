@@ -61,15 +61,13 @@ router.get("/posts", async (req, res): Promise<void> => {
   }
 });
 
-/* ── POST /api/posts — admin + instructor only ──────────────── */
+/* ── POST /api/posts — any authenticated member ─────────────── */
 router.post("/posts", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const user = await getUserWithRole(clerkId);
-    if (!user || !["admin", "instructor"].includes(user.role)) {
-      res.status(403).json({ error: "Only admins and instructors can post" }); return;
-    }
+    if (!user) { res.status(403).json({ error: "User not found" }); return; }
     const { title, content, category, imageUrl, channelId } = req.body;
     if (!title) { res.status(400).json({ error: "title required" }); return; }
     if (channelId != null) {
