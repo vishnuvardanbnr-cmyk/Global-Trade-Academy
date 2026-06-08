@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useUser } from "@/lib/authContext";
 import {
   useListLiveClasses, useRegisterLiveClass, useListCourses,
-  getListLiveClassesQueryKey,
+  getListLiveClassesQueryKey, useGetMe,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +43,7 @@ export default function LiveClasses() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useUser();
+  const { data: me } = useGetMe();
   const [registering, setRegistering] = useState<number | null>(null);
   const [courseFilter, setCourseFilter] = useState<number | "all">("all");
 
@@ -80,7 +81,7 @@ export default function LiveClasses() {
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        {user && (
+        {(me?.role === "instructor" || me?.role === "admin") && (
           <Link href="/instructor"
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-semibold transition-colors">
             <Video className="h-4 w-4" />
