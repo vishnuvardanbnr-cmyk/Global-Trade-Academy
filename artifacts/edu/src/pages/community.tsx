@@ -417,7 +417,7 @@ export default function Community() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 flex rounded-xl border border-border overflow-hidden bg-background min-h-0">
+      <div className="flex-1 flex overflow-hidden bg-background min-h-0 border-t border-border">
         <ChannelSidebar
           channels={displayChannels}
           active={active}
