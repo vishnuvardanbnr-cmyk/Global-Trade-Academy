@@ -232,7 +232,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pendingReviews = reviewCount?.pending ?? 0;
 
   const isFullBleed  = location.startsWith("/courses/");
-  const isChartPage  = location === "/trading";
+  const isChartPage  = location === "/trading" || location === "/community";
 
   const sidebarContent = (
     <div className="flex flex-col h-full">

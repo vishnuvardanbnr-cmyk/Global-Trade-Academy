@@ -416,7 +416,7 @@ export default function Community() {
   const active = activeChannel ?? displayChannels[0] ?? null;
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       <div className="flex-1 flex rounded-xl border border-border overflow-hidden bg-background min-h-0">
         <ChannelSidebar
           channels={displayChannels}
