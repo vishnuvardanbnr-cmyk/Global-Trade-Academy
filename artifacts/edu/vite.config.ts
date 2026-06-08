@@ -59,6 +59,44 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Core React runtime — always cached after first visit
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/scheduler/")) {
+            return "vendor-react";
+          }
+          // Data-fetching layer
+          if (id.includes("node_modules/@tanstack/")) {
+            return "vendor-query";
+          }
+          // Radix UI primitives (bulk of UI lib)
+          if (id.includes("node_modules/@radix-ui/")) {
+            return "vendor-radix";
+          }
+          // Router
+          if (id.includes("node_modules/wouter/")) {
+            return "vendor-router";
+          }
+          // Form handling
+          if (id.includes("node_modules/react-hook-form/") || id.includes("node_modules/zod/") || id.includes("node_modules/@hookform/")) {
+            return "vendor-forms";
+          }
+          // LiveKit
+          if (id.includes("node_modules/@livekit/") || id.includes("node_modules/livekit-client/")) {
+            return "vendor-livekit";
+          }
+          // Icons (large)
+          if (id.includes("node_modules/lucide-react/")) {
+            return "vendor-icons";
+          }
+          // All other node_modules go to vendor-misc
+          if (id.includes("node_modules/")) {
+            return "vendor-misc";
+          }
+        },
+      },
+    },
   },
   server: {
     port,
