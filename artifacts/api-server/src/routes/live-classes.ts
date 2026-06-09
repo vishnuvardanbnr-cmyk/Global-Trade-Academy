@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getAuth } from "../lib/auth";
+import { broadcast } from "../lib/ws";
 import { db } from "@workspace/db";
 import {
   liveClassesTable, liveClassRegistrationsTable,
@@ -264,6 +265,7 @@ router.post("/live-classes/:classId/messages", async (req, res): Promise<void> =
       classId, userId: clerkId, userName: user?.displayName ?? null, message: message.trim(),
     }).returning();
     res.status(201).json(inserted[0]);
+    broadcast(`live-class:${classId}:messages`, inserted[0]);
   } catch (err) {
     req.log.error({ err }, "Error creating message");
     res.status(500).json({ error: "Internal server error" });
@@ -309,6 +311,7 @@ router.post("/live-classes/:classId/questions", async (req, res): Promise<void> 
       classId, userId: clerkId, userName: user?.displayName ?? null, question: question.trim(),
     }).returning();
     res.status(201).json({ ...inserted[0], hasUpvoted: false });
+    broadcast(`live-class:${classId}:questions`, null);
   } catch (err) {
     req.log.error({ err }, "Error creating question");
     res.status(500).json({ error: "Internal server error" });
@@ -333,6 +336,7 @@ router.patch("/live-classes/:classId/questions/:questionId", async (req, res): P
     }).where(and(eq(liveClassQuestionsTable.id, questionId), eq(liveClassQuestionsTable.classId, classId))).returning();
     if (!updated[0]) { res.status(404).json({ error: "Question not found" }); return; }
     res.json({ ...updated[0], hasUpvoted: false });
+    broadcast(`live-class:${classId}:questions`, null);
   } catch (err) {
     req.log.error({ err }, "Error updating question");
     res.status(500).json({ error: "Internal server error" });
@@ -359,6 +363,7 @@ router.post("/live-classes/:classId/questions/:questionId/upvote", async (req, r
       await db.update(liveClassQuestionsTable).set({ upvoteCount: sql`${liveClassQuestionsTable.upvoteCount} + 1` }).where(eq(liveClassQuestionsTable.id, questionId));
       res.json({ upvoted: true });
     }
+    broadcast(`live-class:${classId}:questions`, null);
   } catch (err) {
     req.log.error({ err }, "Error upvoting question");
     res.status(500).json({ error: "Internal server error" });
@@ -406,6 +411,7 @@ router.post("/live-classes/:classId/polls", async (req, res): Promise<void> => {
     const poll = await db.insert(liveClassPollsTable).values({ classId, question: question.trim(), isActive: true }).returning().then((r) => r[0]);
     const opts = await db.insert(liveClassPollOptionsTable).values(options.map((text) => ({ pollId: poll.id, text: text.trim() }))).returning();
     res.status(201).json({ ...poll, options: opts, myVoteOptionId: null });
+    broadcast(`live-class:${classId}:polls`, null);
   } catch (err) {
     req.log.error({ err }, "Error creating poll");
     res.status(500).json({ error: "Internal server error" });
@@ -427,6 +433,7 @@ router.patch("/live-classes/:classId/polls/:pollId", async (req, res): Promise<v
     if (!updated) { res.status(404).json({ error: "Poll not found" }); return; }
     const options = await db.select().from(liveClassPollOptionsTable).where(eq(liveClassPollOptionsTable.pollId, pollId));
     res.json({ ...updated, options, myVoteOptionId: null });
+    broadcast(`live-class:${classId}:polls`, null);
   } catch (err) {
     req.log.error({ err }, "Error updating poll");
     res.status(500).json({ error: "Internal server error" });
@@ -456,6 +463,7 @@ router.post("/live-classes/:classId/polls/:pollId/vote", async (req, res): Promi
     await db.update(liveClassPollOptionsTable).set({ voteCount: sql`${liveClassPollOptionsTable.voteCount} + 1` }).where(eq(liveClassPollOptionsTable.id, optionId));
     const options = await db.select().from(liveClassPollOptionsTable).where(eq(liveClassPollOptionsTable.pollId, pollId));
     res.json({ ...poll, options, myVoteOptionId: optionId });
+    broadcast(`live-class:${classId}:polls`, null);
   } catch (err) {
     req.log.error({ err }, "Error voting on poll");
     res.status(500).json({ error: "Internal server error" });

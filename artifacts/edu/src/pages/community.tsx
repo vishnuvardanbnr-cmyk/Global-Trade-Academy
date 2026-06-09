@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useWS } from "@/hooks/useWS";
 import {
   useListChannels, useListPosts, useCreatePost, useLikePost,
   useListComments, useCreateComment, useDeletePost,
@@ -157,6 +158,9 @@ function CommentsSection({ postId }: { postId: number }) {
     query: { queryKey: getListCommentsQueryKey(postId) },
   });
   const { toast } = useToast();
+  useWS(`community:post:${postId}:comments`, useCallback(() => {
+    qc.invalidateQueries({ queryKey: getListCommentsQueryKey(postId) });
+  }, [postId, qc]));
   const addComment = useCreateComment({
     mutation: {
       onSuccess: () => {
@@ -393,6 +397,10 @@ function ChannelFeed({
   };
 
   const invalidate = () => qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) });
+
+  useWS(`community:${channel.id}:posts`, useCallback(() => {
+    qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) });
+  }, [channel.id, qc]));
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

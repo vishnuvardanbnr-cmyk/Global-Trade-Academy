@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link, useLocation } from "wouter";
+import { useWS } from "@/hooks/useWS";
 import { useUser } from "@/lib/authContext";
 import {
   useGetLiveClass, useStartLiveClass, useEndLiveClass,
@@ -78,9 +79,17 @@ function ChatPanel({ classId, currentUserId }: { classId: number; currentUserId:
   const bottomRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  const qc = useQueryClient();
   const { data: messages = [], refetch } = useListLiveClassMessages(classId, {
-    query: { queryKey: getListLiveClassMessagesQueryKey(classId), refetchInterval: 3000 },
+    query: { queryKey: getListLiveClassMessagesQueryKey(classId), refetchInterval: 60_000 },
   });
+  useWS(`live-class:${classId}:messages`, useCallback((data) => {
+    qc.setQueryData(getListLiveClassMessagesQueryKey(classId), (old: LiveClassMessage[] = []) => {
+      const msg = data as LiveClassMessage;
+      if (old.some((m) => m.id === msg.id)) return old;
+      return [...old, msg];
+    });
+  }, [classId, qc]));
 
   const { mutate: sendMsg, isPending } = useCreateLiveClassMessage({
     mutation: {
@@ -164,9 +173,13 @@ function QAPanel({ classId, isInstructor }: { classId: number; isInstructor: boo
   const [answerText, setAnswerText] = useState("");
   const { toast } = useToast();
 
+  const qc = useQueryClient();
   const { data: questions = [], refetch } = useListLiveClassQuestions(classId, {
-    query: { queryKey: getListLiveClassQuestionsQueryKey(classId), refetchInterval: 4000 },
+    query: { queryKey: getListLiveClassQuestionsQueryKey(classId), refetchInterval: 60_000 },
   });
+  useWS(`live-class:${classId}:questions`, useCallback(() => {
+    qc.invalidateQueries({ queryKey: getListLiveClassQuestionsQueryKey(classId) });
+  }, [classId, qc]));
 
   const { mutate: ask, isPending: asking } = useCreateLiveClassQuestion({
     mutation: {
@@ -320,9 +333,13 @@ function PollsPanel({ classId, isInstructor }: { classId: number; isInstructor: 
   const [newQuestion, setNewQuestion] = useState("");
   const [newOptions, setNewOptions] = useState(["", ""]);
 
+  const qc = useQueryClient();
   const { data: polls = [], refetch } = useListLiveClassPolls(classId, {
-    query: { queryKey: getListLiveClassPollsQueryKey(classId), refetchInterval: 4000 },
+    query: { queryKey: getListLiveClassPollsQueryKey(classId), refetchInterval: 60_000 },
   });
+  useWS(`live-class:${classId}:polls`, useCallback(() => {
+    qc.invalidateQueries({ queryKey: getListLiveClassPollsQueryKey(classId) });
+  }, [classId, qc]));
 
   const { mutate: createPoll, isPending: creating } = useCreateLiveClassPoll({
     mutation: {

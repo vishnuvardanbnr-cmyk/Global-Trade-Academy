@@ -1,5 +1,6 @@
 import confetti from "canvas-confetti";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useWS } from "@/hooks/useWS";
 import { useRoute, Link } from "wouter";
 import { useUser } from "@/lib/authContext";
 import {
@@ -203,9 +204,17 @@ function LiveChatPanel({ classId, userId, sessionTitle, onClose }: {
   const bottomRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  const qc = useQueryClient();
   const { data: messages = [], refetch } = useListLiveClassMessages(classId, {
-    query: { queryKey: getListLiveClassMessagesQueryKey(classId), refetchInterval: 3000 },
+    query: { queryKey: getListLiveClassMessagesQueryKey(classId), refetchInterval: 60_000 },
   });
+  useWS(`live-class:${classId}:messages`, useCallback((data) => {
+    qc.setQueryData(getListLiveClassMessagesQueryKey(classId), (old: LiveClassMessage[] = []) => {
+      const msg = data as LiveClassMessage;
+      if (old.some((m) => m.id === msg.id)) return old;
+      return [...old, msg];
+    });
+  }, [classId, qc]));
   const { mutate: sendMsg, isPending } = useCreateLiveClassMessage({
     mutation: {
       onSuccess: () => { setText(""); refetch(); },

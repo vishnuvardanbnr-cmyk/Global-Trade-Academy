@@ -8,3 +8,4 @@
 - [Replit artifact routing](replit-artifact-routing.md) — duplicate externalPort in [[ports]] causes permanent 502 in Helium microVM; fix by using artifact workflows (artifacts/edu: web, artifacts/api-server: API Server) which bypass the broken port-authority cache.
 - [Backend role lookup pattern](backend-role-lookup.md) — getAuth(req) only returns userId; to get role, query DB: getUserRole(userId) → usersTable.role. Never destructure role from getAuth.
 - [course-detail Tab type narrowing](course-detail-tab-narrowing.md) — the non-overview tab panel checks tab !== "overview"; never add tab === "overview" inside it or TS narrows to never. Overview content lives in the separate overview panel only.
+- [WebSocket real-time chat](websocket-realtime-chat.md) — WS at /api/ws; cookie auth; topic-based pub/sub; messages pushed as full objects, questions/polls/community signal invalidate; 60s polling fallback.

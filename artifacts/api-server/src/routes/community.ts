@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getAuth } from "../lib/auth";
+import { broadcast } from "../lib/ws";
 import { db } from "@workspace/db";
 import {
   postsTable, commentsTable, postLikesTable, usersTable,
@@ -81,6 +82,7 @@ router.post("/posts", async (req, res): Promise<void> => {
       imageUrl, channelId: channelId ?? null,
     }).returning();
     res.status(201).json(await buildPostResponse(inserted[0]));
+    if (channelId != null) broadcast(`community:${channelId}:posts`, null);
   } catch (err) {
     req.log.error({ err }, "Error creating post");
     res.status(500).json({ error: "Internal server error" });
@@ -211,6 +213,7 @@ router.post("/posts/:postId/comments", async (req, res): Promise<void> => {
       authorAvatar: author[0]?.avatarUrl ?? null,
       content: c.content, likes: c.likes, createdAt: c.createdAt,
     });
+    broadcast(`community:post:${postId}:comments`, null);
   } catch (err) {
     req.log.error({ err }, "Error creating comment");
     res.status(500).json({ error: "Internal server error" });
