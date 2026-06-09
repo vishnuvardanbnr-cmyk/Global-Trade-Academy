@@ -1,737 +1,653 @@
-/**
- * CandlestickChart — TradingView-style chart powered by lightweight-charts v5.
- *
- * Features
- * ─────────
- * • Chart types  : Candlestick, Bar, Line, Area
- * • Overlays     : MA(20/50), EMA(20), Bollinger Bands
- * • Sub-panels   : RSI(14) at pane-1, MACD(12,26,9) at pane-2
- * • Volume       : Range proxy (high-low) at bottom of main pane
- * • Drawing tools: Horizontal Price Lines, Trend Lines
- * • Real-time    : update() on live tick, setData() on full reload
- */
-
-import {
-  useRef, useEffect, useCallback, forwardRef, useImperativeHandle,
-} from "react";
-import {
-  createChart, ColorType, CrosshairMode, LineStyle,
-  CandlestickSeries, BarSeries, LineSeries, AreaSeries, HistogramSeries,
-} from "lightweight-charts";
-import type {
-  IChartApi, ISeriesApi, Time,
-  CandlestickData, LineData, HistogramData, IPriceLine,
-  MouseEventParams,
-} from "lightweight-charts";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Public types
-// ─────────────────────────────────────────────────────────────────────────────
+import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 
 export type Candle = { time: number; open: number; high: number; low: number; close: number };
-export type ChartType = "candle" | "bar" | "line" | "area";
 
 export interface ChartHandle {
   clearDrawings: () => void;
 }
 
 interface Props {
-  candles:           Candle[];
-  symbol:            string;
-  timeframe:         string;
-  chartType?:        ChartType;
-  activeIndicators?: Set<string>;
-  activeTool?:       string;
-  onCrosshairMove?:  (candle: Candle | null) => void;
+  candles:          Candle[];
+  symbol:           string;
+  timeframe:        string;
+  activeTool?:      string;
+  onCrosshairMove?: (candle: Candle | null) => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Theme
-// ─────────────────────────────────────────────────────────────────────────────
+/* ── Layout ───────────────────────────────────────────────── */
+const PAD       = { top: 12, right: 76, bottom: 28, left: 0 };
+const VOL_RATIO = 0.18;
 
-const T = {
-  bg:          "#131722",
-  grid:        "rgba(255,255,255,0.04)",
-  border:      "#2a2e39",
-  text:        "#9398a1",
-  up:          "#26a69a",
-  dn:          "#ef5350",
-  upVol:       "rgba(38,166,154,0.35)",
-  dnVol:       "rgba(239,83,80,0.35)",
-  cross:       "rgba(149,152,161,0.5)",
-  crossLabel:  "#2962ff",
-  draw:        "#f0c027",
-};
+/* ── Colors ───────────────────────────────────────────────── */
+const BG       = "#131722";
+const GRID     = "rgba(255,255,255,0.05)";
+const AXIS_TXT = "#787b86";
+const AXIS_LN  = "rgba(255,255,255,0.08)";
+const UP       = "#26a69a";
+const DN       = "#ef5350";
+const UP_VOL   = "rgba(38,166,154,0.35)";
+const DN_VOL   = "rgba(239,83,80,0.35)";
+const PRICE_LN = "rgba(38,166,154,0.5)";
+const CROSS    = "rgba(149,152,161,0.5)";
+const LABEL_BG = "#2962ff";
+const DRAW_COL = "#f0c027";   // gold — visible on dark bg
+const DRAW_HOV = "#ff6b6b";   // red highlight when hovering for delete
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Indicator math
-// ─────────────────────────────────────────────────────────────────────────────
-
-type LD = LineData<Time>;
-type HD = HistogramData<Time>;
-
-function sma(closes: number[], times: number[], n: number): LD[] {
-  const out: LD[] = [];
-  for (let i = n - 1; i < closes.length; i++) {
-    let s = 0;
-    for (let j = i - n + 1; j <= i; j++) s += closes[j];
-    out.push({ time: times[i] as Time, value: s / n });
-  }
-  return out;
+/* ── Price formatting ─────────────────────────────────────── */
+function fmtPrice(v: number, sym: string): string {
+  if (sym === "USD/JPY") return v.toFixed(3);
+  if (["EUR/USD", "GBP/USD", "AUD/USD"].includes(sym)) return v.toFixed(5);
+  if (v >= 1000) return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v.toFixed(2);
 }
 
-function emaFull(closes: number[], times: number[], n: number): LD[] {
-  if (closes.length < n) return [];
-  const k = 2 / (n + 1);
-  const out: LD[] = [];
-  let e = closes.slice(0, n).reduce((a, b) => a + b, 0) / n;
-  out.push({ time: times[n - 1] as Time, value: e });
-  for (let i = n; i < closes.length; i++) {
-    e = closes[i] * k + e * (1 - k);
-    out.push({ time: times[i] as Time, value: e });
-  }
-  return out;
+function fmtAxisDate(epoch: number, tf: string): string {
+  const d = new Date(epoch * 1000);
+  if (tf === "1m" || tf === "5m" || tf === "15m")
+    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function bb(closes: number[], times: number[], n = 20, mult = 2): {
-  upper: LD[]; middle: LD[]; lower: LD[];
-} {
-  const upper: LD[] = [], middle: LD[] = [], lower: LD[] = [];
-  for (let i = n - 1; i < closes.length; i++) {
-    let s = 0;
-    for (let j = i - n + 1; j <= i; j++) s += closes[j];
-    const mean = s / n;
-    let vari = 0;
-    for (let j = i - n + 1; j <= i; j++) vari += (closes[j] - mean) ** 2;
-    const std = Math.sqrt(vari / n);
-    const t = times[i] as Time;
-    upper.push({ time: t, value: mean + mult * std });
-    middle.push({ time: t, value: mean });
-    lower.push({ time: t, value: mean - mult * std });
-  }
-  return { upper, middle, lower };
+/* ── Drawing types ────────────────────────────────────────── */
+type PT = { epoch: number; price: number };
+
+type Drawing =
+  | { id: string; kind: "hline"; price: number }
+  | { id: string; kind: "vline"; epoch: number }
+  | { id: string; kind: "tline"; p1: PT; p2: PT }
+  | { id: string; kind: "rect";  p1: PT; p2: PT };
+
+/* ── Coord context (set each draw, read in mouse handlers) ─── */
+interface Coords {
+  py:          (p: number) => number;
+  priceFromY:  (y: number) => number;
+  epochToX:    (epoch: number) => number;
+  epochFromX:  (x: number) => number;
+  priceTop:    number;
+  priceH:      number;
+  chartW:      number;
+  hi:          number;
+  lo:          number;
+  pRange:      number;
+  candleW:     number;
+  visible:     Candle[];
 }
 
-function rsi(closes: number[], times: number[], n = 14): LD[] {
-  if (closes.length < n + 1) return [];
-  const out: LD[] = [];
-  let ag = 0, al = 0;
-  for (let i = 1; i <= n; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d > 0) ag += d; else al -= d;
-  }
-  ag /= n; al /= n;
-  const rsiVal = (ag: number, al: number) => al === 0 ? 100 : 100 - 100 / (1 + ag / al);
-  out.push({ time: times[n] as Time, value: rsiVal(ag, al) });
-  for (let i = n + 1; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    const g = d > 0 ? d : 0;
-    const l = d < 0 ? -d : 0;
-    ag = (ag * (n - 1) + g) / n;
-    al = (al * (n - 1) + l) / n;
-    out.push({ time: times[i] as Time, value: rsiVal(ag, al) });
-  }
-  return out;
+/* ── Pan/draw interaction state ───────────────────────────── */
+interface State {
+  visibleCount:    number;
+  rightOffset:     number;
+  mouseX:          number;
+  mouseY:          number;
+  isDragging:      boolean;
+  dragStartX:      number;
+  dragStartOffset: number;
+  drawPhase:       "idle" | "firstPoint" | "dragging";
+  drawP1:          PT | null;
+  hoverDrawingId:  string | null;
 }
 
-function macd(closes: number[], times: number[], fast = 12, slow = 26, sig = 9): {
-  line: LD[]; signal: LD[]; hist: HD[];
-} {
-  const ef = emaFull(closes, times, fast);
-  const es = emaFull(closes, times, slow);
-  const slowMap = new Map(es.map(d => [d.time, d.value]));
-  const macdLine: LD[] = [];
-  for (const f of ef) {
-    const s = slowMap.get(f.time);
-    if (s !== undefined) macdLine.push({ time: f.time, value: f.value - s });
-  }
-  if (macdLine.length < sig) return { line: macdLine, signal: [], hist: [] };
-  const k = 2 / (sig + 1);
-  const signal: LD[] = [];
-  const hist: HD[] = [];
-  let se = macdLine.slice(0, sig).reduce((a, b) => a + b.value, 0) / sig;
-  signal.push({ time: macdLine[sig - 1].time, value: se });
-  hist.push({
-    time: macdLine[sig - 1].time,
-    value: macdLine[sig - 1].value - se,
-    color: (macdLine[sig - 1].value - se) >= 0 ? "rgba(38,166,154,0.7)" : "rgba(239,83,80,0.7)",
-  });
-  for (let i = sig; i < macdLine.length; i++) {
-    se = macdLine[i].value * k + se * (1 - k);
-    signal.push({ time: macdLine[i].time, value: se });
-    const h = macdLine[i].value - se;
-    hist.push({ time: macdLine[i].time, value: h, color: h >= 0 ? "rgba(38,166,154,0.7)" : "rgba(239,83,80,0.7)" });
-  }
-  return { line: macdLine, signal, hist };
+let _nextId = 0;
+const nextId = () => `d${++_nextId}`;
+
+/* ── Map tool name → drawing kind ────────────────────────────*/
+function toolKind(tool: string): Drawing["kind"] | null {
+  if (tool === "Horiz. Line")  return "hline";
+  if (tool === "Vert. Line")   return "vline";
+  if (tool === "Trend Line" || tool === "Ray") return "tline";
+  if (tool === "Rectangle")    return "rect";
+  return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Series group
-// ─────────────────────────────────────────────────────────────────────────────
+export const CandlestickChart = forwardRef<ChartHandle, Props>(function CandlestickChart(
+  { candles, symbol, timeframe, activeTool = "Cursor", onCrosshairMove },
+  ref,
+) {
+  const canvasRef     = useRef<HTMLCanvasElement>(null);
+  const toolRef       = useRef(activeTool);
+  const coordRef      = useRef<Coords | null>(null);
+  const drawingsRef   = useRef<Drawing[]>([]);
+  const onCrossRef    = useRef(onCrosshairMove);
+  onCrossRef.current  = onCrosshairMove;
+  toolRef.current     = activeTool;
 
-type MainSeries =
-  | ISeriesApi<"Candlestick">
-  | ISeriesApi<"Bar">
-  | ISeriesApi<"Line">
-  | ISeriesApi<"Area">;
-
-interface SG {
-  main:         MainSeries;
-  vol?:         ISeriesApi<"Histogram">;
-  ma20?:        ISeriesApi<"Line">;
-  ma50?:        ISeriesApi<"Line">;
-  ema20?:       ISeriesApi<"Line">;
-  bbUpper?:     ISeriesApi<"Line">;
-  bbMiddle?:    ISeriesApi<"Line">;
-  bbLower?:     ISeriesApi<"Line">;
-  rsi?:         ISeriesApi<"Line">;
-  macdLine?:    ISeriesApi<"Line">;
-  macdSignal?:  ISeriesApi<"Line">;
-  macdHist?:    ISeriesApi<"Histogram">;
-  all:          ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area" | "Histogram">[];
-}
-
-function buildGroup(
-  chart: IChartApi,
-  type: ChartType,
-  ind: Set<string>,
-  candles: Candle[],
-): SG {
-  const closes = candles.map(c => c.close);
-  const times  = candles.map(c => c.time);
-
-  // ── Main series ──────────────────────────────────────────────
-  let main: MainSeries;
-  if (type === "candle") {
-    main = chart.addSeries(CandlestickSeries, {
-      upColor: T.up, downColor: T.dn,
-      borderVisible: false,
-      wickUpColor: T.up, wickDownColor: T.dn,
-    });
-    (main as ISeriesApi<"Candlestick">).setData(
-      candles.map(c => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close })),
-    );
-  } else if (type === "bar") {
-    main = chart.addSeries(BarSeries, {
-      upColor: T.up, downColor: T.dn,
-      thinBars: false,
-    });
-    (main as ISeriesApi<"Bar">).setData(
-      candles.map(c => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close })),
-    );
-  } else if (type === "line") {
-    main = chart.addSeries(LineSeries, {
-      color: "#2962ff", lineWidth: 2,
-      priceLineVisible: true,
-      lastValueVisible: true,
-    });
-    (main as ISeriesApi<"Line">).setData(
-      candles.map(c => ({ time: c.time as Time, value: c.close })),
-    );
-  } else {
-    main = chart.addSeries(AreaSeries, {
-      topColor: "rgba(41,98,255,0.4)",
-      bottomColor: "rgba(41,98,255,0.0)",
-      lineColor: "#2962ff",
-      lineWidth: 2,
-    });
-    (main as ISeriesApi<"Area">).setData(
-      candles.map(c => ({ time: c.time as Time, value: c.close })),
-    );
-  }
-
-  const all: SG["all"] = [main as ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area" | "Histogram">];
-  const sg: Partial<SG> & { main: MainSeries; all: SG["all"] } = { main, all };
-
-  // ── Volume (range proxy) ─────────────────────────────────────
-  const vol = chart.addSeries(HistogramSeries, {
-    priceFormat: { type: "volume" },
-    priceScaleId: "vol",
-  });
-  vol.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, visible: false });
-  vol.setData(
-    candles.map(c => ({
-      time: c.time as Time,
-      value: c.high - c.low,
-      color: c.close >= c.open ? T.upVol : T.dnVol,
-    })),
-  );
-  sg.vol = vol;
-  all.push(vol);
-
-  // ── Overlay indicators ───────────────────────────────────────
-  if (ind.has("ma20")) {
-    const s = chart.addSeries(LineSeries, {
-      color: "#f0b90b", lineWidth: 2,
-      priceLineVisible: false, lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    s.setData(sma(closes, times, 20));
-    sg.ma20 = s;
-    all.push(s);
-  }
-  if (ind.has("ma50")) {
-    const s = chart.addSeries(LineSeries, {
-      color: "#2196f3", lineWidth: 2,
-      priceLineVisible: false, lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    s.setData(sma(closes, times, 50));
-    sg.ma50 = s;
-    all.push(s);
-  }
-  if (ind.has("ema20")) {
-    const s = chart.addSeries(LineSeries, {
-      color: "#ff9800", lineWidth: 2,
-      priceLineVisible: false, lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    s.setData(emaFull(closes, times, 20));
-    sg.ema20 = s;
-    all.push(s);
-  }
-  if (ind.has("bb")) {
-    const { upper, middle, lower } = bb(closes, times);
-    const opts = {
-      lineWidth: 1 as const,
-      priceLineVisible: false, lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    };
-    const u = chart.addSeries(LineSeries, { ...opts, color: "rgba(149,97,226,0.9)" });
-    const m = chart.addSeries(LineSeries, { ...opts, color: "rgba(149,97,226,0.5)", lineStyle: LineStyle.Dashed });
-    const l = chart.addSeries(LineSeries, { ...opts, color: "rgba(149,97,226,0.9)" });
-    u.setData(upper); m.setData(middle); l.setData(lower);
-    sg.bbUpper = u; sg.bbMiddle = m; sg.bbLower = l;
-    all.push(u, m, l);
-  }
-
-  // ── RSI sub-panel (pane 1) ───────────────────────────────────
-  if (ind.has("rsi")) {
-    const rsiSeries = chart.addSeries(LineSeries, {
-      color: "#ce93d8",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: false,
-    }, 1);
-    rsiSeries.setData(rsi(closes, times));
-    rsiSeries.createPriceLine({ price: 70, color: T.dn,   lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "OB" });
-    rsiSeries.createPriceLine({ price: 50, color: T.text, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" });
-    rsiSeries.createPriceLine({ price: 30, color: T.up,   lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "OS" });
-    rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
-    try { chart.panes()[1]?.setHeight(110); } catch {}
-    sg.rsi = rsiSeries;
-    all.push(rsiSeries);
-  }
-
-  // ── MACD sub-panel (pane 1 if no RSI, else pane 2) ──────────
-  if (ind.has("macd")) {
-    const paneIdx = ind.has("rsi") ? 2 : 1;
-    const { line: ml, signal: sl, hist: hl } = macd(closes, times);
-    const macdLine = chart.addSeries(LineSeries, {
-      color: "#2196f3", lineWidth: 2,
-      priceLineVisible: false, lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    }, paneIdx);
-    const macdSig = chart.addSeries(LineSeries, {
-      color: "#ff9800", lineWidth: 2,
-      priceLineVisible: false, lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    }, paneIdx);
-    const macdHistS = chart.addSeries(HistogramSeries, {
-      color: T.upVol,
-      priceLineVisible: false, lastValueVisible: false,
-    }, paneIdx);
-    macdLine.setData(ml);
-    macdSig.setData(sl);
-    macdHistS.setData(hl);
-    try { chart.panes()[paneIdx]?.setHeight(100); } catch {}
-    sg.macdLine = macdLine;
-    sg.macdSignal = macdSig;
-    sg.macdHist = macdHistS;
-    all.push(macdLine, macdSig, macdHistS);
-  }
-
-  return sg as SG;
-}
-
-function refreshData(sg: SG, candles: Candle[]) {
-  const closes = candles.map(c => c.close);
-  const times  = candles.map(c => c.time);
-
-  const ohlcData: CandlestickData<Time>[] = candles.map(c => ({
-    time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close,
+  useImperativeHandle(ref, () => ({
+    clearDrawings: () => {
+      drawingsRef.current = [];
+      draw();
+    },
   }));
 
-  try {
-    if ("upColor" in sg.main.options()) {
-      (sg.main as ISeriesApi<"Candlestick">).setData(ohlcData);
-    } else if ("thinBars" in sg.main.options()) {
-      (sg.main as ISeriesApi<"Bar">).setData(ohlcData);
-    } else {
-      (sg.main as ISeriesApi<"Line"> | ISeriesApi<"Area">).setData(
-        candles.map(c => ({ time: c.time as Time, value: c.close })),
-      );
+  /* ═══════════════════ DRAW ══════════════════════════════════ */
+  const stateRef = useRef<State>({
+    visibleCount:    300,
+    rightOffset:     0,
+    mouseX:          -1,
+    mouseY:          -1,
+    isDragging:      false,
+    dragStartX:      0,
+    dragStartOffset: 0,
+    drawPhase:       "idle",
+    drawP1:          null,
+    hoverDrawingId:  null,
+  });
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !candles.length) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const W   = canvas.clientWidth;
+    const H   = canvas.clientHeight;
+    if (!W || !H) return;
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
+
+    const s = stateRef.current;
+
+    /* ── Visible candle range ── */
+    const total        = candles.length;
+    const visibleCount = Math.max(10, Math.min(s.visibleCount, total));
+    const rightOffset  = Math.max(0, Math.min(s.rightOffset, Math.max(0, total - visibleCount)));
+    const startIdx     = Math.max(0, total - visibleCount - rightOffset);
+    const endIdx       = Math.max(1, total - rightOffset);
+    const visible      = candles.slice(startIdx, endIdx);
+    if (!visible.length) return;
+
+    const chartW = W - PAD.left - PAD.right;
+    const candleW = chartW / visible.length;
+    const bodyW   = Math.max(1, candleW * 0.62);
+    const wickW   = Math.max(1, Math.min(2, candleW * 0.1));
+
+    /* chart split */
+    const fullH    = H - PAD.top - PAD.bottom;
+    const volH     = fullH * VOL_RATIO;
+    const priceH   = fullH - volH - 4;
+    const priceTop = PAD.top;
+    const volTop   = PAD.top + priceH + 4;
+
+    /* price range */
+    let lo = Infinity, hi = -Infinity;
+    for (const c of visible) { if (c.low < lo) lo = c.low; if (c.high > hi) hi = c.high; }
+    const rawRange = hi - lo || 1;
+    const pad = rawRange * 0.06;
+    lo -= pad; hi += pad;
+    const pRange = hi - lo;
+
+    /* coord functions */
+    const py         = (p: number) => priceTop + ((hi - p) / pRange) * priceH;
+    const priceFromY = (y: number) => hi - ((y - priceTop) / priceH) * pRange;
+    const cx         = (i: number) => PAD.left + (i + 0.5) * candleW;
+
+    const timeStep  = visible.length > 1 ? visible[1].time - visible[0].time : 60;
+    const firstEpoch = visible[0].time;
+
+    const epochToX   = (epoch: number) => PAD.left + ((epoch - firstEpoch) / timeStep + 0.5) * candleW;
+    const epochFromX = (x: number) => firstEpoch + ((x - PAD.left) / candleW - 0.5) * timeStep;
+
+    coordRef.current = { py, priceFromY, epochToX, epochFromX, priceTop, priceH, chartW, hi, lo, pRange, candleW, visible };
+
+    /* ── Background ── */
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+
+    /* ── Grid ── */
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth   = 1;
+    const steps = 7;
+    for (let i = 0; i <= steps; i++) {
+      const p = lo + (pRange * i) / steps;
+      const y = py(p);
+      if (y < priceTop || y > priceTop + priceH) continue;
+      ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke();
     }
-  } catch {}
 
-  sg.vol?.setData(candles.map(c => ({
-    time: c.time as Time, value: c.high - c.low,
-    color: c.close >= c.open ? T.upVol : T.dnVol,
-  })));
-  sg.ma20?.setData(sma(closes, times, 20));
-  sg.ma50?.setData(sma(closes, times, 50));
-  sg.ema20?.setData(emaFull(closes, times, 20));
-  if (sg.bbUpper && sg.bbMiddle && sg.bbLower) {
-    const { upper, middle, lower } = bb(closes, times);
-    sg.bbUpper.setData(upper); sg.bbMiddle.setData(middle); sg.bbLower.setData(lower);
-  }
-  sg.rsi?.setData(rsi(closes, times));
-  if (sg.macdLine && sg.macdSignal && sg.macdHist) {
-    const { line, signal, hist } = macd(closes, times);
-    sg.macdLine.setData(line); sg.macdSignal.setData(signal); sg.macdHist.setData(hist);
-  }
-}
-
-function liveTick(sg: SG, last: Candle, all: Candle[]) {
-  const closes = all.map(c => c.close);
-  const times  = all.map(c => c.time);
-  const t = last.time as Time;
-
-  try {
-    const opts = sg.main.options() as Record<string, unknown>;
-    if ("wickUpColor" in opts) {
-      (sg.main as ISeriesApi<"Candlestick">).update({ time: t, open: last.open, high: last.high, low: last.low, close: last.close });
-    } else if ("thinBars" in opts) {
-      (sg.main as ISeriesApi<"Bar">).update({ time: t, open: last.open, high: last.high, low: last.low, close: last.close });
-    } else {
-      (sg.main as ISeriesApi<"Line"> | ISeriesApi<"Area">).update({ time: t, value: last.close });
+    /* ── Current price dotted ── */
+    const lastPrice = visible.at(-1)!.close;
+    const lastY     = py(lastPrice);
+    if (lastY >= priceTop && lastY <= priceTop + priceH) {
+      ctx.strokeStyle = PRICE_LN;
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(PAD.left, lastY); ctx.lineTo(PAD.left + chartW, lastY); ctx.stroke();
+      ctx.setLineDash([]);
     }
-  } catch {}
 
-  sg.vol?.update({ time: t, value: last.high - last.low, color: last.close >= last.open ? T.upVol : T.dnVol });
+    /* ── Volume bars ── */
+    const volMax = Math.max(...visible.map((c) => Math.abs(c.close - c.open)));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(PAD.left, volTop, chartW, volH); ctx.clip();
+    for (let i = 0; i < visible.length; i++) {
+      const c  = visible[i];
+      const up = c.close >= c.open;
+      ctx.fillStyle = up ? UP_VOL : DN_VOL;
+      const x  = cx(i);
+      const h  = volMax > 0 ? (Math.abs(c.close - c.open) / volMax) * volH : 0;
+      ctx.fillRect(x - bodyW / 2, volTop + volH - h, bodyW, h);
+    }
+    ctx.restore();
 
-  // Update last indicator value only
-  const n = all.length;
-  if (sg.ma20 && n >= 20)  sg.ma20.update({ time: t, value: closes.slice(-20).reduce((a, b) => a + b, 0) / 20 });
-  if (sg.ma50 && n >= 50)  sg.ma50.update({ time: t, value: closes.slice(-50).reduce((a, b) => a + b, 0) / 50 });
+    /* ── Candles ── */
+    ctx.save();
+    ctx.beginPath(); ctx.rect(PAD.left, priceTop, chartW, priceH); ctx.clip();
+    for (let i = 0; i < visible.length; i++) {
+      const c  = visible[i];
+      const x  = cx(i);
+      const up = c.close >= c.open;
+      const col = up ? UP : DN;
 
-  const emaLast = (series: ISeriesApi<"Line"> | undefined, period: number) => {
-    if (!series || n < period) return;
-    const prev = series.data().at(-1) as LD | undefined;
-    if (!prev) return;
-    const k = 2 / (period + 1);
-    series.update({ time: t, value: last.close * k + (prev.value as number) * (1 - k) });
-  };
-  emaLast(sg.ema20, 20);
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = wickW;
+      ctx.beginPath(); ctx.moveTo(x, py(c.high)); ctx.lineTo(x, py(c.low)); ctx.stroke();
 
-  // BB — cheaply recompute last point
-  if (sg.bbUpper && sg.bbMiddle && sg.bbLower && n >= 20) {
-    const slice = closes.slice(-20);
-    const mean = slice.reduce((a, b) => a + b, 0) / 20;
-    const std = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / 20);
-    sg.bbUpper.update({ time: t, value: mean + 2 * std });
-    sg.bbMiddle.update({ time: t, value: mean });
-    sg.bbLower.update({ time: t, value: mean - 2 * std });
-  }
+      const top = py(Math.max(c.open, c.close));
+      const bh  = Math.max(1.5, py(Math.min(c.open, c.close)) - top);
+      ctx.fillStyle = col;
+      ctx.fillRect(x - bodyW / 2, top, bodyW, bh);
+    }
+    ctx.restore();
 
-  // RSI last point
-  if (sg.rsi && n >= 15) {
-    const rsiData = rsi(closes, times);
-    const last = rsiData.at(-1);
-    if (last) sg.rsi.update(last);
-  }
+    /* ── Saved drawings ── */
+    ctx.save();
+    ctx.beginPath(); ctx.rect(PAD.left, priceTop, chartW, priceH); ctx.clip();
+    for (const d of drawingsRef.current) {
+      const isHover = d.id === s.hoverDrawingId;
+      const col = isHover ? DRAW_HOV : DRAW_COL;
+      ctx.strokeStyle = col;
+      ctx.fillStyle   = col;
+      ctx.lineWidth   = isHover ? 2 : 1.5;
 
-  // MACD last point
-  if (sg.macdLine && sg.macdSignal && sg.macdHist) {
-    const { line, signal, hist } = macd(closes, times);
-    const ml = line.at(-1), sl = signal.at(-1), hl = hist.at(-1);
-    if (ml) sg.macdLine.update(ml);
-    if (sl) sg.macdSignal.update(sl);
-    if (hl) sg.macdHist.update(hl);
-  }
-}
+      if (d.kind === "hline") {
+        const y = py(d.price);
+        if (y < priceTop || y > priceTop + priceH) continue;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke();
+        ctx.setLineDash([]);
+        /* price label on right axis */
+        const lbl = fmtPrice(d.price, symbol);
+        const lbW = ctx.measureText(lbl).width + 10;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.roundRect(PAD.left + chartW + 1, y - 9, Math.max(PAD.right - 2, lbW), 18, 2);
+        ctx.fill();
+        ctx.fillStyle    = BG;
+        ctx.font         = "11px Inter,system-ui,sans-serif";
+        ctx.textAlign    = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(lbl, PAD.left + chartW + 5, y);
+      } else if (d.kind === "vline") {
+        const x = epochToX(d.epoch);
+        if (x < PAD.left || x > PAD.left + chartW) continue;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(x, priceTop); ctx.lineTo(x, priceTop + priceH); ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (d.kind === "tline") {
+        const x1 = epochToX(d.p1.epoch), y1 = py(d.p1.price);
+        const x2 = epochToX(d.p2.epoch), y2 = py(d.p2.price);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        /* dots at endpoints */
+        ctx.beginPath(); ctx.arc(x1, y1, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x2, y2, 3, 0, Math.PI * 2); ctx.fill();
+      } else if (d.kind === "rect") {
+        const x1 = epochToX(d.p1.epoch), y1 = py(d.p1.price);
+        const x2 = epochToX(d.p2.epoch), y2 = py(d.p2.price);
+        ctx.globalAlpha = 0.12;
+        ctx.fillRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+        ctx.globalAlpha = 1;
+        ctx.strokeRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+      }
+    }
+    ctx.restore();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Drawing helpers
-// ─────────────────────────────────────────────────────────────────────────────
+    /* ── In-progress drawing preview ── */
+    const { drawPhase, drawP1 } = s;
+    const mx = s.mouseX, my = s.mouseY;
+    const kind = toolKind(toolRef.current);
+    if (kind && drawPhase !== "idle" && drawP1) {
+      const previewEpoch = epochFromX(mx);
+      const previewPrice = priceFromY(my);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(PAD.left, priceTop, chartW, priceH); ctx.clip();
+      ctx.strokeStyle = DRAW_COL;
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([5, 4]);
 
-interface DrawState {
-  phase:   "idle" | "trendLine1";
-  p1Time?: Time;
-  p1Price?: number;
-}
-
-interface Drawings {
-  pricelines: Array<{ line: IPriceLine; price: number }>;
-  trendlines: Array<ISeriesApi<"Line">>;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const CandlestickChart = forwardRef<ChartHandle, Props>(
-  function CandlestickChart(
-    {
-      candles,
-      symbol,
-      timeframe,
-      chartType        = "candle",
-      activeIndicators = new Set<string>(),
-      activeTool       = "Cursor",
-      onCrosshairMove,
-    },
-    ref,
-  ) {
-    const containerRef   = useRef<HTMLDivElement>(null);
-    const chartRef       = useRef<IChartApi | null>(null);
-    const sgRef          = useRef<SG | null>(null);
-    const drawingsRef    = useRef<Drawings>({ pricelines: [], trendlines: [] });
-    const drawStateRef   = useRef<DrawState>({ phase: "idle" });
-    const onCrossRef     = useRef(onCrosshairMove);
-    const toolRef        = useRef(activeTool);
-    const candlesRef     = useRef(candles);
-    const prevCandlesRef = useRef<Candle[]>([]);
-    const prevKeyRef     = useRef("");
-    const fitDoneRef     = useRef(false);
-
-    onCrossRef.current = onCrosshairMove;
-    toolRef.current    = activeTool;
-    candlesRef.current = candles;
-
-    useImperativeHandle(ref, () => ({
-      clearDrawings() {
-        const sg = sgRef.current;
-        const chart = chartRef.current;
-        if (sg) {
-          for (const { line } of drawingsRef.current.pricelines) {
-            try { sg.main.removePriceLine(line); } catch {}
-          }
-        }
-        if (chart) {
-          for (const ts of drawingsRef.current.trendlines) {
-            try { chart.removeSeries(ts); } catch {}
-          }
-        }
-        drawingsRef.current = { pricelines: [], trendlines: [] };
-        drawStateRef.current = { phase: "idle" };
-      },
-    }));
-
-    // ── Create chart (mount only) ────────────────────────────────────────────
-    useEffect(() => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const chart = createChart(container, {
-        layout: {
-          background: { type: ColorType.Solid, color: T.bg },
-          textColor:  T.text,
-          fontSize:   11,
-          fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-        },
-        grid: {
-          vertLines: { color: T.grid },
-          horzLines: { color: T.grid },
-        },
-        crosshair: {
-          mode: CrosshairMode.Normal,
-          vertLine: { color: T.cross, width: 1, style: LineStyle.Solid, labelBackgroundColor: T.crossLabel },
-          horzLine: { color: T.cross, width: 1, style: LineStyle.Solid, labelBackgroundColor: T.crossLabel },
-        },
-        rightPriceScale: {
-          borderColor: T.border,
-          textColor:   T.text,
-          scaleMargins: { top: 0.1, bottom: 0.1 },
-        },
-        timeScale: {
-          borderColor:    T.border,
-          timeVisible:    true,
-          secondsVisible: false,
-          rightOffset:    5,
-          barSpacing:     8,
-          minBarSpacing:  1,
-          fixLeftEdge:    false,
-          fixRightEdge:   false,
-        },
-        handleScroll: true,
-        handleScale:  true,
-        width:  container.clientWidth,
-        height: container.clientHeight,
-      });
-      chartRef.current = chart;
-
-      // Crosshair → emit OHLC back to parent
-      chart.subscribeCrosshairMove((param: MouseEventParams<Time>) => {
-        if (!param.point || !param.time) { onCrossRef.current?.(null); return; }
-        const t = typeof param.time === "number" ? param.time as number : null;
-        if (t === null) { onCrossRef.current?.(null); return; }
-        const candle = candlesRef.current.find(c => c.time === t);
-        onCrossRef.current?.(candle ?? null);
-      });
-
-      // Click → drawing tools
-      chart.subscribeClick((param: MouseEventParams<Time>) => {
-        const tool  = toolRef.current;
-        const sg    = sgRef.current;
-        if (!param.point || !sg) return;
-
-        const price = sg.main.coordinateToPrice(param.point.y);
-        if (price === null || price === undefined) return;
-
-        if (tool === "Horiz. Line") {
-          const pl = sg.main.createPriceLine({
-            price,
-            color:             T.draw,
-            lineWidth:         2,
-            lineStyle:         LineStyle.Dashed,
-            axisLabelVisible:  true,
-            title:             "",
-          });
-          drawingsRef.current.pricelines.push({ line: pl, price });
-        } else if (tool === "Trend Line") {
-          const ds = drawStateRef.current;
-          if (!param.time) return;
-          if (ds.phase === "idle") {
-            drawStateRef.current = { phase: "trendLine1", p1Time: param.time as Time, p1Price: price };
-          } else {
-            if (ds.p1Time === undefined || ds.p1Price === undefined) return;
-            const pts = [
-              { time: ds.p1Time  as number, value: ds.p1Price },
-              { time: param.time as number, value: price },
-            ].sort((a, b) => a.time - b.time);
-            const ts = chart.addSeries(LineSeries, {
-              color: T.draw, lineWidth: 2,
-              priceLineVisible: false, lastValueVisible: false,
-              crosshairMarkerVisible: false,
-            });
-            ts.setData(pts.map(p => ({ time: p.time as Time, value: p.value })));
-            drawingsRef.current.trendlines.push(ts);
-            drawStateRef.current = { phase: "idle" };
-          }
-        } else if (tool === "Delete") {
-          // Delete nearest price line
-          const sg = sgRef.current;
-          if (!sg) return;
-          let bestIdx = -1, bestDist = 20;
-          for (let i = 0; i < drawingsRef.current.pricelines.length; i++) {
-            const coord = sg.main.priceToCoordinate(drawingsRef.current.pricelines[i].price);
-            if (coord !== null && coord !== undefined) {
-              const d = Math.abs(coord - param.point.y);
-              if (d < bestDist) { bestDist = d; bestIdx = i; }
-            }
-          }
-          if (bestIdx >= 0) {
-            try { sg.main.removePriceLine(drawingsRef.current.pricelines[bestIdx].line); } catch {}
-            drawingsRef.current.pricelines.splice(bestIdx, 1);
-            return;
-          }
-          // Delete nearest trend line
-          let bestTlIdx = -1; bestDist = 20;
-          // Trend lines: just remove last one as a fallback (can't easily hit-test)
-          if (drawingsRef.current.trendlines.length > 0) {
-            const last = drawingsRef.current.trendlines.length - 1;
-            try { chart.removeSeries(drawingsRef.current.trendlines[last]); } catch {}
-            drawingsRef.current.trendlines.splice(last, 1);
-          }
-          void bestTlIdx;
-        }
-      });
-
-      // Disable chart scroll when drawing tool is active
-      // (handled by useEffect below)
-
-      // ResizeObserver
-      const ro = new ResizeObserver(() => {
-        if (!container) return;
-        chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
-      });
-      ro.observe(container);
-
-      return () => {
-        ro.disconnect();
-        chart.remove();
-        chartRef.current  = null;
-        sgRef.current     = null;
-        fitDoneRef.current = false;
-      };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // ── Enable/disable scroll based on active tool ───────────────────────────
-    useEffect(() => {
-      const chart = chartRef.current;
-      if (!chart) return;
-      const drawing = activeTool !== "Cursor" && activeTool !== "Crosshair" && activeTool !== "Zoom";
-      chart.applyOptions({ handleScroll: !drawing, handleScale: !drawing });
-    }, [activeTool]);
-
-    // ── Rebuild or refresh series when key inputs change ─────────────────────
-    useEffect(() => {
-      const chart = chartRef.current;
-      if (!chart || !candles.length) return;
-
-      const indKey  = [...activeIndicators].sort().join(",");
-      const newKey  = `${chartType}:${indKey}:${symbol}`;
-      const isRebuild = newKey !== prevKeyRef.current;
-
-      if (isRebuild) {
-        // Save visible time range before rebuild
-        const range = sgRef.current ? chart.timeScale().getVisibleRange() : null;
-
-        // Remove existing series (not drawings — drawings survive)
-        if (sgRef.current) {
-          for (const s of sgRef.current.all) try { chart.removeSeries(s); } catch {}
-          sgRef.current = null;
-        }
-
-        // Build fresh group
-        sgRef.current = buildGroup(chart, chartType, activeIndicators, candles);
-
-        // Re-attach price lines to the new main series
-        const drawn: Drawings["pricelines"] = [];
-        for (const { price } of drawingsRef.current.pricelines) {
-          const pl = sgRef.current.main.createPriceLine({
-            price, color: T.draw, lineWidth: 2,
-            lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "",
-          });
-          drawn.push({ line: pl, price });
-        }
-        drawingsRef.current.pricelines = drawn;
-
-        if (range) {
-          try { chart.timeScale().setVisibleRange(range); } catch {}
-        } else if (!fitDoneRef.current) {
-          chart.timeScale().fitContent();
-          fitDoneRef.current = true;
-        }
-
-        prevKeyRef.current = newKey;
-      } else {
-        // Detect live tick vs full reload
-        const prev = prevCandlesRef.current;
-        const isTickUpdate =
-          prev.length > 0 &&
-          candles.length === prev.length &&
-          candles[0].time === prev[0]?.time;
-
-        if (isTickUpdate) {
-          liveTick(sgRef.current!, candles[candles.length - 1], candles);
+      if (kind === "hline") {
+        /* already saved on click, no preview needed */
+      } else if (kind === "vline") {
+        /* same */
+      } else if (kind === "tline" || kind === "rect") {
+        const x1 = epochToX(drawP1.epoch), y1 = py(drawP1.price);
+        if (kind === "tline") {
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(mx, my); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = DRAW_COL;
+          ctx.beginPath(); ctx.arc(x1, y1, 3, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(mx, my, 3, 0, Math.PI * 2); ctx.fill();
         } else {
-          refreshData(sgRef.current!, candles);
-          if (!fitDoneRef.current && candles.length > 0) {
-            chart.timeScale().fitContent();
-            fitDoneRef.current = true;
-          }
+          ctx.strokeRect(Math.min(x1,mx), Math.min(y1,my), Math.abs(mx-x1), Math.abs(my-y1));
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 0.1;
+          ctx.fillStyle = DRAW_COL;
+          ctx.fillRect(Math.min(x1,mx), Math.min(y1,my), Math.abs(mx-x1), Math.abs(my-y1));
+          ctx.globalAlpha = 1;
         }
       }
+      ctx.setLineDash([]);
+      ctx.restore();
+      void previewEpoch; void previewPrice;
+    }
 
-      prevCandlesRef.current = candles;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [candles, chartType, activeIndicators, symbol]);
+    /* ── Axis borders ── */
+    ctx.strokeStyle = AXIS_LN;
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.moveTo(PAD.left + chartW, 0); ctx.lineTo(PAD.left + chartW, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PAD.left, H - PAD.bottom); ctx.lineTo(PAD.left + chartW, H - PAD.bottom); ctx.stroke();
 
-    return (
-      <div ref={containerRef} className="w-full h-full" />
-    );
-  },
-);
+    /* ── Price axis labels ── */
+    ctx.fillStyle    = AXIS_TXT;
+    ctx.font         = "11px Inter,system-ui,sans-serif";
+    ctx.textAlign    = "left";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i <= steps; i++) {
+      const p = lo + (pRange * i) / steps;
+      const y = py(p);
+      if (y < priceTop || y > priceTop + priceH) continue;
+      ctx.fillText(fmtPrice(p, symbol), PAD.left + chartW + 5, y);
+    }
+
+    /* ── Current price axis label ── */
+    const plLabel = fmtPrice(lastPrice, symbol);
+    const plH = 18;
+    const isLastUp = visible.at(-1)!.close >= visible.at(-1)!.open;
+    ctx.fillStyle = isLastUp ? UP : DN;
+    ctx.beginPath();
+    ctx.roundRect(PAD.left + chartW + 1, lastY - plH / 2, PAD.right - 2, plH, 2);
+    ctx.fill();
+    ctx.fillStyle    = "#fff";
+    ctx.font         = "11px Inter,system-ui,sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(plLabel, PAD.left + chartW + 5, lastY);
+
+    /* ── Time axis labels ── */
+    ctx.fillStyle    = AXIS_TXT;
+    ctx.font         = "11px Inter,system-ui,sans-serif";
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "alphabetic";
+    const labelEvery = Math.max(1, Math.floor(visible.length / 8));
+    for (let i = 0; i < visible.length; i += labelEvery) {
+      ctx.fillText(fmtAxisDate(visible[i].time, timeframe), cx(i), H - 6);
+    }
+
+    /* ── Crosshair ── */
+    if (mx >= PAD.left && mx <= PAD.left + chartW && my >= priceTop && my <= priceTop + priceH + volH) {
+      const hoverIdx  = Math.min(visible.length - 1, Math.max(0, Math.floor((mx - PAD.left) / candleW)));
+      const snapX     = cx(hoverIdx);
+      const hc        = visible[hoverIdx];
+
+      ctx.strokeStyle = CROSS;
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(snapX, PAD.top); ctx.lineTo(snapX, H - PAD.bottom); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(PAD.left, my); ctx.lineTo(PAD.left + chartW, my); ctx.stroke();
+      ctx.setLineDash([]);
+
+      const hoverPrice = priceFromY(my);
+      const pLabel = fmtPrice(hoverPrice, symbol);
+      const pLW    = ctx.measureText(pLabel).width + 12;
+      ctx.fillStyle = LABEL_BG;
+      ctx.beginPath();
+      ctx.roundRect(PAD.left + chartW + 1, my - 9, Math.max(PAD.right - 2, pLW), 18, 2);
+      ctx.fill();
+      ctx.fillStyle    = "#fff";
+      ctx.font         = "11px Inter,system-ui,sans-serif";
+      ctx.textAlign    = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(pLabel, PAD.left + chartW + 5, my);
+
+      const dLabel = fmtAxisDate(hc.time, timeframe);
+      const dLW    = ctx.measureText(dLabel).width + 14;
+      ctx.fillStyle = LABEL_BG;
+      ctx.beginPath();
+      ctx.roundRect(snapX - dLW / 2, H - PAD.bottom + 1, dLW, 18, 2);
+      ctx.fill();
+      ctx.fillStyle    = "#fff";
+      ctx.textAlign    = "center";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(dLabel, snapX, H - PAD.bottom + 14);
+
+      onCrossRef.current?.(hc);
+    } else {
+      onCrossRef.current?.(null);
+    }
+  }, [candles, symbol, timeframe]);
+
+  /* ═══════════════════ HELPERS ════════════════════════════════ */
+  const getCursor = (tool: string): string => {
+    if (tool === "Delete")     return "pointer";
+    if (tool === "Cursor")     return "default";
+    if (tool === "Crosshair")  return "crosshair";
+    if (tool === "ZoomIn" || tool === "Zoom") return "zoom-in";
+    return "crosshair";
+  };
+
+  /** Find the drawing id closest to (mx, my); null if none within threshold */
+  const findNearestDrawing = (mx: number, my: number): string | null => {
+    const c = coordRef.current;
+    if (!c) return null;
+    const THRESH = 8;
+    let bestId: string | null = null;
+    let bestDist = Infinity;
+
+    for (const d of drawingsRef.current) {
+      let dist = Infinity;
+      if (d.kind === "hline") {
+        dist = Math.abs(c.py(d.price) - my);
+      } else if (d.kind === "vline") {
+        dist = Math.abs(c.epochToX(d.epoch) - mx);
+      } else if (d.kind === "tline") {
+        const x1 = c.epochToX(d.p1.epoch), y1 = c.py(d.p1.price);
+        const x2 = c.epochToX(d.p2.epoch), y2 = c.py(d.p2.price);
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) { dist = Math.hypot(mx - x1, my - y1); }
+        else {
+          const t = Math.max(0, Math.min(1, ((mx - x1) * dx + (my - y1) * dy) / len2));
+          dist = Math.hypot(mx - (x1 + t * dx), my - (y1 + t * dy));
+        }
+      } else if (d.kind === "rect") {
+        const x1 = c.epochToX(d.p1.epoch), y1 = c.py(d.p1.price);
+        const x2 = c.epochToX(d.p2.epoch), y2 = c.py(d.p2.price);
+        const lx = Math.min(x1,x2), rx = Math.max(x1,x2);
+        const ty = Math.min(y1,y2), by = Math.max(y1,y2);
+        const inside = mx >= lx && mx <= rx && my >= ty && my <= by;
+        const edgeL = Math.abs(mx - lx), edgeR = Math.abs(mx - rx);
+        const edgeT = Math.abs(my - ty), edgeB = Math.abs(my - by);
+        dist = inside ? Math.min(edgeL, edgeR, edgeT, edgeB) : Infinity;
+      }
+      if (dist < THRESH && dist < bestDist) { bestDist = dist; bestId = d.id; }
+    }
+    return bestId;
+  };
+
+  /* ═══════════════════ EVENTS ══════════════════════════════════ */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const s = stateRef.current;
+    draw();
+
+    const onMouseMove = (e: MouseEvent) => {
+      const r  = canvas.getBoundingClientRect();
+      s.mouseX = e.clientX - r.left;
+      s.mouseY = e.clientY - r.top;
+      const tool = toolRef.current;
+
+      if (tool === "Delete") {
+        s.hoverDrawingId = findNearestDrawing(s.mouseX, s.mouseY);
+        canvas.style.cursor = s.hoverDrawingId ? "pointer" : "default";
+      } else {
+        canvas.style.cursor = getCursor(tool);
+        /* pan while dragging in Cursor mode */
+        if (tool === "Cursor" && s.isDragging) {
+          const cw = (canvas.clientWidth - PAD.left - PAD.right) / Math.max(10, s.visibleCount);
+          s.rightOffset = Math.max(0, Math.min(
+            s.dragStartOffset + Math.round((s.dragStartX - e.clientX) / cw),
+            Math.max(0, candles.length - s.visibleCount),
+          ));
+        }
+      }
+      draw();
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      const r  = canvas.getBoundingClientRect();
+      s.mouseX = e.clientX - r.left;
+      s.mouseY = e.clientY - r.top;
+      const tool = toolRef.current;
+      const c    = coordRef.current;
+
+      if (tool === "Delete") {
+        const id = findNearestDrawing(s.mouseX, s.mouseY);
+        if (id) {
+          drawingsRef.current = drawingsRef.current.filter((d) => d.id !== id);
+          s.hoverDrawingId = null;
+        }
+        draw();
+        return;
+      }
+
+      if (tool === "Cursor") {
+        s.isDragging = true; s.dragStartX = e.clientX; s.dragStartOffset = s.rightOffset;
+        canvas.style.cursor = "grabbing";
+        return;
+      }
+
+      if (!c) return;
+      const kind = toolKind(tool);
+      if (!kind) return;
+
+      const price = c.priceFromY(s.mouseY);
+      const epoch = c.epochFromX(s.mouseX);
+
+      if (kind === "hline") {
+        drawingsRef.current.push({ id: nextId(), kind: "hline", price });
+        draw();
+        return;
+      }
+      if (kind === "vline") {
+        drawingsRef.current.push({ id: nextId(), kind: "vline", epoch });
+        draw();
+        return;
+      }
+      if (kind === "tline") {
+        if (s.drawPhase === "idle") {
+          s.drawPhase = "firstPoint";
+          s.drawP1    = { epoch, price };
+        } else {
+          /* second click — save */
+          if (s.drawP1) {
+            drawingsRef.current.push({ id: nextId(), kind: "tline", p1: s.drawP1, p2: { epoch, price } });
+          }
+          s.drawPhase = "idle";
+          s.drawP1    = null;
+        }
+        draw();
+        return;
+      }
+      if (kind === "rect") {
+        s.drawPhase = "dragging";
+        s.drawP1    = { epoch, price };
+        s.isDragging = true;
+      }
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      const r  = canvas.getBoundingClientRect();
+      s.mouseX = e.clientX - r.left;
+      s.mouseY = e.clientY - r.top;
+      const tool = toolRef.current;
+      const c    = coordRef.current;
+
+      if (tool === "Cursor") {
+        s.isDragging = false;
+        canvas.style.cursor = "default";
+        return;
+      }
+
+      if (!c) return;
+      const kind = toolKind(tool);
+      if (kind === "rect" && s.drawPhase === "dragging" && s.drawP1) {
+        const price = c.priceFromY(s.mouseY);
+        const epoch = c.epochFromX(s.mouseX);
+        const dx = Math.abs(s.mouseX - c.epochToX(s.drawP1.epoch));
+        const dy = Math.abs(s.mouseY - c.py(s.drawP1.price));
+        if (dx > 4 && dy > 4) {
+          drawingsRef.current.push({ id: nextId(), kind: "rect", p1: s.drawP1, p2: { epoch, price } });
+        }
+        s.drawPhase  = "idle";
+        s.drawP1     = null;
+        s.isDragging = false;
+        draw();
+      }
+    };
+
+    const onMouseLeave = () => {
+      s.mouseX = s.mouseY = -1;
+      s.isDragging   = false;
+      s.hoverDrawingId = null;
+      canvas.style.cursor = getCursor(toolRef.current);
+      onCrossRef.current?.(null);
+      draw();
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      s.visibleCount = Math.max(10, Math.min(
+        Math.round(s.visibleCount * (e.deltaY > 0 ? 1.18 : 0.85)),
+        candles.length,
+      ));
+      draw();
+    };
+
+    canvas.addEventListener("mousemove",  onMouseMove);
+    canvas.addEventListener("mousedown",  onMouseDown);
+    canvas.addEventListener("mouseup",    onMouseUp);
+    canvas.addEventListener("mouseleave", onMouseLeave);
+    canvas.addEventListener("wheel",      onWheel, { passive: false });
+
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(canvas);
+
+    return () => {
+      canvas.removeEventListener("mousemove",  onMouseMove);
+      canvas.removeEventListener("mousedown",  onMouseDown);
+      canvas.removeEventListener("mouseup",    onMouseUp);
+      canvas.removeEventListener("mouseleave", onMouseLeave);
+      canvas.removeEventListener("wheel",      onWheel);
+      ro.disconnect();
+    };
+  }, [candles, draw]);
+
+  /* reset draw phase when tool changes */
+  useEffect(() => {
+    const s = stateRef.current;
+    s.drawPhase = "idle";
+    s.drawP1    = null;
+    s.hoverDrawingId = null;
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.cursor = getCursor(activeTool);
+    draw();
+  }, [activeTool, draw]);
+
+  /* reset scroll when new candles arrive */
+  useEffect(() => {
+    stateRef.current.rightOffset = 0;
+    draw();
+  }, [candles, draw]);
+
+  return <canvas ref={canvasRef} className="w-full h-full block" />;
+});
