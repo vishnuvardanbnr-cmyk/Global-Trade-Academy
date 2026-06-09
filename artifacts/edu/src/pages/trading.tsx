@@ -1,12 +1,17 @@
 import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CandlestickChart, type Candle, type ChartHandle } from "@/components/chart/CandlestickChart";
+import {
+  CandlestickChart,
+  type Candle,
+  type ChartHandle,
+  type ChartType,
+} from "@/components/chart/CandlestickChart";
 import { useDerivLiveCandles } from "@/hooks/useDerivLiveCandles";
 import {
-  MousePointer2, Crosshair, Minus, TrendingUp, Pencil, Type,
-  Ruler, ZoomIn, Trash2, Square, Circle, GitBranch,
-  SlidersHorizontal, Bell, RotateCcw, RotateCw,
-  RefreshCw, ChevronDown, Loader2, WifiOff,
+  MousePointer2, Crosshair, Minus, TrendingUp,
+  Trash2, ChevronDown, Loader2, WifiOff, RefreshCw,
+  CandlestickChart as CandleIcon, BarChart2, LineChart, Activity,
+  LayoutDashboard, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,18 +31,35 @@ const SYMBOLS = [
 
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"] as const;
 
-const LEFT_TOOLS = [
+const CHART_TYPES: { type: ChartType; icon: React.ElementType; label: string }[] = [
+  { type: "candle", icon: CandleIcon, label: "Candles"  },
+  { type: "bar",    icon: BarChart2,  label: "Bars"     },
+  { type: "line",   icon: LineChart,  label: "Line"     },
+  { type: "area",   icon: Activity,   label: "Area"     },
+];
+
+const DRAWING_TOOLS = [
   { icon: MousePointer2, label: "Cursor",      group: 1 },
   { icon: Crosshair,     label: "Crosshair",   group: 1 },
   { icon: TrendingUp,    label: "Trend Line",  group: 2 },
   { icon: Minus,         label: "Horiz. Line", group: 2 },
-  { icon: GitBranch,     label: "Vert. Line",  group: 2 },
-  { icon: Pencil,        label: "Brush",       group: 3 },
-  { icon: Square,        label: "Rectangle",   group: 3 },
-  { icon: Circle,        label: "Circle",      group: 3 },
-  { icon: Type,          label: "Text",        group: 4 },
-  { icon: Ruler,         label: "Measure",     group: 5 },
-  { icon: ZoomIn,        label: "Zoom",        group: 5 },
+];
+
+interface IndicatorDef {
+  id:        string;
+  label:     string;
+  sublabel?: string;
+  color:     string;
+  section:   "chart" | "panel";
+}
+
+const INDICATORS: IndicatorDef[] = [
+  { id: "ma20",  label: "MA",     sublabel: "20",       color: "#f0b90b", section: "chart" },
+  { id: "ma50",  label: "MA",     sublabel: "50",       color: "#2196f3", section: "chart" },
+  { id: "ema20", label: "EMA",    sublabel: "20",       color: "#ff9800", section: "chart" },
+  { id: "bb",    label: "BB",     sublabel: "20, 2",    color: "#9c27b0", section: "chart" },
+  { id: "rsi",   label: "RSI",    sublabel: "14",       color: "#ce93d8", section: "panel" },
+  { id: "macd",  label: "MACD",   sublabel: "12,26,9",  color: "#2196f3", section: "panel" },
 ];
 
 function formatPrice(price: number | undefined, symbol: string): string {
@@ -49,41 +71,43 @@ function formatPrice(price: number | undefined, symbol: string): string {
 }
 
 export default function Trading() {
-  const [activeSymbol, setActiveSymbol]       = useState("BTC/USD");
+  const [activeSymbol,    setActiveSymbol]    = useState("BTC/USD");
   const [activeTimeframe, setActiveTimeframe] = useState<typeof TIMEFRAMES[number]>("1m");
-  const [activeTool, setActiveTool]           = useState("Cursor");
-  const [tooltipCandle, setTooltipCandle]     = useState<Candle | null>(null);
-  const [symbolOpen, setSymbolOpen]           = useState(false);
+  const [activeTool,      setActiveTool]      = useState("Cursor");
+  const [chartType,       setChartType]       = useState<ChartType>("candle");
+  const [indicators,      setIndicators]      = useState<Set<string>>(new Set(["ma20", "ma50"]));
+  const [tooltipCandle,   setTooltipCandle]   = useState<Candle | null>(null);
+  const [symbolOpen,      setSymbolOpen]      = useState(false);
+  const [indOpen,         setIndOpen]         = useState(false);
+
   const chartRef = useRef<ChartHandle>(null);
 
-  /* ── Live WebSocket candle stream ── */
   const { candles, status, refetch } = useDerivLiveCandles(activeSymbol, activeTimeframe);
   const isLoading = status === "connecting" && candles.length === 0;
-  const isError   = status === "error"   && candles.length === 0;
+  const isError   = status === "error"      && candles.length === 0;
 
-  /* ── Symbol price bar (REST, refreshed every minute) ── */
   const { data: prices } = useQuery<Prices>({
-    queryKey: ["market-prices"],
-    queryFn: async ({ signal }) => {
+    queryKey:       ["market-prices"],
+    queryFn:        async ({ signal }) => {
       const r = await fetch("/api/market/prices", { signal });
       if (!r.ok) throw new Error("Failed");
       return r.json() as Promise<Prices>;
     },
-    staleTime: 60_000,
+    staleTime:      60_000,
     refetchInterval: 60_000,
     retry: 1,
   });
 
-  const activeInfo    = SYMBOLS.find((s) => s.symbol === activeSymbol) ?? SYMBOLS[0];
-  const livePrice     = candles.at(-1)?.close;
-  const prevClose     = candles.at(-2)?.close ?? candles.at(-1)?.open;
-  const liveChange    = livePrice && prevClose
+  const activeInfo = SYMBOLS.find(s => s.symbol === activeSymbol) ?? SYMBOLS[0];
+  const livePrice  = candles.at(-1)?.close;
+  const prevClose  = candles.at(-2)?.close ?? candles.at(-1)?.open;
+  const liveChange = livePrice && prevClose
     ? (((livePrice - prevClose) / prevClose) * 100)
     : null;
-  const livePriceUp   = liveChange !== null ? liveChange >= 0 : true;
+  const livePriceUp = liveChange !== null ? liveChange >= 0 : true;
 
   const displayCandle = tooltipCandle ?? candles.at(-1);
-  const isUp          = displayCandle ? displayCandle.close >= displayCandle.open : true;
+  const isUp = displayCandle ? displayCandle.close >= displayCandle.open : true;
 
   const ohlc = displayCandle
     ? [
@@ -94,16 +118,24 @@ export default function Trading() {
       ]
     : [];
 
+  function toggleIndicator(id: string) {
+    setIndicators(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
   return (
     <div className="flex flex-col h-full bg-[#131722] text-white select-none overflow-hidden rounded-xl">
 
-      {/* ══ TOP BAR ════════════════════════════════════════════ */}
-      <div className="flex items-center h-[46px] border-b border-[#2a2e39] shrink-0 px-1">
+      {/* ══ TOP BAR ═══════════════════════════════════════════════════════════ */}
+      <div className="flex items-center h-[46px] border-b border-[#2a2e39] shrink-0 px-1 gap-0.5">
 
         {/* Symbol picker */}
         <div className="relative">
           <button
-            onClick={() => setSymbolOpen((o) => !o)}
+            onClick={() => { setSymbolOpen(o => !o); setIndOpen(false); }}
             className="flex items-center gap-1.5 h-[46px] px-3 hover:bg-[#1e222d] transition-colors font-semibold text-sm"
           >
             <span className="text-white">{activeSymbol}</span>
@@ -111,7 +143,7 @@ export default function Trading() {
           </button>
           {symbolOpen && (
             <div className="absolute top-full left-0 z-50 bg-[#1e222d] border border-[#2a2e39] rounded-lg shadow-2xl py-1 w-56 mt-0.5">
-              {SYMBOLS.map((s) => {
+              {SYMBOLS.map(s => {
                 const p = prices?.[s.symbol];
                 return (
                   <button
@@ -138,16 +170,16 @@ export default function Trading() {
           )}
         </div>
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+        <div className="w-px h-5 bg-[#2a2e39]" />
 
         {/* Timeframes */}
         <div className="flex items-center">
-          {TIMEFRAMES.map((tf) => (
+          {TIMEFRAMES.map(tf => (
             <button
               key={tf}
               onClick={() => setActiveTimeframe(tf)}
               className={cn(
-                "px-2.5 h-[46px] text-xs font-semibold transition-colors",
+                "px-2 h-[46px] text-xs font-semibold transition-colors",
                 activeTimeframe === tf
                   ? "text-white bg-[#2962ff]/20 border-b-2 border-[#2962ff]"
                   : "text-[#787b86] hover:text-white hover:bg-[#1e222d]",
@@ -158,41 +190,108 @@ export default function Trading() {
           ))}
         </div>
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+        <div className="w-px h-5 bg-[#2a2e39]" />
 
-        {/* Action buttons */}
+        {/* Chart types */}
         <div className="flex items-center">
-          {[
-            { icon: SlidersHorizontal, label: "Indicators" },
-            { icon: Bell,              label: "Alert"       },
-            { icon: RotateCcw,         label: "Undo"        },
-            { icon: RotateCw,          label: "Redo"        },
-          ].map(({ icon: Icon, label }) => (
+          {CHART_TYPES.map(({ type, icon: Icon, label }) => (
             <button
-              key={label}
+              key={type}
               title={label}
-              className="flex items-center gap-1.5 px-2.5 h-[46px] text-[#787b86] hover:text-white hover:bg-[#1e222d] transition-colors text-xs"
+              onClick={() => setChartType(type)}
+              className={cn(
+                "w-8 h-[46px] flex items-center justify-center transition-colors",
+                chartType === type
+                  ? "text-[#2962ff]"
+                  : "text-[#787b86] hover:text-white hover:bg-[#1e222d]",
+              )}
             >
               <Icon className="h-4 w-4" />
-              {label === "Indicators" && <span className="text-xs font-medium hidden sm:inline">{label}</span>}
             </button>
           ))}
         </div>
 
+        <div className="w-px h-5 bg-[#2a2e39]" />
+
+        {/* Indicators */}
+        <div className="relative">
+          <button
+            onClick={() => { setIndOpen(o => !o); setSymbolOpen(false); }}
+            className={cn(
+              "flex items-center gap-1.5 h-[46px] px-3 text-xs font-semibold transition-colors",
+              indOpen ? "text-white bg-[#1e222d]" : "text-[#787b86] hover:text-white hover:bg-[#1e222d]",
+            )}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            <span className="hidden sm:inline">Indicators</span>
+            {indicators.size > 0 && (
+              <span className="ml-0.5 bg-[#2962ff] text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                {indicators.size}
+              </span>
+            )}
+          </button>
+
+          {indOpen && (
+            <div className="absolute top-full left-0 z-50 bg-[#1e222d] border border-[#2a2e39] rounded-lg shadow-2xl py-2 w-52 mt-0.5">
+              {/* On Chart section */}
+              <p className="text-[10px] text-[#787b86] font-semibold uppercase tracking-wider px-3 pb-1.5">
+                On Chart
+              </p>
+              {INDICATORS.filter(i => i.section === "chart").map(ind => (
+                <button
+                  key={ind.id}
+                  onClick={() => toggleIndicator(ind.id)}
+                  className="w-full flex items-center gap-3 px-3 py-1.5 hover:bg-[#2a2e39] transition-colors"
+                >
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ background: ind.color }} />
+                  <span className="flex-1 text-left text-xs text-white">
+                    {ind.label}
+                    {ind.sublabel && <span className="text-[#787b86] ml-1">({ind.sublabel})</span>}
+                  </span>
+                  {indicators.has(ind.id) && <Check className="h-3.5 w-3.5 text-[#2962ff]" />}
+                </button>
+              ))}
+
+              <div className="my-1.5 border-t border-[#2a2e39]" />
+
+              {/* Sub-panels section */}
+              <p className="text-[10px] text-[#787b86] font-semibold uppercase tracking-wider px-3 pb-1.5">
+                Sub-Panel
+              </p>
+              {INDICATORS.filter(i => i.section === "panel").map(ind => (
+                <button
+                  key={ind.id}
+                  onClick={() => toggleIndicator(ind.id)}
+                  className="w-full flex items-center gap-3 px-3 py-1.5 hover:bg-[#2a2e39] transition-colors"
+                >
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ background: ind.color }} />
+                  <span className="flex-1 text-left text-xs text-white">
+                    {ind.label}
+                    {ind.sublabel && <span className="text-[#787b86] ml-1">({ind.sublabel})</span>}
+                  </span>
+                  {indicators.has(ind.id) && <Check className="h-3.5 w-3.5 text-[#2962ff]" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex-1" />
 
-        {/* OHLC display */}
+        {/* OHLC */}
         {displayCandle && (
           <div className="hidden lg:flex items-center gap-3 text-xs mr-3">
             {ohlc.map(({ k, v }) => (
               <span key={k} className="text-[#787b86]">
-                {k} <span className={cn("font-semibold tabular-nums",
-                  k === "H" ? "text-[#26a69a]" : k === "L" ? "text-[#ef5350]" : "text-white"
+                {k} <span className={cn(
+                  "font-semibold tabular-nums",
+                  k === "H" ? "text-[#26a69a]" : k === "L" ? "text-[#ef5350]" : "text-white",
                 )}>{v}</span>
               </span>
             ))}
-            <span className={cn("font-bold text-xs tabular-nums", isUp ? "text-[#26a69a]" : "text-[#ef5350]")}>
-              {isUp ? "+" : ""}{(((displayCandle.close - displayCandle.open) / displayCandle.open) * 100).toFixed(2)}%
+            <span className={cn("font-bold tabular-nums", isUp ? "text-[#26a69a]" : "text-[#ef5350]")}>
+              {isUp ? "+" : ""}
+              {(((displayCandle.close - displayCandle.open) / displayCandle.open) * 100).toFixed(2)}%
             </span>
           </div>
         )}
@@ -217,7 +316,6 @@ export default function Trading() {
             <span className="text-[#787b86] text-xs">{activeInfo.market}</span>
           )}
 
-          {/* Live indicator dot */}
           <div className="flex items-center gap-1 ml-1" title={`Status: ${status}`}>
             {status === "live" ? (
               <span className="relative flex h-2 w-2">
@@ -237,20 +335,20 @@ export default function Trading() {
         </div>
       </div>
 
-      {/* ══ MAIN AREA ════════════════════════════════════════════ */}
-      <div className="flex flex-1 min-h-0">
+      {/* ══ MAIN AREA ═════════════════════════════════════════════════════════ */}
+      <div className="flex flex-1 min-h-0" onClick={() => { setSymbolOpen(false); setIndOpen(false); }}>
 
-        {/* ── Left toolbar ─────────────────────────────────── */}
+        {/* Left toolbar */}
         <div className="w-10 border-r border-[#2a2e39] flex flex-col items-center pt-2 pb-2 gap-0.5 shrink-0">
-          {LEFT_TOOLS.map(({ icon: Icon, label }, i) => {
-            const prev = LEFT_TOOLS[i - 1];
-            const showDivider = i > 0 && prev && prev.group !== LEFT_TOOLS[i].group;
+          {DRAWING_TOOLS.map(({ icon: Icon, label }, i) => {
+            const prev = DRAWING_TOOLS[i - 1];
+            const showDivider = i > 0 && prev && prev.group !== DRAWING_TOOLS[i].group;
             return (
               <div key={label} className="w-full flex flex-col items-center">
                 {showDivider && <div className="w-6 h-px bg-[#2a2e39] my-1" />}
                 <button
                   title={label}
-                  onClick={() => setActiveTool(label)}
+                  onClick={e => { e.stopPropagation(); setActiveTool(label); }}
                   className={cn(
                     "w-8 h-8 flex items-center justify-center rounded transition-colors",
                     activeTool === label
@@ -269,7 +367,7 @@ export default function Trading() {
 
           <button
             title="Delete drawing"
-            onClick={() => setActiveTool("Delete")}
+            onClick={e => { e.stopPropagation(); setActiveTool("Delete"); }}
             className={cn(
               "w-8 h-8 flex items-center justify-center rounded transition-colors",
               activeTool === "Delete"
@@ -281,17 +379,17 @@ export default function Trading() {
           </button>
           <button
             title="Clear all drawings"
-            onClick={() => chartRef.current?.clearDrawings()}
+            onClick={e => { e.stopPropagation(); chartRef.current?.clearDrawings(); setActiveTool("Cursor"); }}
             className="w-8 h-8 flex items-center justify-center rounded text-[#787b86] hover:text-white hover:bg-[#1e222d] transition-colors text-[9px] font-bold mt-0.5"
           >
             ALL
           </button>
         </div>
 
-        {/* ── Chart area ───────────────────────────────────── */}
+        {/* Chart area */}
         <div className="flex-1 relative min-w-0 min-h-0">
 
-          {/* Overlay label */}
+          {/* Corner label */}
           <div className="absolute top-2 left-3 z-10 pointer-events-none flex items-center gap-2">
             <span className="text-[#787b86] text-[11px] font-medium">
               {activeInfo.symbol} · {activeInfo.market} · {activeTimeframe}
@@ -301,7 +399,18 @@ export default function Trading() {
             )}
           </div>
 
-          {/* Loading */}
+          {/* Indicator legend */}
+          {indicators.size > 0 && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-3">
+              {INDICATORS.filter(i => indicators.has(i.id)).map(ind => (
+                <span key={ind.id} className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: ind.color }}>
+                  <span className="w-3 h-0.5 rounded-full inline-block" style={{ background: ind.color }} />
+                  {ind.label}({ind.sublabel})
+                </span>
+              ))}
+            </div>
+          )}
+
           {isLoading && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#131722]/90">
               <Loader2 className="h-8 w-8 text-[#2962ff] animate-spin" />
@@ -311,7 +420,6 @@ export default function Trading() {
             </div>
           )}
 
-          {/* Error (no data fallback) */}
           {isError && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4">
               <WifiOff className="h-8 w-8 text-[#ef5350]" />
@@ -331,6 +439,8 @@ export default function Trading() {
               candles={candles}
               symbol={activeSymbol}
               timeframe={activeTimeframe}
+              chartType={chartType}
+              activeIndicators={indicators}
               activeTool={activeTool}
               onCrosshairMove={setTooltipCandle}
             />
