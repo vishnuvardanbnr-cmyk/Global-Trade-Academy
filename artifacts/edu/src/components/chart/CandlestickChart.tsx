@@ -120,7 +120,7 @@ export const CandlestickChart = forwardRef<ChartHandle, Props>(function Candlest
 
   /* ═══════════════════ DRAW ══════════════════════════════════ */
   const stateRef = useRef<State>({
-    visibleCount:    120,
+    visibleCount:    300,
     rightOffset:     0,
     mouseX:          -1,
     mouseY:          -1,

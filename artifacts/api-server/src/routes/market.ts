@@ -15,14 +15,14 @@ const SYMBOL_MAP: Record<string, string> = {
   "AUD/USD": "frxAUDUSD",
 };
 
-const GRANULARITY_MAP: Record<string, { granularity: number; count: number; cacheTtlSec: number }> = {
-  "1m":  { granularity: 60,    count: 500,  cacheTtlSec: 60    },
-  "5m":  { granularity: 300,   count: 500,  cacheTtlSec: 120   },
-  "15m": { granularity: 900,   count: 500,  cacheTtlSec: 300   },
-  "1h":  { granularity: 3600,  count: 500,  cacheTtlSec: 600   },
-  "4h":  { granularity: 14400, count: 500,  cacheTtlSec: 1800  },
-  "1D":  { granularity: 86400, count: 1000, cacheTtlSec: 3600  },
-  "1W":  { granularity: 604800,count: 300,  cacheTtlSec: 7200  },
+const GRANULARITY_MAP: Record<string, { granularity: number; derivCount: number; dbCount: number; cacheTtlSec: number }> = {
+  "1m":  { granularity: 60,    derivCount: 500,  dbCount: 2000,  cacheTtlSec: 60    },
+  "5m":  { granularity: 300,   derivCount: 500,  dbCount: 3000,  cacheTtlSec: 120   },
+  "15m": { granularity: 900,   derivCount: 500,  dbCount: 3000,  cacheTtlSec: 300   },
+  "1h":  { granularity: 3600,  derivCount: 500,  dbCount: 5000,  cacheTtlSec: 600   },
+  "4h":  { granularity: 14400, derivCount: 500,  dbCount: 5000,  cacheTtlSec: 1800  },
+  "1D":  { granularity: 86400, derivCount: 1000, dbCount: 10000, cacheTtlSec: 3600  },
+  "1W":  { granularity: 604800,derivCount: 300,  dbCount: 1000,  cacheTtlSec: 7200  },
 };
 
 interface DerivCandle {
@@ -95,24 +95,38 @@ async function storeCandles(
     });
 }
 
-/** Load cached candles if fresh enough */
+/** Load cached candles if fresh enough.
+ *
+ * Strategy: check whether the most-recently-fetched row for this
+ * symbol+timeframe is within the TTL window.  If yes, serve ALL stored
+ * candles (not just those fetched within the window) so accumulated
+ * DB history grows over time.
+ */
 async function loadCachedCandles(
   symbol: string,
   timeframe: string,
   cacheTtlSec: number,
   count: number,
 ): Promise<{ time: number; open: number; high: number; low: number; close: number }[] | null> {
+  // 1. Find the most recent fetchedAt for this symbol+timeframe
+  const freshCheck = await db
+    .select({ fetchedAt: marketCandlesTable.fetchedAt })
+    .from(marketCandlesTable)
+    .where(and(eq(marketCandlesTable.symbol, symbol), eq(marketCandlesTable.timeframe, timeframe)))
+    .orderBy(sql`fetched_at DESC`)
+    .limit(1);
+
+  if (!freshCheck.length) return null;
+
+  const mostRecent = freshCheck[0].fetchedAt;
   const cutoff = new Date(Date.now() - cacheTtlSec * 1000);
+  if (mostRecent < cutoff) return null; // cache is stale — re-fetch from Deriv
+
+  // 2. Serve all stored candles (accumulated history)
   const rows = await db
     .select()
     .from(marketCandlesTable)
-    .where(
-      and(
-        eq(marketCandlesTable.symbol, symbol),
-        eq(marketCandlesTable.timeframe, timeframe),
-        gte(marketCandlesTable.fetchedAt, cutoff),
-      ),
-    )
+    .where(and(eq(marketCandlesTable.symbol, symbol), eq(marketCandlesTable.timeframe, timeframe)))
     .orderBy(marketCandlesTable.epoch)
     .limit(count);
 
@@ -129,15 +143,15 @@ router.get("/market/candles", async (req, res): Promise<void> => {
   const derivSymbol = SYMBOL_MAP[symbol];
   if (!derivSymbol) { res.status(400).json({ error: "Unknown symbol" }); return; }
 
-  const { granularity, count, cacheTtlSec } = GRANULARITY_MAP[tf] ?? GRANULARITY_MAP["1D"];
+  const { granularity, derivCount, dbCount, cacheTtlSec } = GRANULARITY_MAP[tf] ?? GRANULARITY_MAP["1D"];
 
   try {
     // Try DB cache first
-    const cached = await loadCachedCandles(symbol, tf, cacheTtlSec, count);
+    const cached = await loadCachedCandles(symbol, tf, cacheTtlSec, dbCount);
     if (cached) { res.json(cached); return; }
 
     // Fetch live from Deriv
-    const derivCandles = await fetchDerivCandles(derivSymbol, granularity, count);
+    const derivCandles = await fetchDerivCandles(derivSymbol, granularity, derivCount);
 
     // Persist to DB in background (don't block the response)
     storeCandles(symbol, tf, derivCandles).catch(() => { /* non-fatal */ });
@@ -161,7 +175,7 @@ router.get("/market/candles", async (req, res): Promise<void> => {
         .from(marketCandlesTable)
         .where(and(eq(marketCandlesTable.symbol, symbol), eq(marketCandlesTable.timeframe, tf)))
         .orderBy(marketCandlesTable.epoch)
-        .limit(count);
+        .limit(dbCount);
       if (stale.length) {
         res.json(stale.map((r) => ({ time: r.epoch, open: r.open, high: r.high, low: r.low, close: r.close })));
         return;
