@@ -326,22 +326,73 @@ function PostCard({
 /* ── Chat Bar ─────────────────────────────────────────────────── */
 function ChatBar({ channel, onSent }: { channel: CommunityChannel; onSent: () => void }) {
   const [msg, setMsg] = useState("");
+  const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const createPost = useCreatePost({
     mutation: {
-      onSuccess: () => { setMsg(""); onSent(); },
+      onSuccess: () => { setMsg(""); setPendingImage(null); onSent(); },
       onError: () => toast({ title: "Could not send message", variant: "destructive" }),
     },
   });
 
-  const send = () => {
-    if (!msg.trim() || createPost.isPending) return;
-    createPost.mutate({ data: { title: msg.trim(), channelId: channel.id, category: "chat" } });
+  const send = async () => {
+    if ((!msg.trim() && !pendingImage) || createPost.isPending || uploading) return;
+    let imageUrl: string | undefined;
+    if (pendingImage) {
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append("image", pendingImage.file);
+        const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+        if (!res.ok) throw new Error("Upload failed");
+        const data = await res.json() as { url: string };
+        imageUrl = data.url;
+      } catch {
+        toast({ title: "Image upload failed", variant: "destructive" });
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
+    }
+    createPost.mutate({ data: { title: msg.trim() || "📷", channelId: channel.id, category: "chat", imageUrl } });
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPendingImage({ file, previewUrl: URL.createObjectURL(file) });
+    e.target.value = "";
   };
 
   return (
     <div className="px-4 py-3 border-t border-border bg-background shrink-0">
+      {pendingImage && (
+        <div className="mb-2 relative inline-block">
+          <img src={pendingImage.previewUrl} alt="preview" className="h-20 rounded-xl object-cover border border-border" />
+          <button
+            onClick={() => setPendingImage(null)}
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-2">
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className={cn(
+            "h-9 w-9 rounded-xl shrink-0 flex items-center justify-center border transition-colors",
+            pendingImage
+              ? "border-primary text-primary bg-primary/10"
+              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          )}
+          title="Attach image"
+        >
+          <ImageIcon className="h-4 w-4" />
+        </button>
         <Input
           placeholder={`Message #${channel.name}…`}
           value={msg}
@@ -354,9 +405,9 @@ function ChatBar({ channel, onSent }: { channel: CommunityChannel; onSent: () =>
           size="icon"
           className="h-9 w-9 rounded-xl shrink-0"
           onClick={send}
-          disabled={!msg.trim() || createPost.isPending}
+          disabled={(!msg.trim() && !pendingImage) || createPost.isPending || uploading}
         >
-          <Send className="h-4 w-4" />
+          {uploading ? <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>
     </div>

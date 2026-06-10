@@ -1013,7 +1013,7 @@ export default function CourseDetail() {
       </div>
 
       {/* ── Two-column main area ──────────────────────────── */}
-      <div className="flex-1 min-h-0 bg-slate-100 flex flex-row gap-3 p-3">
+      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col md:flex-row gap-3 p-3">
 
         {/* LEFT: player / quiz / task — takes remaining space */}
         <div className="flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
@@ -1168,7 +1168,7 @@ export default function CourseDetail() {
 
         {/* RIGHT: Overview panel */}
         {showTabPanel && tab === "overview" && (
-        <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+        <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden max-h-[50vh] md:max-h-none">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
             <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">Overview</span>
             <button onClick={() => setShowTabPanel(false)}
@@ -1392,7 +1392,7 @@ export default function CourseDetail() {
 
         {/* RIGHT: Tab content panel (non-overview, non-live-active tabs) */}
         {showTabPanel && tab !== "overview" && !(activeLiveSession !== null && tab === "live") && (
-          <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden">
+          <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden max-h-[55vh] md:max-h-none">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
                 {tab === "quiz" ? "Quizzes"
@@ -1438,9 +1438,11 @@ export default function CourseDetail() {
     {/* ── Floating bottom tab bar ──────────────────────────────── */}
     <div className={cn(
       "fixed bottom-4 z-50 pointer-events-none flex justify-center transition-all duration-200",
-      showTabPanel ? "left-60 right-[404px]" : "left-60 right-0"
+      showTabPanel
+        ? "left-2 md:left-60 right-2 md:right-[404px]"
+        : "left-2 md:left-60 right-2"
     )}>
-      <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto">
+      <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto overflow-x-auto max-w-full scrollbar-hide">
         {[
           { k: "overview"      as Tab, label: "Overview",      Icon: BookOpen },
           { k: "quiz"          as Tab, label: "Quizzes",       Icon: FileQuestion },
@@ -1458,13 +1460,13 @@ export default function CourseDetail() {
               else { setTab(k); setShowTabPanel(true); }
             }}
             className={cn(
-              "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
+              "flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap shrink-0",
               tab === k && showTabPanel
                 ? "bg-slate-900 text-white shadow-sm"
                 : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
             )}>
             <Icon className="h-3.5 w-3.5" />
-            {label}
+            <span className="hidden sm:inline">{label}</span>
             {k === "quiz" && gate && (gate.status === "awaiting_quiz" || gate.status === "rejected") && (
               <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
             )}
