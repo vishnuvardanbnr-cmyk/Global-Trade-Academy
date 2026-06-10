@@ -215,4 +215,36 @@ router.get("/market/prices", async (req, res): Promise<void> => {
   res.json(prices);
 });
 
+/* ── GET /api/market/overview — CoinGecko proxy with 2-min cache ─── */
+let _overviewCache: { ts: number; data: unknown } | null = null;
+
+router.get("/market/overview", async (_req, res): Promise<void> => {
+  if (_overviewCache && Date.now() - _overviewCache.ts < 2 * 60_000) {
+    res.json(_overviewCache.data);
+    return;
+  }
+  try {
+    const headers = { "Accept": "application/json", "User-Agent": "brightinsight/1.0" };
+    const [coinsR, globalR, newR] = await Promise.allSettled([
+      fetch(
+        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h",
+        { headers },
+      ).then((r) => r.json()),
+      fetch("https://api.coingecko.com/api/v3/global", { headers }).then((r) => r.json()),
+      fetch("https://api.coingecko.com/api/v3/coins/list/new", { headers }).then((r) => r.json()),
+    ]);
+    const data = {
+      coins: coinsR.status === "fulfilled" && Array.isArray(coinsR.value) ? coinsR.value : [],
+      global: globalR.status === "fulfilled" ? ((globalR.value as { data?: unknown })?.data ?? {}) : {},
+      newListings: newR.status === "fulfilled" && Array.isArray(newR.value)
+        ? newR.value.slice(0, 12)
+        : [],
+    };
+    _overviewCache = { ts: Date.now(), data };
+    res.json(data);
+  } catch {
+    res.status(502).json({ error: "Failed to fetch market overview" });
+  }
+});
+
 export default router;
