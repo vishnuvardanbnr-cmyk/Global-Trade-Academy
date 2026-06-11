@@ -5,14 +5,21 @@ import { marketCandlesTable } from "@workspace/db";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 const SYMBOL_MAP: Record<string, string> = {
-  "BTC/USD": "cryBTCUSD",
-  "ETH/USD": "cryETHUSD",
-  "EUR/USD": "frxEURUSD",
-  "GBP/USD": "frxGBPUSD",
-  "XAU/USD": "frxXAUUSD",
-  "SPX500":  "OTC_SPX",
-  "USD/JPY": "frxUSDJPY",
-  "AUD/USD": "frxAUDUSD",
+  "BTC/USD":  "cryBTCUSD",
+  "ETH/USD":  "cryETHUSD",
+  "EUR/USD":  "frxEURUSD",
+  "GBP/USD":  "frxGBPUSD",
+  "XAU/USD":  "frxXAUUSD",
+  "XAG/USD":  "frxXAGUSD",
+  "SPX500":   "OTC_SPX",
+  "NDX100":   "OTC_NDX",
+  "DJI":      "OTC_DJI",
+  "FTSE100":  "OTC_FTSE",
+  "USD/JPY":  "frxUSDJPY",
+  "AUD/USD":  "frxAUDUSD",
+  "NZD/USD":  "frxNZDUSD",
+  "USD/CAD":  "frxUSDCAD",
+  "USD/CHF":  "frxUSDCHF",
 };
 
 const GRANULARITY_MAP: Record<string, { granularity: number; derivCount: number; dbCount: number; cacheTtlSec: number }> = {
@@ -213,6 +220,105 @@ router.get("/market/prices", async (req, res): Promise<void> => {
     if (r.status === "fulfilled") prices[r.value.symbol] = r.value;
   }
   res.json(prices);
+});
+
+/* ── GET /api/market/stocks — Stooq CSV (no API key, server-friendly) ── */
+const STOCK_TICKERS = [
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","JPM","V",
+  "WMT","XOM","UNH","LLY","JNJ","MA","NFLX","AMD","ORCL","COST",
+  "UBER","PYPL","INTC","QCOM","TXN","CRM","ADBE","MU","PANW","AMAT",
+];
+
+const STOCK_NAMES: Record<string, string> = {
+  AAPL:"Apple", MSFT:"Microsoft", NVDA:"NVIDIA", GOOGL:"Alphabet",
+  AMZN:"Amazon", META:"Meta", TSLA:"Tesla", AVGO:"Broadcom",
+  JPM:"JPMorgan", V:"Visa", WMT:"Walmart", XOM:"ExxonMobil",
+  UNH:"UnitedHealth", LLY:"Eli Lilly", JNJ:"Johnson & Johnson",
+  MA:"Mastercard", NFLX:"Netflix", AMD:"AMD", ORCL:"Oracle", COST:"Costco",
+  UBER:"Uber", PYPL:"PayPal", INTC:"Intel", QCOM:"Qualcomm", TXN:"Texas Instruments",
+  CRM:"Salesforce", ADBE:"Adobe", MU:"Micron", PANW:"Palo Alto", AMAT:"Applied Materials",
+};
+
+interface StockRow {
+  symbol: string; shortName: string;
+  regularMarketPrice: number; regularMarketChange: number;
+  regularMarketChangePercent: number; marketCap: number;
+  regularMarketVolume: number; regularMarketDayHigh: number; regularMarketDayLow: number;
+}
+
+/** Fetch one stock via Yahoo Finance /v8/finance/chart (works from VPS). */
+async function fetchYahooChart(symbol: string): Promise<StockRow | null> {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`;
+  const r = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Accept": "application/json",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) return null;
+  const json = (await r.json()) as {
+    chart?: {
+      result?: Array<{
+        meta?: {
+          regularMarketPrice?: number;
+          previousClose?: number;
+          regularMarketDayHigh?: number;
+          regularMarketDayLow?: number;
+          regularMarketVolume?: number;
+          marketCap?: number;
+        };
+      }>;
+    };
+  };
+  const meta = json?.chart?.result?.[0]?.meta;
+  if (!meta?.regularMarketPrice) return null;
+  const price = meta.regularMarketPrice;
+  const prev  = meta.previousClose ?? price;
+  const chg   = price - prev;
+  const pct   = prev > 0 ? (chg / prev) * 100 : 0;
+  return {
+    symbol,
+    shortName: STOCK_NAMES[symbol] ?? symbol,
+    regularMarketPrice: price,
+    regularMarketChange: chg,
+    regularMarketChangePercent: pct,
+    marketCap: meta.marketCap ?? 0,
+    regularMarketVolume: meta.regularMarketVolume ?? 0,
+    regularMarketDayHigh: meta.regularMarketDayHigh ?? price,
+    regularMarketDayLow:  meta.regularMarketDayLow  ?? price,
+  };
+}
+
+/** Fetch all stocks in parallel batches of 8 to avoid rate limits. */
+async function fetchAllStocks(): Promise<StockRow[]> {
+  const BATCH = 8;
+  const results: StockRow[] = [];
+  for (let i = 0; i < STOCK_TICKERS.length; i += BATCH) {
+    const batch = STOCK_TICKERS.slice(i, i + BATCH);
+    const settled = await Promise.allSettled(batch.map(fetchYahooChart));
+    for (const r of settled) {
+      if (r.status === "fulfilled" && r.value) results.push(r.value);
+    }
+  }
+  return results;
+}
+
+let _stocksCache: { ts: number; data: StockRow[] } | null = null;
+
+router.get("/market/stocks", async (_req, res): Promise<void> => {
+  if (_stocksCache && Date.now() - _stocksCache.ts < 5 * 60_000) {
+    res.json(_stocksCache.data); return;
+  }
+  try {
+    const quotes = await fetchAllStocks();
+    if (quotes.length === 0) throw new Error("No quotes returned");
+    _stocksCache = { ts: Date.now(), data: quotes };
+    res.json(quotes);
+  } catch (err) {
+    if (_stocksCache) { res.json(_stocksCache.data); return; }
+    res.status(502).json({ error: "Stock data unavailable", detail: String(err) });
+  }
 });
 
 /* ── GET /api/market/overview — CoinGecko proxy with 2-min cache ─── */
