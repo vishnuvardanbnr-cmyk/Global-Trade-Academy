@@ -9,3 +9,4 @@
 - [Backend role lookup pattern](backend-role-lookup.md) — getAuth(req) only returns userId; to get role, query DB: getUserRole(userId) → usersTable.role. Never destructure role from getAuth.
 - [course-detail Tab type narrowing](course-detail-tab-narrowing.md) — the non-overview tab panel checks tab !== "overview"; never add tab === "overview" inside it or TS narrows to never. Overview content lives in the separate overview panel only.
 - [WebSocket real-time chat](websocket-realtime-chat.md) — WS at /api/ws; cookie auth; topic-based pub/sub; messages pushed as full objects, questions/polls/community signal invalidate; 60s polling fallback.
+- [R2 upload integration](r2-upload-integration.md) — Cloudflare R2 via native node:https + Sig V4 (no SDK); two gotchas: Express 5 wildcard *key gives array params (join with "/"), and nginx must use ^~ on /api/ or regex *.png rules intercept the proxy.
