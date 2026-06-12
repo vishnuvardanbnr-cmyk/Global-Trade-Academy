@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { join, extname } from "path";
-import { mkdirSync } from "fs";
+import { mkdirSync, createReadStream, unlink } from "fs";
 import https from "https";
 import { getAuth } from "../lib/auth";
 
@@ -155,6 +155,33 @@ async function r2Get(key: string): Promise<{ ok: boolean; status: number; header
   });
 }
 
+/** Stream a file from disk to R2 using UNSIGNED-PAYLOAD (no need to buffer entire file). */
+async function r2PutStream(key: string, filePath: string, fileSize: number, contentType: string): Promise<void> {
+  const objPath  = `/${R2_BUCKET}/${key}`;
+  const bodyHash = "UNSIGNED-PAYLOAD";
+  const headers  = await signRequest({ method: "PUT", path: objPath, contentType, bodyHash });
+
+  await new Promise<void>((resolve, reject) => {
+    const url = new URL(`${R2_ENDPOINT}${objPath}`);
+    const req = https.request({
+      hostname: url.hostname,
+      path:     url.pathname,
+      method:   "PUT",
+      headers:  { ...headers, "Content-Length": fileSize },
+    }, (res) => {
+      res.resume(); // drain
+      res.on("end", () => {
+        const status = res.statusCode ?? 500;
+        if (status >= 200 && status < 300) { resolve(); return; }
+        reject(new Error(`R2 PUT stream failed: ${status}`));
+      });
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    createReadStream(filePath).pipe(req);
+  });
+}
+
 /* ════════════════════════════════════════════════════
    Local disk fallback (when R2 not configured)
 ════════════════════════════════════════════════════ */
@@ -177,6 +204,26 @@ const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
 
 const uploadDisk = multer({ storage: diskStorage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: imageFilter });
 const uploadMem  = multer({ storage: memStorage,  limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: imageFilter });
+
+/* Video disk storage (for server-side → R2 streaming) */
+const VIDEO_TMP_DIR = join(process.cwd(), "uploads", "tmp-video");
+mkdirSync(VIDEO_TMP_DIR, { recursive: true });
+
+const videoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, VIDEO_TMP_DIR),
+  filename:    (_req, file,  cb) => {
+    const ext = extname(file.originalname).toLowerCase() || ".mp4";
+    cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+  },
+});
+const uploadVideoMulter = multer({
+  storage:    videoStorage,
+  limits:     { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("video/")) cb(null, true);
+    else cb(new Error("Only video files are allowed"));
+  },
+});
 
 /* ════════════════════════════════════════════════════
    Routes
@@ -207,6 +254,38 @@ router.post(
 
     /* Local disk fallback */
     res.json({ url: `/api/uploads/images/${req.file.filename}` });
+  },
+);
+
+/* POST /upload/video — server-side video → R2 (no browser CORS needed) ── */
+router.post(
+  "/upload/video",
+  uploadVideoMulter.single("video"),
+  async (req, res): Promise<void> => {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    if (!req.file) { res.status(400).json({ error: "No video provided" }); return; }
+
+    const { path: filePath, filename, size, mimetype } = req.file;
+    const cleanup = () => unlink(filePath, () => {});
+
+    if (!r2Ready()) {
+      cleanup();
+      res.status(503).json({ error: "R2 not configured", notConfigured: true });
+      return;
+    }
+
+    const ext = extname(filename).toLowerCase() || ".mp4";
+    const key = `videos/${userId}/${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+    try {
+      await r2PutStream(key, filePath, size, mimetype);
+      res.json({ url: `/api/r2/${key}` });
+    } catch (err) {
+      console.error("R2 video upload error:", err);
+      res.status(502).json({ error: "Failed to upload video to R2" });
+    } finally {
+      cleanup();
+    }
   },
 );
 

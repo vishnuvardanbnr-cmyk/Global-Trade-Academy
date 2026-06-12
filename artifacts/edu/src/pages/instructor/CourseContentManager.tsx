@@ -64,26 +64,29 @@ function VideoUrlField({
     setProgress(0);
     setUploadedUrl(null);
     try {
-      const presignRes = await fetch(
-        `/api/upload/presign?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
-      );
-      if (!presignRes.ok) throw new Error("Failed to get upload URL");
-      const { presignedUrl, publicUrl } = await presignRes.json();
+      const formData = new FormData();
+      formData.append("video", file);
 
-      await new Promise<void>((resolve, reject) => {
+      const { url } = await new Promise<{ url: string }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.upload.onprogress = (ev) => {
           if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100));
         };
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText) as { url: string });
+          } else {
+            const msg = (() => { try { return (JSON.parse(xhr.responseText) as { error?: string }).error; } catch { return null; } })();
+            reject(new Error(msg ?? `Upload failed: ${xhr.status}`));
+          }
+        };
         xhr.onerror = () => reject(new Error("Network error"));
-        xhr.open("PUT", presignedUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.send(file);
+        xhr.open("POST", "/api/upload/video");
+        xhr.send(formData);
       });
 
-      setUploadedUrl(publicUrl);
-      onChange(publicUrl);
+      setUploadedUrl(url);
+      onChange(url);
       toast({ title: "Video uploaded successfully" });
     } catch (err) {
       toast({ title: "Upload failed", description: String(err), variant: "destructive" });
