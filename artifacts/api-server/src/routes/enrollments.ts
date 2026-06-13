@@ -128,7 +128,7 @@ router.post("/enrollments", async (req, res): Promise<void> => {
     const inserted = await db.insert(enrollmentsTable).values({
       courseId,
       userId: clerkId,
-      status: "active",
+      status: "pending",
     }).returning();
 
     const enr = inserted[0];

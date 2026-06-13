@@ -23,7 +23,7 @@ import {
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
-  Hash, Pencil, Plus, Search, AlertTriangle, Loader2,
+  Hash, Pencil, Plus, Search, AlertTriangle, Loader2, Check, X,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -738,13 +738,18 @@ function CoursesTab() {
   );
 }
 
+type AdminEnrollmentRequest = { id: number; userId: string; courseId: number; status: string; enrolledAt: string | null; userName: string; userEmail: string; courseTitle: string };
+
 /* ─── Enrollments Tab ─── */
 function EnrollmentsTab() {
   const { toast } = useToast();
   const [enrollments, setEnrollments] = useState<AdminEnrollment[]>([]);
+  const [requests, setRequests] = useState<AdminEnrollmentRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingReqs, setLoadingReqs] = useState(true);
   const [search, setSearch] = useState("");
   const [acting, setActing] = useState<number | null>(null);
+  const [actingReq, setActingReq] = useState<number | null>(null);
   const [grantOpen, setGrantOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -754,7 +759,16 @@ function EnrollmentsTab() {
       if (res.ok) setEnrollments(await res.json());
     } finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+
+  const loadRequests = useCallback(async () => {
+    setLoadingReqs(true);
+    try {
+      const res = await fetch("/api/admin/enrollment-requests");
+      if (res.ok) setRequests(await res.json());
+    } finally { setLoadingReqs(false); }
+  }, []);
+
+  useEffect(() => { load(); loadRequests(); }, [load, loadRequests]);
 
   const remove = async (id: number) => {
     if (!confirm("Remove this enrollment?")) return;
@@ -767,62 +781,136 @@ function EnrollmentsTab() {
     finally { setActing(null); }
   };
 
+  const approveRequest = async (id: number) => {
+    setActingReq(id);
+    try {
+      const res = await fetch(`/api/admin/enrollment-requests/${id}/approve`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      toast({ title: "Enrollment approved" });
+      await Promise.all([load(), loadRequests()]);
+    } catch { toast({ title: "Failed to approve", variant: "destructive" }); }
+    finally { setActingReq(null); }
+  };
+
+  const rejectRequest = async (id: number) => {
+    if (!confirm("Reject and remove this request?")) return;
+    setActingReq(id);
+    try {
+      const res = await fetch(`/api/admin/enrollment-requests/${id}/reject`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      toast({ title: "Request rejected" });
+      loadRequests();
+    } catch { toast({ title: "Failed to reject", variant: "destructive" }); }
+    finally { setActingReq(null); }
+  };
+
   const filtered = enrollments.filter((e) =>
     !search || e.userName.toLowerCase().includes(search.toLowerCase()) || e.courseTitle.toLowerCase().includes(search.toLowerCase()) || e.userEmail.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Input placeholder="Search by student or course…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-        <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh</Button>
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
-            <KeyRound className="h-3.5 w-3.5" /> Grant Access
-          </Button>
-          <Badge variant="outline">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</Badge>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-      ) : filtered.length === 0 ? (
-        <div className="py-12 text-center text-muted-foreground"><GraduationCap className="h-10 w-10 mx-auto mb-3 opacity-30" /><p>No enrollments found.</p></div>
-      ) : (
-        <div className="rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary/40">
-              <tr className="border-b border-border text-muted-foreground text-xs">
-                <th className="text-left px-4 py-3 font-medium">Student</th>
-                <th className="text-left px-4 py-3 font-medium">Course</th>
-                <th className="text-center px-4 py-3 font-medium">Status</th>
-                <th className="text-right px-4 py-3 font-medium">Enrolled</th>
-                <th className="text-right px-4 py-3 font-medium">Completed</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <p className="font-medium truncate max-w-[160px]">{e.userName}</p>
-                    <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{e.userEmail}</p>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground truncate max-w-[200px]">{e.courseTitle}</td>
-                  <td className="px-4 py-3 text-center"><EnrollBadge status={e.status} /></td>
-                  <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{e.enrolledAt ? new Date(e.enrolledAt).toLocaleDateString() : "—"}</td>
-                  <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{e.completedAt ? new Date(e.completedAt).toLocaleDateString() : "—"}</td>
-                  <td className="px-4 py-3">
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 px-2" onClick={() => remove(e.id)} disabled={acting === e.id}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="space-y-6">
+      {/* ── Pending Requests ── */}
+      {(loadingReqs || requests.length > 0) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">Enrollment Requests</h3>
+            {requests.length > 0 && <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[11px]">{requests.length} pending</Badge>}
+          </div>
+          {loadingReqs ? (
+            <div className="space-y-2">{Array(2).fill(0).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+          ) : (
+            <div className="rounded-xl border border-amber-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-amber-50">
+                  <tr className="border-b border-amber-100 text-amber-700 text-xs">
+                    <th className="text-left px-4 py-2.5 font-medium">Student</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Course</th>
+                    <th className="text-right px-4 py-2.5 font-medium">Requested</th>
+                    <th className="px-4 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {requests.map((r) => (
+                    <tr key={r.id} className="border-b border-amber-100/60 last:border-0 hover:bg-amber-50/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-medium truncate max-w-[160px]">{r.userName}</p>
+                        <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{r.userEmail}</p>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[200px]">{r.courseTitle}</td>
+                      <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{r.enrolledAt ? new Date(r.enrolledAt).toLocaleDateString() : "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11px] text-green-600 border-green-200 hover:bg-green-50" onClick={() => approveRequest(r.id)} disabled={actingReq === r.id}>
+                            <Check className="h-3 w-3 mr-1" />Approve
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => rejectRequest(r.id)} disabled={actingReq === r.id}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ── All Enrollments ── */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <Input placeholder="Search by student or course…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+          <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh</Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
+              <KeyRound className="h-3.5 w-3.5" /> Grant Access
+            </Button>
+            <Badge variant="outline">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</Badge>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center text-muted-foreground"><GraduationCap className="h-10 w-10 mx-auto mb-3 opacity-30" /><p>No enrollments found.</p></div>
+        ) : (
+          <div className="rounded-xl border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40">
+                <tr className="border-b border-border text-muted-foreground text-xs">
+                  <th className="text-left px-4 py-3 font-medium">Student</th>
+                  <th className="text-left px-4 py-3 font-medium">Course</th>
+                  <th className="text-center px-4 py-3 font-medium">Status</th>
+                  <th className="text-right px-4 py-3 font-medium">Enrolled</th>
+                  <th className="text-right px-4 py-3 font-medium">Completed</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((e) => (
+                  <tr key={e.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-medium truncate max-w-[160px]">{e.userName}</p>
+                      <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{e.userEmail}</p>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground truncate max-w-[200px]">{e.courseTitle}</td>
+                    <td className="px-4 py-3 text-center"><EnrollBadge status={e.status} /></td>
+                    <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{e.enrolledAt ? new Date(e.enrolledAt).toLocaleDateString() : "—"}</td>
+                    <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{e.completedAt ? new Date(e.completedAt).toLocaleDateString() : "—"}</td>
+                    <td className="px-4 py-3">
+                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 px-2" onClick={() => remove(e.id)} disabled={acting === e.id}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <GrantAccessDialog
         open={grantOpen}

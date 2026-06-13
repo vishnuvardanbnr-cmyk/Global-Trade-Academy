@@ -261,6 +261,93 @@ router.get("/instructor/course-analytics/:courseId", async (req, res): Promise<v
   }
 });
 
+/* ── GET /api/instructor/enrollment-requests ────────────────────── */
+router.get("/instructor/enrollment-requests", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const courseIds = await getInstructorCourseIds(clerkId);
+    if (courseIds.length === 0) { res.json([]); return; }
+
+    const requests = await db
+      .select({
+        id: enrollmentsTable.id,
+        userId: enrollmentsTable.userId,
+        courseId: enrollmentsTable.courseId,
+        status: enrollmentsTable.status,
+        enrolledAt: enrollmentsTable.enrolledAt,
+      })
+      .from(enrollmentsTable)
+      .where(and(inArray(enrollmentsTable.courseId, courseIds), eq(enrollmentsTable.status, "pending")))
+      .orderBy(desc(enrollmentsTable.enrolledAt));
+
+    const userIds = [...new Set(requests.map((e) => e.userId))];
+    const [users, courses] = await Promise.all([
+      userIds.length ? db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email }).from(usersTable).where(inArray(usersTable.id, userIds)) : [],
+      courseIds.length ? db.select({ id: coursesTable.id, title: coursesTable.title }).from(coursesTable).where(inArray(coursesTable.id, courseIds)) : [],
+    ]);
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
+    const courseMap = Object.fromEntries(courses.map((c) => [c.id, c.title]));
+
+    res.json(requests.map((e) => ({
+      ...e,
+      userName: userMap[e.userId]?.displayName ?? userMap[e.userId]?.email ?? e.userId,
+      userEmail: userMap[e.userId]?.email ?? "",
+      courseTitle: courseMap[e.courseId] ?? "Unknown Course",
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing enrollment requests");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/instructor/enrollment-requests/:id/approve ─────── */
+router.post("/instructor/enrollment-requests/:id/approve", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const enrollment = await db.select().from(enrollmentsTable).where(eq(enrollmentsTable.id, id)).limit(1).then((r) => r[0]);
+    if (!enrollment) { res.status(404).json({ error: "Not found" }); return; }
+
+    const courseIds = await getInstructorCourseIds(clerkId);
+    if (!courseIds.includes(enrollment.courseId)) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.update(enrollmentsTable).set({ status: "active" }).where(eq(enrollmentsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error approving enrollment request");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/instructor/enrollment-requests/:id/reject ──────── */
+router.post("/instructor/enrollment-requests/:id/reject", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const enrollment = await db.select().from(enrollmentsTable).where(eq(enrollmentsTable.id, id)).limit(1).then((r) => r[0]);
+    if (!enrollment) { res.status(404).json({ error: "Not found" }); return; }
+
+    const courseIds = await getInstructorCourseIds(clerkId);
+    if (!courseIds.includes(enrollment.courseId)) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.delete(enrollmentsTable).where(eq(enrollmentsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error rejecting enrollment request");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── DELETE /api/instructor/enrollments/:id ─────────────────────── */
 router.delete("/instructor/enrollments/:id", async (req, res): Promise<void> => {
   try {

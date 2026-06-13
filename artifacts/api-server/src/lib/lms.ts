@@ -195,12 +195,16 @@ export async function ownsCourse(userId: string, courseId: number): Promise<bool
   return !!course && course.instructorId === userId;
 }
 
-/** Whether the user has an enrollment for the course. */
+/** Whether the user has an active (approved) enrollment for the course. Pending requests are excluded. */
 export async function isEnrolled(userId: string, courseId: number): Promise<boolean> {
   const e = await db
     .select({ id: enrollmentsTable.id })
     .from(enrollmentsTable)
-    .where(and(eq(enrollmentsTable.userId, userId), eq(enrollmentsTable.courseId, courseId)))
+    .where(and(
+      eq(enrollmentsTable.userId, userId),
+      eq(enrollmentsTable.courseId, courseId),
+      inArray(enrollmentsTable.status, ["active", "completed"]),
+    ))
     .limit(1)
     .then((r) => r[0]);
   return !!e;

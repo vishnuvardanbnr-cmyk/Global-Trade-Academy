@@ -854,7 +854,9 @@ export default function CourseDetail() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const isEnrolled = enrollments?.some((e) => e.courseId === courseId) ?? false;
+  const myEnrollment = enrollments?.find((e) => e.courseId === courseId);
+  const isEnrolled = myEnrollment?.status === "active" || myEnrollment?.status === "completed";
+  const isPendingEnrollment = myEnrollment?.status === "pending";
 
   const { data: progress } = useGetCourseProgress(validId, {
     query: { enabled: courseId > 0 && isEnrolled, queryKey: getGetCourseProgressQueryKey(validId) },
@@ -932,7 +934,7 @@ export default function CourseDetail() {
     try {
       await enroll({ data: { courseId } });
       await qc.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
-      toast({ title: "Enrolled!", description: "Start your first lesson below." });
+      toast({ title: "Request submitted!", description: "You'll be notified once the instructor approves your enrollment." });
     } catch { toast({ title: "Enrollment failed", variant: "destructive" }); }
   };
 
@@ -1259,10 +1261,16 @@ export default function CourseDetail() {
                     <span className="text-[12px] text-slate-400 pb-1.5">Full lifetime access</span>
                   )}
                 </div>
-                <button onClick={doEnroll} disabled={enrolling}
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-500/30 disabled:opacity-60 active:scale-[0.98]">
-                  {enrolling ? "Enrolling…" : course.price ? "Enroll Now" : "Enroll Free"}
-                </button>
+                {isPendingEnrollment ? (
+                  <div className="w-full py-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl font-semibold text-[13px] text-center flex items-center justify-center gap-2">
+                    <Clock className="h-4 w-4 shrink-0" /> Pending Approval
+                  </div>
+                ) : (
+                  <button onClick={doEnroll} disabled={enrolling}
+                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-500/30 disabled:opacity-60 active:scale-[0.98]">
+                    {enrolling ? "Sending request…" : course.price ? "Request Access" : "Request to Enroll"}
+                  </button>
+                )}
                 <ul className="space-y-2">
                   {[`${totalL} lessons`, "Quizzes & tasks", "Certificate on completion", "Lifetime access"].map((f) => (
                     <li key={f} className="flex items-center gap-2 text-[12px] text-slate-600">
@@ -1593,20 +1601,31 @@ function OverviewTab({
         </div>
       )}
 
-      {/* Enroll CTA for non-enrolled visitors */}
+      {/* Enroll / pending CTA for non-enrolled visitors */}
       {!isEnrolled && (
         <div className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 border border-blue-200/60">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0 shadow-md shadow-blue-600/20">
-            <Lock className="h-5 w-5 text-white" />
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-md ${isPendingEnrollment ? "bg-amber-400 shadow-amber-400/20" : "bg-blue-600 shadow-blue-600/20"}`}>
+            {isPendingEnrollment ? <Clock className="h-5 w-5 text-white" /> : <Lock className="h-5 w-5 text-white" />}
           </div>
           <div className="flex-1">
-            <p className="text-[14px] font-bold text-slate-900 mb-0.5">Unlock all {totalL} lessons</p>
-            <p className="text-[12.5px] text-slate-500">Free preview lessons are available now. Enroll to access quizzes, tasks, notes, and your certificate.</p>
+            {isPendingEnrollment ? (
+              <>
+                <p className="text-[14px] font-bold text-slate-900 mb-0.5">Approval pending</p>
+                <p className="text-[12.5px] text-slate-500">Your request has been sent to the instructor. You'll gain access once it's approved.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[14px] font-bold text-slate-900 mb-0.5">Unlock all {totalL} lessons</p>
+                <p className="text-[12.5px] text-slate-500">Free preview lessons are available now. Request access to unlock quizzes, tasks, notes, and your certificate.</p>
+              </>
+            )}
           </div>
-          <button onClick={doEnroll} disabled={enrolling}
-            className="shrink-0 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[13px] font-bold transition-colors disabled:opacity-60 shadow-sm whitespace-nowrap">
-            {enrolling ? "Enrolling…" : "Enroll Free"}
-          </button>
+          {!isPendingEnrollment && (
+            <button onClick={doEnroll} disabled={enrolling}
+              className="shrink-0 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[13px] font-bold transition-colors disabled:opacity-60 shadow-sm whitespace-nowrap">
+              {enrolling ? "Sending…" : "Request Access"}
+            </button>
+          )}
         </div>
       )}
     </div>

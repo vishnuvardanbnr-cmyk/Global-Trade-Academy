@@ -210,6 +210,80 @@ router.post("/admin/enroll", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/admin/enrollment-requests ─────────────────────────── */
+router.get("/admin/enrollment-requests", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const requests = await db
+      .select({
+        id: enrollmentsTable.id,
+        userId: enrollmentsTable.userId,
+        courseId: enrollmentsTable.courseId,
+        status: enrollmentsTable.status,
+        enrolledAt: enrollmentsTable.enrolledAt,
+      })
+      .from(enrollmentsTable)
+      .where(eq(enrollmentsTable.status, "pending"))
+      .orderBy(desc(enrollmentsTable.enrolledAt));
+
+    const userIds = [...new Set(requests.map((e) => e.userId))];
+    const courseIds = [...new Set(requests.map((e) => e.courseId))];
+    const [users, courses] = await Promise.all([
+      userIds.length ? db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email }).from(usersTable).where(inArray(usersTable.id, userIds)) : [],
+      courseIds.length ? db.select({ id: coursesTable.id, title: coursesTable.title, instructorId: coursesTable.instructorId }).from(coursesTable).where(inArray(coursesTable.id, courseIds)) : [],
+    ]);
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
+    const courseMap = Object.fromEntries(courses.map((c) => [c.id, c]));
+
+    res.json(requests.map((e) => ({
+      ...e,
+      userName: userMap[e.userId]?.displayName ?? userMap[e.userId]?.email ?? e.userId,
+      userEmail: userMap[e.userId]?.email ?? "",
+      courseTitle: courseMap[e.courseId]?.title ?? "Unknown",
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing enrollment requests");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/enrollment-requests/:id/approve ────────────── */
+router.post("/admin/enrollment-requests/:id/approve", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const updated = await db.update(enrollmentsTable).set({ status: "active" }).where(eq(enrollmentsTable.id, id)).returning({ id: enrollmentsTable.id });
+    if (updated.length === 0) { res.status(404).json({ error: "Not found" }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error approving enrollment request");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/enrollment-requests/:id/reject ─────────────── */
+router.post("/admin/enrollment-requests/:id/reject", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    await db.delete(enrollmentsTable).where(eq(enrollmentsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error rejecting enrollment request");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── DELETE /api/admin/enrollments/:id ──────────────────────────── */
 router.delete("/admin/enrollments/:id", async (req, res): Promise<void> => {
   try {
