@@ -24,6 +24,7 @@ import {
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
   Hash, Pencil, Plus, Search, AlertTriangle, Loader2, Check, X,
+  Layout, ExternalLink, Save,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -1841,6 +1842,375 @@ function BroadcastTab() {
 }
 
 /* ════════════════════════════════════════════
+   LANDING PAGE TAB
+════════════════════════════════════════════ */
+
+interface StatItem { value: string; label: string; }
+interface FeatureItem { title: string; desc: string; }
+interface TestimonialItem { name: string; role: string; text: string; }
+interface LandingContent {
+  hero: { badge: string; headline1: string; headline2: string; subheadline: string; cta1: string; cta2: string; trustBadges: string[]; };
+  stats: StatItem[];
+  features: { badge: string; title: string; subtitle: string; items: FeatureItem[]; };
+  testimonials: { title: string; subtitle: string; items: TestimonialItem[]; };
+  cta: { headline: string; subtitle: string; buttonText: string; };
+}
+
+const LANDING_DEFAULT: LandingContent = {
+  hero: {
+    badge: "Join 50,000+ ambitious traders worldwide",
+    headline1: "Master the markets",
+    headline2: "with precision.",
+    subheadline: "The professional education platform for serious traders. Structured courses, live market analysis, and real-time tools — all in one premium environment.",
+    cta1: "Start Learning Free",
+    cta2: "Watch Demo",
+    trustBadges: ["No credit card required", "Free 14-day trial", "Cancel anytime"],
+  },
+  stats: [
+    { value: "50,000+", label: "Active Students" },
+    { value: "200+", label: "Expert Courses" },
+    { value: "98%", label: "Satisfaction Rate" },
+    { value: "$2.4B+", label: "Student Portfolio" },
+  ],
+  features: {
+    badge: "Everything you need",
+    title: "Built for serious traders",
+    subtitle: "A complete ecosystem covering education, real-time trading tools, and community support.",
+    items: [
+      { title: "Structured Academy", desc: "Step-by-step curriculum from market fundamentals to advanced algorithmic trading, designed by verified professionals." },
+      { title: "Live Market Sessions", desc: "Watch experts analyze live charts, execute trades, and manage risk in real-time across global sessions." },
+      { title: "Verified Copy Trading", desc: "Learn by following. Analyze portfolios, risk metrics, and strategies of top-performing verified traders." },
+      { title: "Real-Time Markets", desc: "Professional-grade charting tools, watchlists, and market data used by institutional traders worldwide." },
+      { title: "Active Community", desc: "Collaborate, share trade ideas, and get feedback from a global community of serious traders." },
+      { title: "XP & Certification", desc: "Earn XP, climb leaderboards, and collect verified certificates to showcase your trading expertise." },
+    ],
+  },
+  testimonials: {
+    title: "Trusted by traders globally",
+    subtitle: "Real results from real students",
+    items: [
+      { name: "Sarah Chen", role: "Forex Trader", text: "The structured curriculum took me from zero to consistently profitable in 6 months. The live sessions are invaluable." },
+      { name: "Marcus Adeyemi", role: "Crypto Analyst", text: "Copy trading helped me understand risk management hands-on. The transparency of trader metrics is unmatched." },
+      { name: "Elena Petrova", role: "Options Trader", text: "Best investment education platform I've used. The community is incredibly supportive and knowledge-rich." },
+    ],
+  },
+  cta: {
+    headline: "Ready to trade smarter?",
+    subtitle: "Join thousands of traders already using Bright Insight to sharpen their edge. Start free today.",
+    buttonText: "Start Learning Free",
+  },
+};
+
+function deepMergeLanding(defaults: LandingContent, overrides: Partial<LandingContent>): LandingContent {
+  if (!overrides || typeof overrides !== "object") return defaults;
+  const result = { ...defaults } as Record<string, unknown>;
+  for (const key of Object.keys(overrides)) {
+    const dv = (defaults as Record<string, unknown>)[key];
+    const ov = (overrides as Record<string, unknown>)[key];
+    if (Array.isArray(dv) && Array.isArray(ov)) { result[key] = ov; }
+    else if (dv && typeof dv === "object" && ov && typeof ov === "object") { result[key] = { ...(dv as object), ...(ov as object) }; }
+    else if (ov !== undefined) { result[key] = ov; }
+  }
+  return result as LandingContent;
+}
+
+function LandingPageTab() {
+  const { toast } = useToast();
+  const [content, setContent] = useState<LandingContent>(LANDING_DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activeSection, setActiveSection] = useState("hero");
+
+  useEffect(() => {
+    fetch("/api/site-settings/landing_page")
+      .then((r) => r.json())
+      .then((data) => { if (data.value) setContent(deepMergeLanding(LANDING_DEFAULT, data.value)); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await fetch("/api/admin/site-settings/landing_page", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: content }),
+      });
+      if (r.ok) {
+        toast({ title: "Landing page saved", description: "Changes are now live on the homepage." });
+      } else {
+        const d = await r.json();
+        toast({ title: "Error", description: d.error, variant: "destructive" });
+      }
+    } finally { setSaving(false); }
+  };
+
+  const setHero = (patch: Partial<LandingContent["hero"]>) =>
+    setContent((c) => ({ ...c, hero: { ...c.hero, ...patch } }));
+  const setFeatures = (patch: Partial<LandingContent["features"]>) =>
+    setContent((c) => ({ ...c, features: { ...c.features, ...patch } }));
+  const setTestimonials = (patch: Partial<LandingContent["testimonials"]>) =>
+    setContent((c) => ({ ...c, testimonials: { ...c.testimonials, ...patch } }));
+  const setCta = (patch: Partial<LandingContent["cta"]>) =>
+    setContent((c) => ({ ...c, cta: { ...c.cta, ...patch } }));
+
+  const sections = ["hero", "stats", "features", "testimonials", "cta"];
+  const sectionLabel: Record<string, string> = { hero: "Hero", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section" };
+
+  if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>;
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2"><Layout className="h-4 w-4" />Landing Page Editor</h2>
+          <p className="text-sm text-muted-foreground">Edit the content shown on your public homepage.</p>
+        </div>
+        <div className="flex gap-2">
+          <a href="/" target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" size="sm"><ExternalLink className="h-3.5 w-3.5 mr-1.5" />Preview</Button>
+          </a>
+          <Button size="sm" onClick={save} disabled={saving}>
+            <Save className="h-3.5 w-3.5 mr-1.5" />{saving ? "Saving…" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Section tabs */}
+      <div className="flex gap-1 flex-wrap border-b border-border pb-0">
+        {sections.map((s) => (
+          <button
+            key={s}
+            onClick={() => setActiveSection(s)}
+            className={cn(
+              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+              activeSection === s
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {sectionLabel[s]}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Hero ── */}
+      {activeSection === "hero" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Badge & Headline</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Badge text</label>
+                <Input value={content.hero.badge} onChange={(e) => setHero({ badge: e.target.value })} placeholder="Join 50,000+ ambitious traders worldwide" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Headline line 1</label>
+                  <Input value={content.hero.headline1} onChange={(e) => setHero({ headline1: e.target.value })} placeholder="Master the markets" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Headline line 2 (accent colour)</label>
+                  <Input value={content.hero.headline2} onChange={(e) => setHero({ headline2: e.target.value })} placeholder="with precision." />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Subheadline</label>
+                <Textarea rows={2} value={content.hero.subheadline} onChange={(e) => setHero({ subheadline: e.target.value })} />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Buttons</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Primary CTA label</label>
+                <Input value={content.hero.cta1} onChange={(e) => setHero({ cta1: e.target.value })} placeholder="Start Learning Free" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Secondary CTA label</label>
+                <Input value={content.hero.cta2} onChange={(e) => setHero({ cta2: e.target.value })} placeholder="Watch Demo" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Trust Badges (3 items)</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {content.hero.trustBadges.map((b, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                  <Input value={b} onChange={(e) => {
+                    const arr = [...content.hero.trustBadges];
+                    arr[i] = e.target.value;
+                    setHero({ trustBadges: arr });
+                  }} />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Stats ── */}
+      {activeSection === "stats" && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Stats Bar (4 items)</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            {content.stats.map((s, i) => (
+              <div key={i} className="grid grid-cols-2 gap-3 items-end">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Value {i + 1}</label>
+                  <Input value={s.value} onChange={(e) => {
+                    const arr = [...content.stats];
+                    arr[i] = { ...arr[i], value: e.target.value };
+                    setContent((c) => ({ ...c, stats: arr }));
+                  }} placeholder="50,000+" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Label {i + 1}</label>
+                  <Input value={s.label} onChange={(e) => {
+                    const arr = [...content.stats];
+                    arr[i] = { ...arr[i], label: e.target.value };
+                    setContent((c) => ({ ...c, stats: arr }));
+                  }} placeholder="Active Students" />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Features ── */}
+      {activeSection === "features" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Section Header</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Badge text</label>
+                <Input value={content.features.badge} onChange={(e) => setFeatures({ badge: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Title</label>
+                <Input value={content.features.title} onChange={(e) => setFeatures({ title: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Subtitle</label>
+                <Textarea rows={2} value={content.features.subtitle} onChange={(e) => setFeatures({ subtitle: e.target.value })} />
+              </div>
+            </CardContent>
+          </Card>
+          {content.features.items.map((item, i) => (
+            <Card key={i}>
+              <CardHeader><CardTitle className="text-sm">Feature {i + 1}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Title</label>
+                  <Input value={item.title} onChange={(e) => {
+                    const arr = [...content.features.items];
+                    arr[i] = { ...arr[i], title: e.target.value };
+                    setFeatures({ items: arr });
+                  }} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Description</label>
+                  <Textarea rows={2} value={item.desc} onChange={(e) => {
+                    const arr = [...content.features.items];
+                    arr[i] = { ...arr[i], desc: e.target.value };
+                    setFeatures({ items: arr });
+                  }} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* ── Testimonials ── */}
+      {activeSection === "testimonials" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Section Header</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Title</label>
+                <Input value={content.testimonials.title} onChange={(e) => setTestimonials({ title: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Subtitle</label>
+                <Input value={content.testimonials.subtitle} onChange={(e) => setTestimonials({ subtitle: e.target.value })} />
+              </div>
+            </CardContent>
+          </Card>
+          {content.testimonials.items.map((item, i) => (
+            <Card key={i}>
+              <CardHeader><CardTitle className="text-sm">Testimonial {i + 1}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Name</label>
+                    <Input value={item.name} onChange={(e) => {
+                      const arr = [...content.testimonials.items];
+                      arr[i] = { ...arr[i], name: e.target.value };
+                      setTestimonials({ items: arr });
+                    }} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Role / Title</label>
+                    <Input value={item.role} onChange={(e) => {
+                      const arr = [...content.testimonials.items];
+                      arr[i] = { ...arr[i], role: e.target.value };
+                      setTestimonials({ items: arr });
+                    }} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Quote</label>
+                  <Textarea rows={3} value={item.text} onChange={(e) => {
+                    const arr = [...content.testimonials.items];
+                    arr[i] = { ...arr[i], text: e.target.value };
+                    setTestimonials({ items: arr });
+                  }} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* ── CTA ── */}
+      {activeSection === "cta" && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">CTA Section (bottom banner)</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Headline</label>
+              <Input value={content.cta.headline} onChange={(e) => setCta({ headline: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Subtitle</label>
+              <Textarea rows={2} value={content.cta.subtitle} onChange={(e) => setCta({ subtitle: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Button label</label>
+              <Input value={content.cta.buttonText} onChange={(e) => setCta({ buttonText: e.target.value })} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Bottom save */}
+      <div className="flex justify-end pt-2 pb-8">
+        <Button onClick={save} disabled={saving} className="min-w-32">
+          <Save className="h-4 w-4 mr-2" />{saving ? "Saving…" : "Save Changes"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
 export default function AdminPanel() {
@@ -1867,6 +2237,7 @@ export default function AdminPanel() {
         <TabsContent value="events" className="mt-6"><EventsTab /></TabsContent>
         <TabsContent value="broadcast" className="mt-6"><BroadcastTab /></TabsContent>
         <TabsContent value="activity" className="mt-6"><ActivityTab /></TabsContent>
+        <TabsContent value="landing" className="mt-6"><LandingPageTab /></TabsContent>
       </Tabs>
     </div>
   );

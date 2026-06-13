@@ -5,7 +5,7 @@ import {
   usersTable, coursesTable, enrollmentsTable, lessonsTable,
   lessonProgressTable, quizAttemptsTable, taskCompletionsTable,
   xpEventsTable, activityTable, liveClassesTable, certificatesTable,
-  postsTable, commentsTable, eventsTable,
+  postsTable, commentsTable, eventsTable, siteSettingsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
@@ -634,6 +634,42 @@ router.post("/admin/broadcast", async (req, res): Promise<void> => {
     res.json({ ok: true, notified: users.length, emailResult });
   } catch (err) {
     req.log.error({ err }, "Error sending broadcast");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/site-settings/:key  (public — no auth) ─────────── */
+router.get("/site-settings/:key", async (req, res): Promise<void> => {
+  try {
+    const row = await db
+      .select()
+      .from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, req.params.key))
+      .limit(1)
+      .then((r) => r[0]);
+    if (!row) { res.json({ value: null }); return; }
+    res.json({ value: JSON.parse(row.value) });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── PUT /api/admin/site-settings/:key  (admin only) ─────────── */
+router.put("/admin/site-settings/:key", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { value } = req.body as { value: unknown };
+    if (value === undefined) { res.status(400).json({ error: "value required" }); return; }
+    await db
+      .insert(siteSettingsTable)
+      .values({ key: req.params.key, value: JSON.stringify(value) })
+      .onConflictDoUpdate({
+        target: siteSettingsTable.key,
+        set: { value: JSON.stringify(value), updatedAt: new Date() },
+      });
+    res.json({ ok: true });
+  } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }
 });

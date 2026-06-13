@@ -16,3 +16,4 @@ export * from "./events";
 export * from "./resources";
 export * from "./discussions";
 export * from "./market-candles";
+export * from "./site-settings";
