@@ -182,7 +182,7 @@ function GrantAccessDialog({
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* User card */}
           {prefilledUser ? (
-            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-muted/60 border border-border">
+            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-muted/60 border border-border overflow-hidden">
               <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center text-sm font-bold text-primary shrink-0">
                 {(prefilledUser.displayName ?? prefilledUser.email ?? "U").charAt(0).toUpperCase()}
               </div>
@@ -204,7 +204,7 @@ function GrantAccessDialog({
                   className="pl-9 h-9 text-sm"
                 />
               </div>
-              <div className="max-h-36 overflow-y-auto rounded-xl border border-border bg-background">
+              <div className="max-h-36 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-background">
                 {filteredUsers.length === 0 ? (
                   <p className="py-5 text-center text-xs text-muted-foreground">No users found</p>
                 ) : filteredUsers.map((u) => (
@@ -273,7 +273,7 @@ function GrantAccessDialog({
                     className="pl-9 h-9 text-sm"
                   />
                 </div>
-                <div className="max-h-52 overflow-y-auto rounded-xl border border-border bg-background">
+                <div className="max-h-52 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-background">
                   {filteredCourses.length === 0 ? (
                     <p className="py-5 text-center text-xs text-muted-foreground">No courses match</p>
                   ) : filteredCourses.map((c) => {
