@@ -126,32 +126,62 @@ async function r2Put(key: string, body: Buffer, contentType: string): Promise<vo
   });
 }
 
-async function r2Get(key: string): Promise<{ ok: boolean; status: number; headers: Map<string,string>; body(): Promise<Buffer> }> {
-  const path     = `/${R2_BUCKET}/${key}`;
+/**
+ * Stream an R2 object directly to an Express response.
+ * Forwards Range header so browsers can seek video without downloading the whole file.
+ */
+async function r2Stream(
+  key: string,
+  rangeHeader: string | undefined,
+  res: import("express").Response,
+): Promise<void> {
+  const objPath  = `/${R2_BUCKET}/${key}`;
   const bodyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // SHA-256("")
-  const headers  = await signRequest({ method: "GET", path, bodyHash });
+  const sigHeaders = await signRequest({ method: "GET", path: objPath, bodyHash });
 
-  return new Promise((resolve, reject) => {
-    const url  = new URL(`${R2_ENDPOINT}${path}`);
-    const opts = {
+  const reqHeaders: Record<string, string | number> = { ...sigHeaders };
+  if (rangeHeader) reqHeaders["Range"] = rangeHeader;
+
+  await new Promise<void>((resolve, reject) => {
+    const url = new URL(`${R2_ENDPOINT}${objPath}`);
+    const r2Req = https.request({
       hostname: url.hostname,
       path:     url.pathname,
       method:   "GET",
-      headers,
-    };
-    const req = https.request(opts, (res) => {
-      const chunks: Buffer[] = [];
-      res.on("data", (c: Buffer) => chunks.push(c));
-      res.on("end", () => {
-        const buf    = Buffer.concat(chunks);
-        const status = res.statusCode ?? 500;
-        const hdrs   = new Map(Object.entries(res.headers as Record<string,string>));
-        resolve({ ok: status >= 200 && status < 300, status, headers: hdrs, body: async () => buf });
-      });
-      res.on("error", reject);
+      headers:  reqHeaders,
+    }, (r2Res) => {
+      const status = r2Res.statusCode ?? 500;
+
+      if (status === 404 || status === 403) {
+        res.status(404).json({ error: "File not found" });
+        r2Res.resume();
+        resolve();
+        return;
+      }
+      if (status < 200 || status >= 300) {
+        res.status(502).json({ error: "R2 error" });
+        r2Res.resume();
+        resolve();
+        return;
+      }
+
+      // Forward key headers; let browsers know range/seeking is supported
+      res.status(status); // 200 or 206 Partial Content
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      const fwd = ["content-type", "content-length", "content-range", "etag", "last-modified"];
+      for (const h of fwd) {
+        const v = r2Res.headers[h];
+        if (v) res.setHeader(h, v);
+      }
+
+      // Pipe directly — never buffer the whole file in memory
+      r2Res.pipe(res);
+      r2Res.on("end",   resolve);
+      r2Res.on("error", reject);
     });
-    req.on("error", reject);
-    req.end();
+    r2Req.on("error", reject);
+    r2Req.end();
   });
 }
 
@@ -289,27 +319,17 @@ router.post(
   },
 );
 
-/* GET /r2/* — proxy R2 objects ─────────────── */
+/* GET /r2/* — streaming proxy for R2 objects (supports Range for video seeking) */
 router.get("/r2/*key", async (req, res): Promise<void> => {
   if (!r2Ready()) { res.status(503).json({ error: "R2 not configured" }); return; }
 
   const rawKey = (req.params as Record<string, string | string[]>).key;
   const key = Array.isArray(rawKey) ? rawKey.join("/") : (rawKey ?? "");
   try {
-    const r2Resp = await r2Get(key);
-    if (!r2Resp.ok) {
-      res.status(r2Resp.status === 404 ? 404 : 502).json({ error: "File not found" });
-      return;
-    }
-    const buf         = await r2Resp.body();
-    const contentType = r2Resp.headers.get("content-type") ?? "application/octet-stream";
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.setHeader("Content-Length", buf.length);
-    res.end(buf);
+    await r2Stream(key, req.headers.range, res);
   } catch (err) {
     console.error("R2 proxy error:", err);
-    res.status(502).json({ error: "Failed to fetch from R2" });
+    if (!res.headersSent) res.status(502).json({ error: "Failed to fetch from R2" });
   }
 });
 
