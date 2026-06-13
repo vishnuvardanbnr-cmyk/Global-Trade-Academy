@@ -229,6 +229,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
   const pendingReviews = reviewCount?.pending ?? 0;
 
+  const search = useSearch();
+
   const isFullBleed  = location.startsWith("/courses/");
   const isChartPage  = location === "/trading" || location === "/community";
   const isWidePage   = location === "/courses" || location === "/copy-trading";
@@ -251,7 +253,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {role === "instructor" ? "Instructor" : role === "admin" ? "Admin" : "Navigation"}
         </p>
         {(role === "instructor" ? instructorNav : role === "admin" ? adminNav : studentNav).map((item) => {
-          const currentTab = new URLSearchParams(window.location.search).get("tab") ?? "";
+          const currentTab = new URLSearchParams(search).get("tab") ?? "";
           const isActive = "tab" in item
             ? location === item.href && currentTab === (item.tab ?? "")
             : location === item.href || location.startsWith(item.href + "/");
