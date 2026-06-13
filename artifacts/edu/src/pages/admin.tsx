@@ -23,7 +23,7 @@ import {
   Clock, ChevronDown, ChevronUp, BookMarked, FileText,
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
-  Hash, Pencil, Plus,
+  Hash, Pencil, Plus, Search, AlertTriangle, Loader2,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -67,11 +67,12 @@ function GrantAccessDialog({
   const { data: allUsers } = useListUsers({});
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
-  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [selectedCourseIds, setSelectedCourseIds] = useState<Set<number>>(new Set());
+  const [courseSearch, setCourseSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // Load courses when dialog opens
   useEffect(() => {
     if (!open) return;
     fetch("/api/admin/courses")
@@ -80,9 +81,11 @@ function GrantAccessDialog({
       .catch(() => {});
   }, [open]);
 
-  // Reset when dialog closes
   useEffect(() => {
-    if (!open) { setSelectedUserId(""); setSelectedCourseId(""); setUserSearch(""); }
+    if (!open) {
+      setSelectedUserId(""); setSelectedCourseIds(new Set());
+      setUserSearch(""); setCourseSearch(""); setProgress(null);
+    }
   }, [open]);
 
   const effectiveUserId = prefilledUser ? prefilledUser.id : selectedUserId;
@@ -96,136 +99,263 @@ function GrantAccessDialog({
     (u.email ?? "").toLowerCase().includes(userSearch.toLowerCase())
   ).slice(0, 50);
 
-  const selectedCourse = courses.find((c) => String(c.id) === selectedCourseId);
+  const filteredCourses = courses.filter((c) =>
+    !courseSearch || c.title.toLowerCase().includes(courseSearch.toLowerCase())
+  );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!effectiveUserId || !selectedCourseId) return;
-    setSubmitting(true);
-    try {
-      const r = await fetch("/api/admin/enroll", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: effectiveUserId, courseId: parseInt(selectedCourseId) }),
-      });
-      const data = await r.json();
-      if (!r.ok) {
-        toast({ title: data.error ?? "Failed to grant access", variant: "destructive" });
-        return;
-      }
-      toast({
-        title: "Access granted!",
-        description: `${effectiveUserName} can now access "${selectedCourse?.title}".`,
-      });
-      onSuccess();
-      onOpenChange(false);
-    } catch {
-      toast({ title: "Failed to grant access", variant: "destructive" });
-    } finally {
-      setSubmitting(false);
+  const toggleCourse = (id: number) => {
+    setSelectedCourseIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedCourseIds.size === filteredCourses.length) {
+      setSelectedCourseIds(new Set());
+    } else {
+      setSelectedCourseIds(new Set(filteredCourses.map((c) => c.id)));
     }
   };
 
+  const hasPaidSelected = courses.some(
+    (c) => selectedCourseIds.has(c.id) && parseFloat(c.price ?? "0") > 0
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!effectiveUserId || selectedCourseIds.size === 0) return;
+    setSubmitting(true);
+    const ids = Array.from(selectedCourseIds);
+    setProgress({ done: 0, total: ids.length });
+    let succeeded = 0;
+    let firstError: string | null = null;
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        const r = await fetch("/api/admin/enroll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: effectiveUserId, courseId: ids[i] }),
+        });
+        const data = await r.json();
+        if (r.ok) { succeeded++; }
+        else if (!firstError) { firstError = data.error ?? "Failed"; }
+      } catch {
+        if (!firstError) firstError = "Network error";
+      }
+      setProgress({ done: i + 1, total: ids.length });
+    }
+    setSubmitting(false);
+    setProgress(null);
+    if (succeeded > 0) {
+      toast({
+        title: succeeded === ids.length ? "Access granted!" : `Granted ${succeeded} of ${ids.length}`,
+        description: `${effectiveUserName} now has access to ${succeeded} course${succeeded !== 1 ? "s" : ""}.`,
+      });
+      onSuccess();
+      onOpenChange(false);
+    } else {
+      toast({ title: "Failed to grant access", description: firstError ?? "Unknown error", variant: "destructive" });
+    }
+  };
+
+  const allFilteredSelected = filteredCourses.length > 0 && filteredCourses.every((c) => selectedCourseIds.has(c.id));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-primary" /> Grant Course Access
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+              <KeyRound className="h-4.5 w-4.5 text-primary" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-semibold leading-tight">Grant Course Access</DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Enroll a user in one or more courses, bypassing payment.</p>
+            </div>
+          </div>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          {/* User selector — hidden when prefilledUser is set */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {/* User card */}
           {prefilledUser ? (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
-              <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-muted/60 border border-border">
+              <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center text-sm font-bold text-primary shrink-0">
                 {(prefilledUser.displayName ?? prefilledUser.email ?? "U").charAt(0).toUpperCase()}
               </div>
-              <div>
-                <p className="text-sm font-semibold">{prefilledUser.displayName ?? "—"}</p>
-                <p className="text-xs text-muted-foreground">{prefilledUser.email}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate">{prefilledUser.displayName ?? "—"}</p>
+                <p className="text-xs text-muted-foreground truncate">{prefilledUser.email}</p>
               </div>
+              <span className="ml-auto text-[10px] font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full shrink-0">Student</span>
             </div>
           ) : (
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Select Student</label>
-              <Input
-                placeholder="Search by name or email…"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                className="mb-1"
-              />
-              <div className="max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Select Student</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search by name or email…"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="pl-9 h-9 text-sm"
+                />
+              </div>
+              <div className="max-h-36 overflow-y-auto rounded-xl border border-border bg-background">
                 {filteredUsers.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-muted-foreground">No users found</p>
+                  <p className="py-5 text-center text-xs text-muted-foreground">No users found</p>
                 ) : filteredUsers.map((u) => (
                   <button
                     key={u.id}
                     type="button"
                     onClick={() => setSelectedUserId(u.id)}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 transition-colors flex items-center gap-2 ${selectedUserId === u.id ? "bg-primary/10 font-semibold" : ""}`}
+                    className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center gap-2.5 first:rounded-t-xl last:rounded-b-xl border-b border-border last:border-0 ${
+                      selectedUserId === u.id
+                        ? "bg-primary/8 text-foreground"
+                        : "hover:bg-muted/60 text-foreground"
+                    }`}
                   >
-                    <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
                       {(u.displayName ?? u.email ?? "U").charAt(0).toUpperCase()}
                     </div>
-                    <div className="min-w-0">
-                      <p className="truncate">{u.displayName ?? "—"}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-xs">{u.displayName ?? "—"}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{u.email}</p>
                     </div>
-                    {selectedUserId === u.id && <CheckCircle className="h-3.5 w-3.5 text-primary ml-auto shrink-0" />}
+                    {selectedUserId === u.id && (
+                      <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center shrink-0">
+                        <CheckCircle className="h-3 w-3 text-primary-foreground" />
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Course selector */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Select Course</label>
+          {/* Course multi-select */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">
+                Select Courses
+                {selectedCourseIds.size > 0 && (
+                  <span className="ml-2 text-[11px] font-semibold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
+                    {selectedCourseIds.size} selected
+                  </span>
+                )}
+              </label>
+              {filteredCourses.length > 1 && (
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  className="text-[11px] text-primary hover:text-primary/80 font-medium transition-colors"
+                >
+                  {allFilteredSelected ? "Deselect all" : "Select all"}
+                </button>
+              )}
+            </div>
+
             {courses.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">Loading courses…</p>
-            ) : (
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-                {courses.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedCourseId(String(c.id))}
-                    className={`w-full text-left px-3 py-2.5 text-sm hover:bg-secondary/50 transition-colors flex items-center gap-2.5 ${selectedCourseId === String(c.id) ? "bg-primary/10 font-semibold" : ""}`}
-                  >
-                    <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="flex-1 truncate">{c.title}</span>
-                    {c.price && parseFloat(c.price) > 0 ? (
-                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 shrink-0 flex items-center gap-0.5">
-                        <DollarSign className="h-2.5 w-2.5" />{parseFloat(c.price).toFixed(0)}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground shrink-0">Free</span>
-                    )}
-                    {selectedCourseId === String(c.id) && <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />}
-                  </button>
-                ))}
+              <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading courses…
               </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Filter courses…"
+                    value={courseSearch}
+                    onChange={(e) => setCourseSearch(e.target.value)}
+                    className="pl-9 h-9 text-sm"
+                  />
+                </div>
+                <div className="max-h-52 overflow-y-auto rounded-xl border border-border bg-background">
+                  {filteredCourses.length === 0 ? (
+                    <p className="py-5 text-center text-xs text-muted-foreground">No courses match</p>
+                  ) : filteredCourses.map((c) => {
+                    const checked = selectedCourseIds.has(c.id);
+                    const paid = parseFloat(c.price ?? "0") > 0;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => toggleCourse(c.id)}
+                        className={`w-full text-left px-3.5 py-3 transition-colors flex items-center gap-3 first:rounded-t-xl last:rounded-b-xl border-b border-border last:border-0 ${
+                          checked ? "bg-primary/8" : "hover:bg-muted/60"
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <div className={`w-4.5 h-4.5 rounded flex items-center justify-center border-2 shrink-0 transition-all ${
+                          checked ? "bg-primary border-primary" : "border-border bg-background"
+                        }`}>
+                          {checked && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
+                        </div>
+                        <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="flex-1 text-sm truncate font-medium">{c.title}</span>
+                        {paid ? (
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 shrink-0">
+                            ${parseFloat(c.price!).toFixed(0)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground shrink-0">Free</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 
-          {selectedCourse && parseFloat(selectedCourse.price ?? "0") > 0 && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-              <DollarSign className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              <span>This is a paid course (${parseFloat(selectedCourse.price!).toFixed(2)}). Granting access bypasses payment for this user.</span>
+          {/* Paid course warning */}
+          {hasPaidSelected && (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
+              <span>One or more selected courses are paid. Granting access will bypass payment for this user.</span>
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>Cancel</Button>
+          {/* Progress bar while submitting multiple */}
+          {progress && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Granting access…</span>
+                <span>{progress.done} / {progress.total}</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-border overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2.5 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
             <Button
               type="submit"
               className="flex-1 gap-1.5"
-              disabled={submitting || !effectiveUserId || !selectedCourseId}
+              disabled={submitting || !effectiveUserId || selectedCourseIds.size === 0}
             >
               <KeyRound className="h-3.5 w-3.5" />
-              {submitting ? "Granting…" : "Grant Access"}
+              {submitting
+                ? "Granting…"
+                : selectedCourseIds.size > 1
+                  ? `Grant Access to ${selectedCourseIds.size} Courses`
+                  : "Grant Access"}
             </Button>
           </div>
         </form>
