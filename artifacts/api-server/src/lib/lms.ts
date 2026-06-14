@@ -233,7 +233,11 @@ export async function getUnlockedLessonIds(
   const enrollment = await db
     .select({ enrolledAt: enrollmentsTable.enrolledAt })
     .from(enrollmentsTable)
-    .where(and(eq(enrollmentsTable.userId, userId), eq(enrollmentsTable.courseId, courseId)))
+    .where(and(
+      eq(enrollmentsTable.userId, userId),
+      eq(enrollmentsTable.courseId, courseId),
+      inArray(enrollmentsTable.status, ["active", "completed"]),
+    ))
     .limit(1)
     .then((r) => r[0]);
 
