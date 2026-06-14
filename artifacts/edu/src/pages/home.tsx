@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, BarChart3, BookOpen, Globe2, ShieldCheck,
   TrendingUp, Star, Users, CheckCircle2, PlayCircle, Award,
-  Shield, ShieldAlert, GraduationCap, LogIn,
 } from "lucide-react";
 
 interface StatItem { value: string; label: string; }
@@ -118,14 +117,7 @@ function deepMerge<T>(defaults: T, overrides: Partial<T>): T {
   return result as T;
 }
 
-const demoAccounts = [
-  { label: "Admin", email: "brightinsight.admin@gmail.com", icon: Shield, color: "text-red-500", bg: "bg-red-50 hover:bg-red-100 border-red-200", btn: "bg-red-500 hover:bg-red-600" },
-  { label: "Instructor", email: "brightinsight.instructor@gmail.com", icon: ShieldAlert, color: "text-purple-600", bg: "bg-purple-50 hover:bg-purple-100 border-purple-200", btn: "bg-purple-600 hover:bg-purple-700" },
-  { label: "Student", email: "brightinsight.student@gmail.com", icon: GraduationCap, color: "text-blue-600", bg: "bg-blue-50 hover:bg-blue-100 border-blue-200", btn: "bg-blue-600 hover:bg-blue-700" },
-];
-
 export default function Home() {
-  const [, navigate] = useLocation();
   const [lp, setLp] = useState<LandingContent>(DEFAULT_CONTENT);
 
   useEffect(() => {
@@ -296,37 +288,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Demo Access */}
-        <section id="demo" className="py-20 bg-white border-t border-border">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
-            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-1.5 text-sm font-medium text-emerald-700 mb-5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              No sign-up needed
-            </div>
-            <h2 className="text-3xl font-extrabold text-foreground mb-3">Try the platform instantly</h2>
-            <p className="text-muted-foreground mb-8">
-              Click any role below to log in as a demo account — no email, no OTP, no waiting.
-            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {demoAccounts.map((a) => (
-                <button
-                  key={a.label}
-                  onClick={() => navigate(`/demo-login?role=${a.label.toLowerCase()}`)}
-                  className={`flex flex-col items-center gap-3 p-5 rounded-2xl border transition-all ${a.bg}`}
-                >
-                  <div className="w-11 h-11 rounded-xl bg-white border border-border flex items-center justify-center">
-                    <a.icon className={`h-5 w-5 ${a.color}`} />
-                  </div>
-                  <div className="text-sm font-semibold text-foreground">{a.label}</div>
-                  <span className={`flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1 rounded-full ${a.btn}`}>
-                    <LogIn className="h-3 w-3" /> Login as {a.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
 
         {/* CTA */}
         <section className="py-24 bg-primary">
