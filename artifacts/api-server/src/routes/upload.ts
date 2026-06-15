@@ -1,8 +1,9 @@
 import { Router } from "express";
 import multer from "multer";
 import { join, extname } from "path";
-import { mkdirSync, createReadStream, unlink } from "fs";
+import { mkdirSync, createReadStream, unlink, readdirSync, statSync, rmSync } from "fs";
 import https from "https";
+import { execFile } from "child_process";
 import { getAuth } from "../lib/auth";
 
 /* ════════════════════════════════════════════════════
@@ -235,6 +236,32 @@ const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
 const uploadDisk = multer({ storage: diskStorage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: imageFilter });
 const uploadMem  = multer({ storage: memStorage,  limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: imageFilter });
 
+/* ════════════════════════════════════════════════════
+   HLS transcoding via FFmpeg
+════════════════════════════════════════════════════ */
+const HLS_TMP_DIR = join(process.cwd(), "uploads", "tmp-hls");
+mkdirSync(HLS_TMP_DIR, { recursive: true });
+
+function transcodeToHls(inputPath: string, outputDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    mkdirSync(outputDir, { recursive: true });
+    execFile(
+      "ffmpeg",
+      [
+        "-i",  inputPath,
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        "-hls_time", "6",
+        "-hls_list_size", "0",
+        "-hls_segment_filename", join(outputDir, "seg%04d.ts"),
+        join(outputDir, "playlist.m3u8"),
+      ],
+      { maxBuffer: 10 * 1024 * 1024, timeout: 60 * 60 * 1000 },
+      (err) => { if (err) reject(err); else resolve(); },
+    );
+  });
+}
+
 /* Video disk storage (for server-side → R2 streaming) */
 const VIDEO_TMP_DIR = join(process.cwd(), "uploads", "tmp-video");
 mkdirSync(VIDEO_TMP_DIR, { recursive: true });
@@ -287,7 +314,7 @@ router.post(
   },
 );
 
-/* POST /upload/video — server-side video → R2 (no browser CORS needed) ── */
+/* POST /upload/video — transcode to HLS → R2 (falls back to direct MP4 if ffmpeg missing) */
 router.post(
   "/upload/video",
   uploadVideoMulter.single("video"),
@@ -305,16 +332,37 @@ router.post(
       return;
     }
 
-    const ext = extname(filename).toLowerCase() || ".mp4";
-    const key = `videos/${userId}/${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+    const uid = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const hlsOutputDir = join(HLS_TMP_DIR, uid);
+    const hlsCleanup = () => rmSync(hlsOutputDir, { recursive: true, force: true });
+
     try {
-      await r2PutStream(key, filePath, size, mimetype);
-      res.json({ url: `/api/r2/${key}` });
-    } catch (err) {
-      console.error("R2 video upload error:", err);
-      res.status(502).json({ error: "Failed to upload video to R2" });
+      // HLS transcoding path
+      await transcodeToHls(filePath, hlsOutputDir);
+      const hlsBase = `hls/${userId}/${uid}`;
+      const hlsFiles = readdirSync(hlsOutputDir);
+      for (const fname of hlsFiles) {
+        const fpath = join(hlsOutputDir, fname);
+        const fsize = statSync(fpath).size;
+        const ct = fname.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
+        await r2PutStream(`${hlsBase}/${fname}`, fpath, fsize, ct);
+      }
+      res.json({ url: `/api/r2/${hlsBase}/playlist.m3u8` });
+    } catch (ffmpegErr) {
+      // Fallback: upload original MP4 if ffmpeg is unavailable
+      console.warn("FFmpeg HLS failed, falling back to direct MP4 upload:", (ffmpegErr as Error).message);
+      try {
+        const ext = extname(filename).toLowerCase() || ".mp4";
+        const key = `videos/${userId}/${uid}${ext}`;
+        await r2PutStream(key, filePath, size, mimetype);
+        res.json({ url: `/api/r2/${key}` });
+      } catch (uploadErr) {
+        console.error("R2 video upload error:", uploadErr);
+        if (!res.headersSent) res.status(502).json({ error: "Failed to upload video to R2" });
+      }
     } finally {
       cleanup();
+      hlsCleanup();
     }
   },
 );

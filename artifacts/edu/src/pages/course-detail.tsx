@@ -1,4 +1,5 @@
 import confetti from "canvas-confetti";
+import Hls from "hls.js";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useWS } from "@/hooks/useWS";
 import { useRoute, Link } from "wouter";
@@ -96,6 +97,32 @@ function extractVimeoId(url: string): string | null {
 }
 function isDirectVideo(url: string): boolean {
   return /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(url);
+}
+function isHlsUrl(url: string): boolean {
+  return /\.m3u8(\?|$)/i.test(url);
+}
+
+/* ─── HLS player (hls.js for Chrome/Firefox, native for Safari) ── */
+function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = url;
+      return;
+    }
+    if (!Hls.isSupported()) return;
+    const hls = new Hls({ enableWorker: true });
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    return () => { hls.destroy(); };
+  }, [url]);
+  return (
+    <div className="w-full aspect-video bg-black">
+      <video ref={videoRef} controls className="w-full h-full" onEnded={onEnded} />
+    </div>
+  );
 }
 
 /* ─── YouTube IFrame API loader (module-level singleton) ───────── */
@@ -462,6 +489,8 @@ function VideoPlayer({
 
   const vimeoId = extractVimeoId(url);
   if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
+
+  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} />;
 
   if (isDirectVideo(url)) {
     return (

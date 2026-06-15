@@ -126,7 +126,7 @@ function VideoUrlField({
             <div className="rounded-lg border border-border bg-muted p-4 space-y-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Uploading… {progress}%</span>
+                <span>{progress < 100 ? `Uploading… ${progress}%` : "Transcoding to HLS…"}</span>
               </div>
               <div className="w-full bg-border rounded-full h-1.5">
                 <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
