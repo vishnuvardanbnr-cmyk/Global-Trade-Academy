@@ -1044,7 +1044,7 @@ export default function CourseDetail() {
       </div>
 
       {/* ── Two-column main area ──────────────────────────── */}
-      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col md:flex-row gap-3 p-3">
+      <div className="flex-1 min-h-0 bg-slate-100 flex flex-col md:flex-row gap-3 p-3 overflow-y-auto md:overflow-hidden pb-20 md:pb-3">
 
         {/* LEFT: player / quiz / task — takes remaining space */}
         <div className="flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
@@ -1199,7 +1199,7 @@ export default function CourseDetail() {
 
         {/* RIGHT: Overview panel */}
         {showTabPanel && tab === "overview" && (
-        <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden max-h-[50vh] md:max-h-none">
+        <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden md:max-h-none">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
             <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">Overview</span>
             <button onClick={() => setShowTabPanel(false)}
