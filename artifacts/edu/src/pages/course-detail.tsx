@@ -108,16 +108,58 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Safari handles HLS natively
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
       return;
     }
     if (!Hls.isSupported()) return;
-    const hls = new Hls({ enableWorker: true });
+
+    const hls = new Hls({
+      enableWorker: true,
+
+      // Start playback after only 1 segment is ready (≈6 s) — feels instant
+      startLevel: -1,          // auto-pick best quality for the connection
+      autoStartLoad: true,
+
+      // Buffer: keep 45 s ahead, flush anything >90 s behind to save memory
+      maxBufferLength: 45,
+      maxMaxBufferLength: 90,
+      maxBufferSize: 60 * 1000 * 1000, // 60 MB cap
+
+      // Recovery: retry stalled/failed segments up to 6 times before giving up
+      fragLoadingMaxRetry: 6,
+      fragLoadingRetryDelay: 500,
+      fragLoadingMaxRetryTimeout: 4000,
+
+      manifestLoadingMaxRetry: 3,
+      levelLoadingMaxRetry: 3,
+
+      // Low-latency progressive load — no need to wait for full segment
+      progressive: true,
+
+      // Nudge the video forward if it stalls (stuck spinner fix)
+      nudgeMaxRetry: 5,
+      nudgeOffset: 0.2,
+    });
+
     hls.loadSource(url);
     hls.attachMedia(video);
+
+    // Auto-recover from network errors / media errors
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        hls.startLoad();
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+      }
+    });
+
     return () => { hls.destroy(); };
   }, [url]);
+
   return (
     <div className="w-full aspect-video bg-black">
       <video ref={videoRef} controls className="w-full h-full" onEnded={onEnded} />
