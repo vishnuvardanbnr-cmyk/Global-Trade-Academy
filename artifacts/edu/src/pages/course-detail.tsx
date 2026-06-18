@@ -112,6 +112,7 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
     // Safari handles HLS natively
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
+      video.play().catch(() => {});
       return;
     }
     if (!Hls.isSupported()) return;
@@ -146,6 +147,11 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
 
     hls.loadSource(url);
     hls.attachMedia(video);
+
+    // Start playing as soon as the manifest is ready
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+    });
 
     // Auto-recover from network errors / media errors
     hls.on(Hls.Events.ERROR, (_evt, data) => {
@@ -537,7 +543,7 @@ function VideoPlayer({
   if (isDirectVideo(url)) {
     return (
       <div className="w-full aspect-video bg-black">
-        <video src={url} controls className="w-full h-full" onEnded={onEnded}>
+        <video src={url} controls autoPlay className="w-full h-full" onEnded={onEnded}>
           <source src={url} />
         </video>
       </div>
@@ -937,6 +943,7 @@ export default function CourseDetail() {
   const [showTabPanel, setShowTabPanel] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [learningStarted, setLearningStarted] = useState(false);
+  const autoJumpedRef = useRef(false);
   const [expanded, setExpanded] = useState<number>(1);
   const [activeQuizId, setActiveQuizId] = useState<number | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
@@ -973,6 +980,16 @@ export default function CourseDetail() {
     }
     return 0;
   }, [chapterGroups, dbLessons, completedSet]);
+
+  // Auto-jump to the correct lesson as soon as progress loads (fires once).
+  // Fixes the race where Start Learning is clicked before progress arrives.
+  useEffect(() => {
+    if (progress && isEnrolled && !autoJumpedRef.current) {
+      autoJumpedRef.current = true;
+      setActiveIdx(firstUncompletedIdx);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress, isEnrolled]);
 
   const cur = dbLessons[activeIdx];
   const curChapter = chapterGroups.find((ch) => ch.lessons.some((l) => l.id === cur?.id));
