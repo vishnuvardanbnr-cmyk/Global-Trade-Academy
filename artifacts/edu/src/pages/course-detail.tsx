@@ -103,8 +103,64 @@ function isHlsUrl(url: string): boolean {
 }
 
 /* ─── HLS player (hls.js for Chrome/Firefox, native for Safari) ── */
+/* ─── Seek guard: track max-watched position, block skipping ahead ─ */
+function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string) {
+  const maxWatchedRef = useRef(0);
+  const [blocked, setBlocked] = useState(false);
+  const blockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset when switching to a new lesson
+  useEffect(() => { maxWatchedRef.current = 0; }, [url]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onTimeUpdate = () => {
+      if (video.currentTime > maxWatchedRef.current) {
+        maxWatchedRef.current = video.currentTime;
+      }
+    };
+
+    const onSeeking = () => {
+      if (video.currentTime > maxWatchedRef.current + 0.5) {
+        video.currentTime = maxWatchedRef.current;
+        setBlocked(true);
+        if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
+        blockTimerRef.current = setTimeout(() => setBlocked(false), 2200);
+      }
+    };
+
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("seeking", onSeeking);
+    return () => {
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("seeking", onSeeking);
+      if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
+    };
+  // videoRef is stable; url triggers the outer effect
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  return blocked;
+}
+
+/* ─── Seek-blocked overlay ──────────────────────────────────────── */
+function SeekBlockedOverlay({ visible }: { visible: boolean }) {
+  return (
+    <div className={`absolute inset-x-0 top-3 flex justify-center pointer-events-none z-10 transition-all duration-300 ${visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"}`}>
+      <div className="flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white text-[12px] font-semibold px-4 py-2 rounded-full border border-white/10 shadow-xl">
+        <span className="text-amber-400">⏪</span>
+        You need to watch this section first — you can rewind freely
+      </div>
+    </div>
+  );
+}
+
 function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const blocked = useSeekGuard(videoRef, url);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -121,13 +177,13 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
       enableWorker: true,
 
       // Start playback after only 1 segment is ready (≈6 s) — feels instant
-      startLevel: -1,          // auto-pick best quality for the connection
+      startLevel: -1,
       autoStartLoad: true,
 
       // Buffer: keep 45 s ahead, flush anything >90 s behind to save memory
       maxBufferLength: 45,
       maxMaxBufferLength: 90,
-      maxBufferSize: 60 * 1000 * 1000, // 60 MB cap
+      maxBufferSize: 60 * 1000 * 1000,
 
       // Recovery: retry stalled/failed segments up to 6 times before giving up
       fragLoadingMaxRetry: 6,
@@ -137,10 +193,8 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
       manifestLoadingMaxRetry: 3,
       levelLoadingMaxRetry: 3,
 
-      // Low-latency progressive load — no need to wait for full segment
       progressive: true,
 
-      // Nudge the video forward if it stalls (stuck spinner fix)
       nudgeMaxRetry: 5,
       nudgeOffset: 0.2,
     });
@@ -148,12 +202,10 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
     hls.loadSource(url);
     hls.attachMedia(video);
 
-    // Start playing as soon as the manifest is ready
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       video.play().catch(() => {});
     });
 
-    // Auto-recover from network errors / media errors
     hls.on(Hls.Events.ERROR, (_evt, data) => {
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -167,8 +219,24 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
   }, [url]);
 
   return (
-    <div className="w-full aspect-video bg-black">
+    <div className="w-full aspect-video bg-black relative">
+      <SeekBlockedOverlay visible={blocked} />
       <video ref={videoRef} controls className="w-full h-full" onEnded={onEnded} />
+    </div>
+  );
+}
+
+/* ─── Direct MP4 / blob player with seek guard ───────────────────── */
+function DirectVideoPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const blocked = useSeekGuard(videoRef, url);
+
+  return (
+    <div className="w-full aspect-video bg-black relative">
+      <SeekBlockedOverlay visible={blocked} />
+      <video ref={videoRef} src={url} controls autoPlay className="w-full h-full" onEnded={onEnded}>
+        <source src={url} />
+      </video>
     </div>
   );
 }
@@ -541,13 +609,7 @@ function VideoPlayer({
   if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} />;
 
   if (isDirectVideo(url)) {
-    return (
-      <div className="w-full aspect-video bg-black">
-        <video src={url} controls autoPlay className="w-full h-full" onEnded={onEnded}>
-          <source src={url} />
-        </video>
-      </div>
-    );
+    return <DirectVideoPlayer url={url} onEnded={onEnded} />;
   }
 
   // Generic embed — no end-detection possible, show inside the same frame
