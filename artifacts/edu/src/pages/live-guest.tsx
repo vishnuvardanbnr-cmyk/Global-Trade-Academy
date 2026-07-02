@@ -172,6 +172,11 @@ function GuestRoom({ token, serverUrl }: { token: string; serverUrl: string }) {
         setCheckingPerms(false);
         return;
       }
+      // NotFoundError (no mic device) or other — join as listener, mic will stay muted
+      if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        setPermError("No microphone found — you'll join as a listener. You can still hear audio.");
+        // Don't return — fall through to join
+      }
     }
     setCheckingPerms(false);
     setJoined(true);
@@ -203,9 +208,16 @@ function GuestRoom({ token, serverUrl }: { token: string; serverUrl: string }) {
           <p className="text-white/35 text-[13px]">Your mic will be on when you join. Camera starts off.</p>
         </div>
         {permError && (
-          <div className="flex items-start gap-2 bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 max-w-sm">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-            <p className="text-[12px] text-red-300 leading-snug">{permError}</p>
+          <div className={cn(
+            "flex items-start gap-2 rounded-xl px-4 py-3 max-w-sm",
+            permError.includes("listener")
+              ? "bg-amber-500/15 border border-amber-500/30"
+              : "bg-red-500/15 border border-red-500/30"
+          )}>
+            <AlertTriangle className={cn("h-4 w-4 shrink-0 mt-0.5",
+              permError.includes("listener") ? "text-amber-400" : "text-red-400")} />
+            <p className={cn("text-[12px] leading-snug",
+              permError.includes("listener") ? "text-amber-300" : "text-red-300")}>{permError}</p>
           </div>
         )}
         <button onClick={handleJoin} disabled={checkingPerms}
