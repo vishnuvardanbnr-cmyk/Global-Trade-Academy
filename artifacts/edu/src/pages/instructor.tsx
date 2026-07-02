@@ -1792,7 +1792,23 @@ export default function InstructorPanel() {
         <CreateCourseDialog onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })} />
       </div>
 
-      <Tabs value={activeTab}>
+      <Tabs value={activeTab} onValueChange={(v) => navigate(`/instructor?tab=${v}`)}>
+        <TabsList className="flex-wrap h-auto gap-1 bg-secondary/40 p-1">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="courses">Courses</TabsTrigger>
+          <TabsTrigger value="students">Students</TabsTrigger>
+          <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
+          <TabsTrigger value="batches">Batches</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="reviews" className="relative">
+            Reviews
+            {pendingCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-black min-w-[16px] h-4 px-1">
+                {pendingCount}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
         {/* ── Overview ── */}
         <TabsContent value="overview" className="space-y-6 mt-6">
