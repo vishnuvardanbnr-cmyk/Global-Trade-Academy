@@ -11,3 +11,4 @@
 - [WebSocket real-time chat](websocket-realtime-chat.md) — WS at /api/ws; cookie auth; topic-based pub/sub; messages pushed as full objects, questions/polls/community signal invalidate; 60s polling fallback.
 - [R2 upload integration](r2-upload-integration.md) — Cloudflare R2 via native node:https + Sig V4 (no SDK); two gotchas: Express 5 wildcard *key gives array params (join with "/"), and nginx must use ^~ on /api/ or regex *.png rules intercept the proxy.
 - [LiveKit on Replit networking](livekit-replit-networking.md) — signaling works via Vite /livekit proxy; media requires direct TCP/UDP to ports 7881/7882 which GCP blocks; use LiveKit Cloud for reliable media. Also: useStartAudio v2 returns mergedProps not startAudio.
+- [LiveKit multi-account failover](livekit-multi-account.md) — livekit_accounts table + livekitAccountId FK on live_classes; ?switchFrom=<id> compare-and-swap prevents race conditions when all participants refresh simultaneously.

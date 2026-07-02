@@ -6,8 +6,9 @@ import {
   lessonProgressTable, quizAttemptsTable, taskCompletionsTable,
   xpEventsTable, activityTable, liveClassesTable, certificatesTable,
   postsTable, commentsTable, eventsTable, siteSettingsTable,
+  livekitAccountsTable,
 } from "@workspace/db";
-import { eq, and, inArray, sql, desc, gte, not } from "drizzle-orm";
+import { eq, and, inArray, sql, desc, gte, not, asc } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
 import { sendBulkEmails, isEmailConfigured } from "../lib/mailer";
 
@@ -723,6 +724,127 @@ router.post("/admin/users/:id/reject", async (req, res): Promise<void> => {
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Error rejecting user");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/admin/livekit-accounts ───────────────────────────── */
+router.get("/admin/livekit-accounts", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const accounts = await db
+      .select({
+        id: livekitAccountsTable.id,
+        name: livekitAccountsTable.name,
+        apiKey: livekitAccountsTable.apiKey,
+        serverUrl: livekitAccountsTable.serverUrl,
+        isActive: livekitAccountsTable.isActive,
+        priority: livekitAccountsTable.priority,
+        notes: livekitAccountsTable.notes,
+        createdAt: livekitAccountsTable.createdAt,
+      })
+      .from(livekitAccountsTable)
+      .orderBy(asc(livekitAccountsTable.priority));
+    res.json(accounts);
+  } catch (err) {
+    req.log.error({ err }, "Error listing livekit accounts");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/livekit-accounts ──────────────────────────── */
+router.post("/admin/livekit-accounts", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { name, apiKey, apiSecret, serverUrl, isActive, priority, notes } = req.body;
+    if (!name || !apiKey || !apiSecret || !serverUrl) {
+      res.status(400).json({ error: "name, apiKey, apiSecret, serverUrl are required" }); return;
+    }
+    const [created] = await db.insert(livekitAccountsTable).values({
+      name, apiKey, apiSecret, serverUrl,
+      isActive: isActive !== false,
+      priority: priority ?? 0,
+      notes: notes || null,
+    }).returning({ id: livekitAccountsTable.id });
+    res.json({ success: true, id: created.id });
+  } catch (err) {
+    req.log.error({ err }, "Error creating livekit account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── PATCH /api/admin/livekit-accounts/:id ─────────────────────── */
+router.patch("/admin/livekit-accounts/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    const { name, apiKey, apiSecret, serverUrl, isActive, priority, notes } = req.body;
+    const patch: Record<string, unknown> = {};
+    if (name !== undefined) patch.name = name;
+    if (apiKey !== undefined) patch.apiKey = apiKey;
+    if (apiSecret !== undefined && apiSecret !== "") patch.apiSecret = apiSecret;
+    if (serverUrl !== undefined) patch.serverUrl = serverUrl;
+    if (isActive !== undefined) patch.isActive = isActive;
+    if (priority !== undefined) patch.priority = priority;
+    if (notes !== undefined) patch.notes = notes || null;
+    await db.update(livekitAccountsTable).set(patch).where(eq(livekitAccountsTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error updating livekit account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── DELETE /api/admin/livekit-accounts/:id ────────────────────── */
+router.delete("/admin/livekit-accounts/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    await db.delete(livekitAccountsTable).where(eq(livekitAccountsTable.id, parseInt(req.params.id)));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting livekit account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/livekit-accounts/:id/test ─────────────────── */
+router.post("/admin/livekit-accounts/:id/test", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    const account = await db.select().from(livekitAccountsTable).where(eq(livekitAccountsTable.id, id)).limit(1).then(r => r[0]);
+    if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+    try {
+      const { RoomServiceClient } = await import("livekit-server-sdk");
+      const svc = new RoomServiceClient(account.serverUrl, account.apiKey, account.apiSecret);
+      await svc.listRooms();
+      res.json({ success: true, message: "Connection successful" });
+    } catch (connErr: any) {
+      res.json({ success: false, message: connErr?.message ?? "Connection failed" });
+    }
+  } catch (err) {
+    req.log.error({ err }, "Error testing livekit account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/livekit-accounts/:id/set-priority ─────────── */
+router.post("/admin/livekit-accounts/:id/set-priority", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { priority } = req.body;
+    if (typeof priority !== "number") { res.status(400).json({ error: "priority required" }); return; }
+    await db.update(livekitAccountsTable)
+      .set({ priority })
+      .where(eq(livekitAccountsTable.id, parseInt(req.params.id)));
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }
 });

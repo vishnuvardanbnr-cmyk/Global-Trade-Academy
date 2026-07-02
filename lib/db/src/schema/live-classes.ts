@@ -20,6 +20,7 @@ export const liveClassesTable = pgTable("live_classes", {
   thumbnailUrl: text("thumbnail_url"),
   agenda: text("agenda"),
   batchId: integer("batch_id"),
+  livekitAccountId: integer("livekit_account_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -978,23 +978,33 @@ export default function LiveRoom() {
   // Room connects with audio=true, so mic starts enabled; camera is video={false} → starts off.
   const [audioMuted, setAudioMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(true);
+  // Multi-account auto-switch: when a session drops, re-fetch the token passing ?switchFrom=<currentAccountId>
+  // so the server can rotate to the next priority account.
+  const [switchParams, setSwitchParams] = useState<{ version: number; switchFrom: number | null }>({ version: 0, switchFrom: null });
+  const [switching, setSwitching] = useState(false);
 
   const isLiveStatus = cls?.status === "live";
 
   const { data: livekitToken, error: tokenError } = useQuery({
-    queryKey: ["livekit-token", classId],
+    queryKey: ["livekit-token", classId, switchParams.version],
     queryFn: async () => {
-      const res = await fetch(`/api/live-classes/${classId}/token`);
+      const qs = switchParams.switchFrom !== null ? `?switchFrom=${switchParams.switchFrom}` : "";
+      const res = await fetch(`/api/live-classes/${classId}/token${qs}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Failed to get room token");
       }
-      return res.json() as Promise<{ token: string; url: string }>;
+      return res.json() as Promise<{ token: string; url: string; accountId: number }>;
     },
     enabled: isLiveStatus && classId > 0,
     staleTime: 60 * 60 * 1000,
     retry: false,
   });
+
+  // Clear "switching" overlay as soon as a new token arrives
+  useEffect(() => {
+    if (livekitToken) setSwitching(false);
+  }, [livekitToken]);
 
   /* ─── Sidebar state ──────────────────────────────────────────── */
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("chat");
@@ -1003,9 +1013,18 @@ export default function LiveRoom() {
   const handleLiveKitJoined = useCallback(() => {
     setRoomJoined(true);
   }, []);
+
   const handleLiveKitDisconnected = useCallback(() => {
     setRoomJoined(false);
-  }, []);
+    // If the class is still marked live, auto-switch to backup account after a short pause
+    if (isLiveStatus) {
+      setSwitching(true);
+      const currentAccountId = livekitToken?.accountId ?? null;
+      setTimeout(() => {
+        setSwitchParams(p => ({ version: p.version + 1, switchFrom: currentAccountId }));
+      }, 2500);
+    }
+  }, [isLiveStatus, livekitToken?.accountId]);
 
   const handleStart = async () => {
     try {
@@ -1050,6 +1069,17 @@ export default function LiveRoom() {
 
   return (
     <div className="h-screen bg-slate-950 flex flex-col overflow-hidden">
+
+      {/* ── Account-switch overlay ───────────────────────────────── */}
+      {switching && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-sm gap-4">
+          <Loader2 className="h-10 w-10 text-blue-400 animate-spin" />
+          <div className="text-center">
+            <p className="text-white font-semibold text-lg">Connecting to backup server…</p>
+            <p className="text-white/50 text-sm mt-1">Switching to the next available LiveKit account</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Top bar ──────────────────────────────────────────────── */}
       <div className="shrink-0 bg-slate-900 border-b border-slate-700/50 px-4 py-2.5 flex items-center gap-3">

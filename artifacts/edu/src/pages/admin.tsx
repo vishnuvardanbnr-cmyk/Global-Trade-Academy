@@ -24,7 +24,7 @@ import {
   MessageSquare, Pin, PinOff, MessageCircle, KeyRound, DollarSign,
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
   Hash, Pencil, Plus, Search, AlertTriangle, Loader2, Check, X,
-  Layout, ExternalLink, Save,
+  Layout, ExternalLink, Save, Server, Eye, EyeOff, Wifi, WifiOff,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -2316,6 +2316,279 @@ function PendingTab() {
   );
 }
 
+/* ─── LiveKit Accounts Tab ─── */
+type LkAccount = {
+  id: number; name: string; apiKey: string; serverUrl: string;
+  isActive: boolean; priority: number; notes: string | null; createdAt: string;
+};
+
+function LiveKitAccountsTab() {
+  const { toast } = useToast();
+  const [accounts, setAccounts] = useState<LkAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [testing, setTesting] = useState<number | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, { success: boolean; message: string }>>({});
+  const [addOpen, setAddOpen] = useState(false);
+  const [editAccount, setEditAccount] = useState<LkAccount | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+
+  const emptyForm = { name: "", apiKey: "", apiSecret: "", serverUrl: "wss://livekit.cloud", isActive: true, priority: 0, notes: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/livekit-accounts");
+      if (res.ok) setAccounts(await res.json());
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openAdd = () => { setForm(emptyForm); setShowSecret(false); setAddOpen(true); };
+  const openEdit = (a: LkAccount) => { setForm({ name: a.name, apiKey: a.apiKey, apiSecret: "", serverUrl: a.serverUrl, isActive: a.isActive, priority: a.priority, notes: a.notes ?? "" }); setShowSecret(false); setEditAccount(a); };
+
+  const saveAdd = async () => {
+    if (!form.name || !form.apiKey || !form.apiSecret || !form.serverUrl) {
+      toast({ title: "All fields except notes are required", variant: "destructive" }); return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/livekit-accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Account added" });
+      setAddOpen(false);
+      load();
+    } catch { toast({ title: "Failed to add account", variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const saveEdit = async () => {
+    if (!editAccount) return;
+    setSaving(true);
+    try {
+      const patch: Record<string, unknown> = { name: form.name, apiKey: form.apiKey, serverUrl: form.serverUrl, isActive: form.isActive, priority: form.priority, notes: form.notes };
+      if (form.apiSecret) patch.apiSecret = form.apiSecret;
+      const res = await fetch(`/api/admin/livekit-accounts/${editAccount.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Account updated" });
+      setEditAccount(null);
+      load();
+    } catch { toast({ title: "Failed to update account", variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (a: LkAccount) => {
+    if (!confirm(`Delete account "${a.name}"? This cannot be undone.`)) return;
+    try {
+      await fetch(`/api/admin/livekit-accounts/${a.id}`, { method: "DELETE" });
+      toast({ title: "Account deleted" });
+      load();
+    } catch { toast({ title: "Failed to delete", variant: "destructive" }); }
+  };
+
+  const handleTest = async (a: LkAccount) => {
+    setTesting(a.id);
+    try {
+      const res = await fetch(`/api/admin/livekit-accounts/${a.id}/test`, { method: "POST" });
+      const data = await res.json();
+      setTestResults(r => ({ ...r, [a.id]: data }));
+      toast({ title: data.success ? `✓ ${a.name}: Connected` : `✗ ${a.name}: ${data.message}`, variant: data.success ? "default" : "destructive" });
+    } catch { toast({ title: "Test failed", variant: "destructive" }); }
+    finally { setTesting(null); }
+  };
+
+  const handlePriority = async (a: LkAccount, dir: "up" | "down") => {
+    const sorted = [...accounts].sort((x, y) => x.priority - y.priority);
+    const idx = sorted.findIndex(x => x.id === a.id);
+    const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const other = sorted[swapIdx];
+    await Promise.all([
+      fetch(`/api/admin/livekit-accounts/${a.id}/set-priority`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: other.priority }) }),
+      fetch(`/api/admin/livekit-accounts/${other.id}/set-priority`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: a.priority }) }),
+    ]);
+    load();
+  };
+
+  const handleToggleActive = async (a: LkAccount) => {
+    await fetch(`/api/admin/livekit-accounts/${a.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !a.isActive }),
+    });
+    load();
+  };
+
+  const AccountFormFields = ({ form, setForm, showSecret, setShowSecret, isEdit }: {
+    form: typeof emptyForm; setForm: React.Dispatch<React.SetStateAction<typeof emptyForm>>;
+    showSecret: boolean; setShowSecret: (v: boolean) => void; isEdit?: boolean;
+  }) => (
+    <div className="space-y-3">
+      <div>
+        <label className="text-sm font-medium">Account name</label>
+        <Input className="mt-1" placeholder="e.g. LiveKit Cloud Primary" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+      </div>
+      <div>
+        <label className="text-sm font-medium">API Key</label>
+        <Input className="mt-1 font-mono text-xs" placeholder="APIxxxxxx" value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))} />
+      </div>
+      <div>
+        <label className="text-sm font-medium">API Secret {isEdit && <span className="text-xs text-muted-foreground ml-1">(leave blank to keep unchanged)</span>}</label>
+        <div className="relative mt-1">
+          <Input className="font-mono text-xs pr-9" type={showSecret ? "text" : "password"} placeholder={isEdit ? "••••••••" : "Enter API secret"} value={form.apiSecret} onChange={e => setForm(f => ({ ...f, apiSecret: e.target.value }))} />
+          <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowSecret(!showSecret)}>
+            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className="text-sm font-medium">Server URL (WSS)</label>
+        <Input className="mt-1 font-mono text-xs" placeholder="wss://your-project.livekit.cloud" value={form.serverUrl} onChange={e => setForm(f => ({ ...f, serverUrl: e.target.value }))} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm font-medium">Priority (lower = first)</label>
+          <Input className="mt-1" type="number" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: parseInt(e.target.value) || 0 }))} />
+        </div>
+        <div className="flex items-end pb-0.5 gap-2">
+          <label className="text-sm font-medium">Active</label>
+          <button type="button" onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))}
+            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${form.isActive ? "bg-green-500/15 border-green-500/30 text-green-400" : "bg-muted border-border text-muted-foreground"}`}>
+            {form.isActive ? "Enabled" : "Disabled"}
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className="text-sm font-medium">Notes <span className="text-xs text-muted-foreground">(optional)</span></label>
+        <Textarea className="mt-1 resize-none text-xs" rows={2} placeholder="e.g. Free tier, max 10 participants" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+      </div>
+    </div>
+  );
+
+  const sorted = [...accounts].sort((a, b) => a.priority - b.priority);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2"><Server className="h-5 w-5 text-blue-400" /> LiveKit Accounts</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Manage multiple LiveKit accounts. When a session drops (free-tier limit hit), the room automatically switches to the next active account by priority.
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}><RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
+          <Button size="sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />Add Account</Button>
+        </div>
+      </div>
+
+      {/* info banner */}
+      <Card className="border-blue-500/20 bg-blue-500/5">
+        <CardContent className="py-3 px-4">
+          <p className="text-sm text-blue-300/90 leading-relaxed">
+            <strong>How it works:</strong> Accounts are tried in priority order (lowest number first). During a live session, if the room disconnects, participants see a "Connecting to backup server…" overlay and the system automatically generates a token for the next active account. The first account handles new sessions; backups only activate on failover.
+          </p>
+        </CardContent>
+      </Card>
+
+      {loading ? (
+        <div className="space-y-3">{[1, 2].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>
+      ) : sorted.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-3">
+            <Server className="h-10 w-10 text-muted-foreground mb-1" />
+            <p className="font-medium">No LiveKit accounts configured</p>
+            <p className="text-sm text-muted-foreground max-w-sm">Add your first account. If no accounts are added, sessions fall back to the <code className="text-xs bg-muted px-1 rounded">LIVEKIT_*</code> environment variables.</p>
+            <Button size="sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />Add Account</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {sorted.map((a, idx) => {
+            const testResult = testResults[a.id];
+            return (
+              <Card key={a.id} className={!a.isActive ? "opacity-60" : ""}>
+                <CardContent className="py-4 px-4">
+                  <div className="flex items-start gap-4">
+                    {/* Priority arrows */}
+                    <div className="flex flex-col gap-0.5 shrink-0 mt-0.5">
+                      <button disabled={idx === 0} onClick={() => handlePriority(a, "up")} className="p-0.5 hover:text-foreground text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronUp className="h-4 w-4" /></button>
+                      <span className="text-xs text-center text-muted-foreground font-mono">{a.priority}</span>
+                      <button disabled={idx === sorted.length - 1} onClick={() => handlePriority(a, "down")} className="p-0.5 hover:text-foreground text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronDown className="h-4 w-4" /></button>
+                    </div>
+
+                    {/* Main info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{a.name}</span>
+                        {idx === 0 && a.isActive && <Badge variant="outline" className="text-xs text-blue-400 border-blue-400/30">Primary</Badge>}
+                        <Badge variant="outline" className={`text-xs ${a.isActive ? "text-green-400 border-green-400/30" : "text-muted-foreground"}`}>
+                          {a.isActive ? "Active" : "Disabled"}
+                        </Badge>
+                        {testResult && (
+                          <Badge variant="outline" className={`text-xs ${testResult.success ? "text-green-400 border-green-400/30" : "text-red-400 border-red-400/30"}`}>
+                            {testResult.success ? <><Wifi className="h-3 w-3 mr-1" />Connected</> : <><WifiOff className="h-3 w-3 mr-1" />Failed</>}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 font-mono truncate">{a.serverUrl}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Key: <span className="font-mono">{a.apiKey.slice(0, 8)}…</span></p>
+                      {a.notes && <p className="text-xs text-muted-foreground mt-1 italic">{a.notes}</p>}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      <Button size="sm" variant="outline" onClick={() => handleTest(a)} disabled={testing === a.id}>
+                        {testing === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                        <span className="ml-1 text-xs">Test</span>
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleToggleActive(a)}>
+                        {a.isActive ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
+                        <span className="ml-1 text-xs">{a.isActive ? "Disable" : "Enable"}</span>
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5" /><span className="ml-1 text-xs">Edit</span></Button>
+                      <Button size="sm" variant="outline" className="text-red-400 hover:text-red-300 border-red-400/20" onClick={() => handleDelete(a)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Add LiveKit Account</DialogTitle></DialogHeader>
+          <AccountFormFields form={form} setForm={setForm} showSecret={showSecret} setShowSecret={setShowSecret} />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button onClick={saveAdd} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}Add</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editAccount} onOpenChange={open => { if (!open) setEditAccount(null); }}>
+        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Account: {editAccount?.name}</DialogTitle></DialogHeader>
+          <AccountFormFields form={form} setForm={setForm} showSecret={showSecret} setShowSecret={setShowSecret} isEdit />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setEditAccount(null)}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}Save</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
@@ -2332,7 +2605,23 @@ export default function AdminPanel() {
         <p className="text-muted-foreground">Platform-wide analytics, user management, and content control.</p>
       </div>
 
-      <Tabs value={activeTab}>
+      <Tabs value={activeTab} onValueChange={tab => navigate(`/admin?tab=${tab}`)}>
+        <TabsList className="flex flex-wrap h-auto gap-0.5 bg-muted/50 p-1">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="pending">Pending</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="courses">Courses</TabsTrigger>
+          <TabsTrigger value="live-classes">Live Classes</TabsTrigger>
+          <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
+          <TabsTrigger value="community">Community</TabsTrigger>
+          <TabsTrigger value="events">Events</TabsTrigger>
+          <TabsTrigger value="broadcast">Broadcast</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="landing">Landing</TabsTrigger>
+          <TabsTrigger value="livekit" className="flex items-center gap-1.5">
+            <Server className="h-3.5 w-3.5" />LiveKit
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
         <TabsContent value="pending" className="mt-6"><PendingTab /></TabsContent>
@@ -2345,6 +2634,7 @@ export default function AdminPanel() {
         <TabsContent value="broadcast" className="mt-6"><BroadcastTab /></TabsContent>
         <TabsContent value="activity" className="mt-6"><ActivityTab /></TabsContent>
         <TabsContent value="landing" className="mt-6"><LandingPageTab /></TabsContent>
+        <TabsContent value="livekit" className="mt-6"><LiveKitAccountsTab /></TabsContent>
       </Tabs>
     </div>
   );

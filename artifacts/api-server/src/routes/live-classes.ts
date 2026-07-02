@@ -7,8 +7,9 @@ import {
   liveClassMessagesTable, liveClassQuestionsTable, liveClassQuestionUpvotesTable,
   liveClassPollsTable, liveClassPollOptionsTable, liveClassPollVotesTable,
   usersTable, coursesTable, enrollmentsTable, batchesTable, batchStudentsTable,
+  livekitAccountsTable,
 } from "@workspace/db";
-import { eq, and, gte, sql, desc, gt } from "drizzle-orm";
+import { eq, and, gte, sql, desc, gt, asc } from "drizzle-orm";
 
 const router = Router();
 
@@ -499,6 +500,9 @@ router.post("/live-classes/:classId/polls/:pollId/vote", async (req, res): Promi
 });
 
 // GET /api/live-classes/:classId/token  — LiveKit JWT for the room
+// Optional query params:
+//   ?switchFrom=<accountId>  — client's current account ID; if it matches the DB record,
+//                              the server switches to the next priority account automatically.
 router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
@@ -507,70 +511,113 @@ router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
     const classId = parseInt(req.params.classId);
     const classes = await db.select().from(liveClassesTable).where(eq(liveClassesTable.id, classId)).limit(1);
     if (!classes.length) { res.status(404).json({ error: "Not found" }); return; }
-    const cls = classes[0];
-
-    const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
-    const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
-    const LIVEKIT_URL = process.env.LIVEKIT_URL ?? "";
-
-    if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !LIVEKIT_URL) {
-      res.status(503).json({ error: "LiveKit not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL in env vars." });
-      return;
-    }
-
-    if (!cls.roomName) { res.status(400).json({ error: "Room name not set" }); return; }
+    let cls = classes[0];
 
     const isInstructor = cls.instructorId === clerkId;
 
     // Access control: instructors always get in; students must be in the right batch/course
     if (!isInstructor) {
       const user = await db.select({ role: usersTable.role })
-        .from(usersTable)
-        .where(eq(usersTable.id, clerkId))
-        .limit(1).then((r) => r[0]);
-
-      const isAdmin = user?.role === "admin";
-
-      if (!isAdmin) {
+        .from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+      const isAdminUser = user?.role === "admin";
+      if (!isAdminUser) {
         if (cls.batchId) {
-          // Batch-restricted session: student must be in this batch
           const inBatch = await db.select({ id: batchStudentsTable.id })
             .from(batchStudentsTable)
             .where(and(eq(batchStudentsTable.batchId, cls.batchId), eq(batchStudentsTable.userId, clerkId)))
             .limit(1).then((r) => r[0]);
-          if (!inBatch) {
-            res.status(403).json({ error: "You are not part of the batch for this session." });
-            return;
-          }
+          if (!inBatch) { res.status(403).json({ error: "You are not part of the batch for this session." }); return; }
         } else if (cls.courseId) {
-          // Course-wide session: student must be enrolled
           const enrolled = await db.select({ id: enrollmentsTable.id })
             .from(enrollmentsTable)
             .where(and(eq(enrollmentsTable.courseId, cls.courseId), eq(enrollmentsTable.userId, clerkId), eq(enrollmentsTable.status, "active")))
             .limit(1).then((r) => r[0]);
-          if (!enrolled) {
-            res.status(403).json({ error: "You are not enrolled in the course for this session." });
-            return;
-          }
+          if (!enrolled) { res.status(403).json({ error: "You are not enrolled in the course for this session." }); return; }
         }
       }
     }
+
+    // ── Account selection ────────────────────────────────────────────
+    // Priority order: DB accounts (ordered by priority) → env-var fallback
+    const dbAccounts = await db.select()
+      .from(livekitAccountsTable)
+      .where(eq(livekitAccountsTable.isActive, true))
+      .orderBy(asc(livekitAccountsTable.priority));
+
+    const envKey = process.env.LIVEKIT_API_KEY;
+    const envSecret = process.env.LIVEKIT_API_SECRET;
+    const envUrl = process.env.LIVEKIT_URL ?? "";
+    const envAccount = (envKey && envSecret && envUrl)
+      ? { id: 0, apiKey: envKey, apiSecret: envSecret, serverUrl: envUrl }
+      : null;
+
+    // Combined ordered list: DB accounts first, then env fallback
+    type AccountEntry = { id: number; apiKey: string; apiSecret: string; serverUrl: string };
+    const allAccounts: AccountEntry[] = [
+      ...dbAccounts.map(a => ({ id: a.id, apiKey: a.apiKey, apiSecret: a.apiSecret, serverUrl: a.serverUrl })),
+      ...(envAccount ? [envAccount] : []),
+    ];
+
+    if (allAccounts.length === 0) {
+      res.status(503).json({ error: "No LiveKit accounts configured. Add accounts in Admin → LiveKit Accounts." });
+      return;
+    }
+
+    // Find which account is currently assigned
+    const switchFromId = req.query.switchFrom ? parseInt(req.query.switchFrom as string) : null;
+    let chosenAccount: AccountEntry;
+    let newRoomName = cls.roomName;
+
+    if (switchFromId !== null && switchFromId === (cls.livekitAccountId ?? 0)) {
+      // Client is on the same account the DB has — switch to the next one
+      const currentIdx = allAccounts.findIndex(a => a.id === switchFromId);
+      const nextIdx = (currentIdx + 1) % allAccounts.length;
+      chosenAccount = allAccounts[nextIdx];
+      newRoomName = generateRoomName();
+      // Save the switch atomically — future requests from other participants will see the new account
+      await db.update(liveClassesTable)
+        .set({ livekitAccountId: chosenAccount.id || null, roomName: newRoomName })
+        .where(eq(liveClassesTable.id, classId));
+      // Reload so we have the fresh state
+      cls = { ...cls, livekitAccountId: chosenAccount.id || null, roomName: newRoomName };
+      req.log.info({ classId, fromId: switchFromId, toId: chosenAccount.id }, "LiveKit account switched");
+    } else if (switchFromId !== null && switchFromId !== (cls.livekitAccountId ?? 0)) {
+      // DB already shows a different account — another request already switched, use what's in the DB
+      const already = allAccounts.find(a => a.id === (cls.livekitAccountId ?? 0));
+      chosenAccount = already ?? allAccounts[0];
+    } else {
+      // Normal path: use DB-assigned account, or assign the first available one
+      if (cls.livekitAccountId) {
+        const found = allAccounts.find(a => a.id === cls.livekitAccountId);
+        if (found) {
+          chosenAccount = found;
+        } else {
+          // Assigned account was deleted/deactivated — fall back to first
+          chosenAccount = allAccounts[0];
+        }
+      } else {
+        chosenAccount = allAccounts[0];
+        // Persist first-time assignment
+        await db.update(liveClassesTable)
+          .set({ livekitAccountId: chosenAccount.id || null })
+          .where(eq(liveClassesTable.id, classId));
+      }
+    }
+
+    if (!newRoomName) { res.status(400).json({ error: "Room name not set for this session." }); return; }
 
     const users = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1);
     const displayName = users[0]?.displayName ?? clerkId;
 
     const { AccessToken } = await import("livekit-server-sdk");
-    // Use a deterministic identity (clerkId) so that if the same user
-    // refreshes or reconnects, LiveKit recognises them as the same participant
-    // and replaces the old session instead of creating a ghost duplicate.
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    const at = new AccessToken(chosenAccount.apiKey, chosenAccount.apiSecret, {
       identity: clerkId,
       name: displayName,
       ttl: 7200,
     });
     at.addGrant({
       roomJoin: true,
-      room: cls.roomName,
+      room: newRoomName,
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
@@ -578,7 +625,7 @@ router.get("/live-classes/:classId/token", async (req, res): Promise<void> => {
     });
 
     const token = await at.toJwt();
-    res.json({ token, url: LIVEKIT_URL });
+    res.json({ token, url: chosenAccount.serverUrl, accountId: chosenAccount.id });
   } catch (err) {
     req.log.error({ err }, "Error generating LiveKit token");
     res.status(500).json({ error: "Internal server error" });
