@@ -7,16 +7,23 @@ rtc:
   udp_port: 7882
   port_range_start: 50000
   port_range_end: 60000
+  # use_external_ip queries a metadata service to detect the container's public IP.
+  # In Replit's microVM the NAT maps UDP/TCP through to this IP, so ICE candidates
+  # will include the correct address for direct peer connections.
   use_external_ip: true
-  use_ice_lite: false
+  # ICE Lite reduces handshake overhead for server-side SFU (recommended for LiveKit).
+  use_ice_lite: true
 
 room:
   auto_create: true
   empty_timeout: 300
   max_participants: 500
+  # Disconnect a participant that sends no data/keepalive for 30 s.
+  departure_timeout: 30
 
 logging:
   pion_level: error
+  json: false
 
 keys:
   brightinsight: 47cfbfbfc2ed74584dda955c9f743b63d4111c71b761f076848987b0d8b7e88b

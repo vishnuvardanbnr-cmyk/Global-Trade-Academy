@@ -604,7 +604,25 @@ function LiveKitGrid({
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   const [lowBw, setLowBw] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const { canPlayAudio, startAudio } = useStartAudio({ room });
+  const [reconnecting, setReconnecting] = useState(false);
+
+  // v2 API: returns mergedProps (contains onClick), not a bare startAudio fn.
+  const { mergedProps: startAudioProps, canPlayAudio } = useStartAudio({ room, props: {} });
+
+  // Listen for reconnect events so we can show an overlay instead of a blank screen.
+  useEffect(() => {
+    const onReconnecting = () => setReconnecting(true);
+    const onReconnected  = () => setReconnecting(false);
+    const onDisconnected = () => setReconnecting(false);
+    room.on(RoomEvent.Reconnecting,  onReconnecting);
+    room.on(RoomEvent.Reconnected,   onReconnected);
+    room.on(RoomEvent.Disconnected,  onDisconnected);
+    return () => {
+      room.off(RoomEvent.Reconnecting,  onReconnecting);
+      room.off(RoomEvent.Reconnected,   onReconnected);
+      room.off(RoomEvent.Disconnected,  onDisconnected);
+    };
+  }, [room]);
 
   // Keep isScreenSharing in sync with what LiveKit actually has active
   useEffect(() => {
@@ -687,18 +705,27 @@ function LiveKitGrid({
   const quality = localParticipant?.connectionQuality;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {/* Reconnecting overlay */}
+      {reconnecting && (
+        <div className="absolute inset-0 z-20 bg-slate-950/80 flex flex-col items-center justify-center gap-3 pointer-events-none">
+          <Loader2 className="h-7 w-7 text-blue-400 animate-spin" />
+          <span className="text-white/70 text-[13px] font-medium">Reconnecting…</span>
+          <span className="text-white/35 text-[11px]">Please wait, this usually takes a few seconds</span>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0" data-lk-theme="default">
         <GridLayout tracks={tracks} style={{ height: "100%" }}>
           <ParticipantTile />
         </GridLayout>
       </div>
 
-      {/* Audio unlock banner */}
+      {/* Audio unlock banner — browsers block autoplay until a user gesture */}
       {!canPlayAudio && (
         <div className="shrink-0 bg-blue-600/20 border-t border-blue-500/30 px-4 py-2 flex items-center justify-between">
           <span className="text-[12px] text-blue-300">Click to enable audio from other participants</span>
-          <button onClick={startAudio}
+          <button onClick={startAudioProps.onClick}
             className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors">
             Enable Audio
           </button>
@@ -782,12 +809,17 @@ function LiveKitGrid({
 const ROOM_OPTIONS = {
   adaptiveStream: true,
   dynacast: true,
+  // Exponential backoff: 1 s, 2 s, 4 s, 8 s, 15 s — then give up (null).
+  reconnectPolicy: {
+    nextRetryDelayInMs: (ctx: { retryCount: number }) => {
+      if (ctx.retryCount >= 5) return null;
+      return Math.min(1000 * Math.pow(2, ctx.retryCount), 15_000);
+    },
+  },
   publishDefaults: {
     simulcast: true,
     videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360, VideoPresets.h720],
     videoEncoding: VideoPresets.h720.encoding,
-    // vp9 is NOT supported for WebRTC publishing on Safari/iOS — use vp8 which
-    // is universally supported, and let LiveKit negotiate the best codec.
     videoCodec: "vp8" as const,
     dtx: true,
     red: false,
@@ -798,6 +830,19 @@ const ROOM_OPTIONS = {
     autoGainControl: true,
   },
   videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
+};
+
+// connectOptions is also stable — defined outside components to avoid reference churn.
+// Uses Google STUN for NAT traversal; falls back to TURN if available via LiveKit server.
+const CONNECT_OPTIONS = {
+  rtcConfig: {
+    iceServers: [
+      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+      { urls: ["stun:stun.cloudflare.com:3478"] },
+    ],
+    iceTransportPolicy: "all" as RTCIceTransportPolicy,
+  },
+  maxRetries: 5,
 };
 
 function LiveKitVideoArea({
@@ -818,6 +863,35 @@ function LiveKitVideoArea({
   onVideoMuted: (m: boolean) => void;
 }) {
   const [started, setStarted] = useState(false);
+  const [checkingPerms, setCheckingPerms] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
+
+  const handleJoin = async () => {
+    setCheckingPerms(true);
+    setPermError(null);
+    try {
+      // Request mic permission up-front so LiveKit doesn't hit a surprise denial.
+      // Camera is optional — user can enable it in-room.
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Release the test tracks immediately; LiveKit will acquire its own.
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (err: unknown) {
+      const name = (err as { name?: string }).name ?? "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setPermError("Microphone access was denied. Allow microphone access in your browser settings and try again.");
+        setCheckingPerms(false);
+        return;
+      }
+      if (name === "NotFoundError") {
+        setPermError("No microphone detected. Connect a microphone and try again.");
+        setCheckingPerms(false);
+        return;
+      }
+      // Any other error (overconstrained, etc.) — warn but still let them in.
+    }
+    setCheckingPerms(false);
+    setStarted(true);
+  };
 
   if (!started) {
     return (
@@ -827,23 +901,29 @@ function LiveKitVideoArea({
             <Users className="h-8 w-8 text-white/40" />
           </div>
           <p className="text-white/70 text-[15px] font-medium mb-1">Ready to join?</p>
-          <p className="text-white/35 text-[12px]">Your mic will be enabled when you join</p>
+          <p className="text-white/35 text-[12px]">Your mic will be enabled when you join. Camera starts off.</p>
         </div>
+        {permError && (
+          <div className="flex items-start gap-2 bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 max-w-sm">
+            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+            <p className="text-[12px] text-red-300 leading-snug">{permError}</p>
+          </div>
+        )}
         <button
-          onClick={() => setStarted(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-[14px] transition-colors"
+          onClick={handleJoin}
+          disabled={checkingPerms}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl font-semibold text-[14px] transition-colors"
         >
-          <Mic className="h-4 w-4" />
-          Join Room
+          {checkingPerms ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+          {checkingPerms ? "Checking permissions…" : "Join Room"}
         </button>
       </div>
     );
   }
 
-  // ROOM_OPTIONS is a module-level constant so JSON.stringify(options) inside
-  // useLiveKitRoom always returns the same string → the internal Room object
-  // is never recreated → its cleanup never calls room.disconnect() → no
-  // CLIENT_REQUEST_LEAVE cycles on re-renders from the 10 s class refetch.
+  // ROOM_OPTIONS and CONNECT_OPTIONS are module-level constants — stable references.
+  // ROOM_OPTIONS: prevents room.disconnect() cycles on re-renders.
+  // CONNECT_OPTIONS: adds STUN servers for NAT traversal + retry config.
   return (
     <LiveKitRoom
       serverUrl={serverUrl}
@@ -854,6 +934,7 @@ function LiveKitVideoArea({
       onConnected={onJoined}
       onDisconnected={onDisconnected}
       options={ROOM_OPTIONS}
+      connectOptions={CONNECT_OPTIONS}
       style={{ height: "100%", background: "transparent" }}
     >
       <LiveKitGrid
@@ -896,7 +977,8 @@ export default function LiveRoom() {
   /* ─── LiveKit state ──────────────────────────────────────────── */
   const [roomJoined, setRoomJoined] = useState(false);
   const [participantCount, setParticipantCount] = useState(0);
-  const [audioMuted, setAudioMuted] = useState(true);
+  // Room connects with audio=true, so mic starts enabled; camera is video={false} → starts off.
+  const [audioMuted, setAudioMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(true);
 
   const isLiveStatus = cls?.status === "live";
