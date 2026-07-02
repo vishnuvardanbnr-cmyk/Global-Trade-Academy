@@ -166,7 +166,7 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
       <DialogTrigger asChild>
         <Button data-testid="button-create-course"><Plus className="h-4 w-4 mr-2" />Create Course</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>New Course</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((d) => create.mutate({ data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
@@ -239,7 +239,7 @@ function EditCourseDialog({ course, onSuccess }: {
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" data-testid={`button-edit-course-${course.id}`}><Pencil className="h-3.5 w-3.5 mr-1.5" />Edit</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>Edit Course</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((d) => update.mutate({ courseId: course.id, data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
@@ -396,7 +396,7 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
       <DialogTrigger asChild>
         <Button size="sm" data-testid="button-schedule-live-class"><CalendarPlus className="h-4 w-4 mr-2" />Schedule Live Class</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>Schedule a Live Class</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -1691,7 +1691,7 @@ function BatchScheduleDialog({ batchId, courseId, courses, onSuccess }: { batchI
       <DialogTrigger asChild>
         <Button size="sm" className="gap-1.5"><CalendarPlus className="h-3.5 w-3.5" /> Schedule Session</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>Schedule Batch Live Session</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={handleSubmit} className="space-y-4">
