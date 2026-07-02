@@ -11,6 +11,7 @@ export const usersTable = pgTable("users", {
   avatarUrl: text("avatar_url"),
   bio: text("bio"),
   role: text("role").notNull().default("student"), // student | instructor | admin
+  status: text("status").notNull().default("pending_approval"), // pending_approval | active | suspended
   xp: integer("xp").notNull().default(0),
   badges: text("badges").array().notNull().default([]),
   marketFocus: text("market_focus"),

@@ -5,7 +5,7 @@ import {
   LogOut, ShieldAlert, Shield, TrendingUp, Bell, Search, Menu, X,
   ChevronRight, GraduationCap, Zap, Award, UserCircle2,
   Settings, User, CheckCheck, BarChart3, Layers, ClipboardCheck, Activity,
-  Calendar, Megaphone, Moon, Sun, Layout,
+  Calendar, Megaphone, Moon, Sun, Layout, Clock,
 } from "lucide-react";
 import { useTheme } from "@/lib/useTheme";
 import { Fragment } from "react";
@@ -70,6 +70,7 @@ const instructorNav = [
 
 const adminNav = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, tab: "" },
+  { href: "/admin", label: "Pending Approvals", icon: Clock, tab: "pending" },
   { href: "/admin", label: "Users", icon: Users, tab: "users" },
   { href: "/admin", label: "Courses", icon: BookOpen, tab: "courses" },
   { href: "/admin", label: "Live Classes", icon: Video, tab: "live-classes" },

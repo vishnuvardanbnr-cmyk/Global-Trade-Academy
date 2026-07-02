@@ -2210,6 +2210,112 @@ function LandingPageTab() {
   );
 }
 
+/* ─── Pending Approvals Tab ─── */
+function PendingTab() {
+  const { toast } = useToast();
+  const [users, setUsers] = useState<{ id: string; email: string; displayName: string | null; role: string; createdAt: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/pending-users");
+      if (res.ok) setUsers(await res.json());
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const approve = async (id: string, email: string) => {
+    setActing(id);
+    try {
+      const res = await fetch(`/api/admin/users/${id}/approve`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      toast({ title: `Approved ${email}` });
+      setUsers(u => u.filter(x => x.id !== id));
+    } catch { toast({ title: "Failed to approve", variant: "destructive" }); }
+    finally { setActing(null); }
+  };
+
+  const reject = async (id: string, email: string) => {
+    setActing(id);
+    try {
+      const res = await fetch(`/api/admin/users/${id}/reject`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      toast({ title: `Rejected ${email}` });
+      setUsers(u => u.filter(x => x.id !== id));
+    } catch { toast({ title: "Failed to reject", variant: "destructive" }); }
+    finally { setActing(null); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Pending Approvals</h2>
+          <p className="text-sm text-muted-foreground">Review and approve new user registrations.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+        </div>
+      ) : users.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-2">
+            <CheckCircle className="h-10 w-10 text-green-500 mb-2" />
+            <p className="font-medium">No pending approvals</p>
+            <p className="text-sm text-muted-foreground">All registrations have been reviewed.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {users.map(u => (
+            <Card key={u.id}>
+              <CardContent className="flex items-center justify-between gap-4 py-4">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{u.displayName ?? u.email}</p>
+                  <p className="text-sm text-muted-foreground truncate">{u.email}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Registered {new Date(u.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
+                    disabled={acting === u.id}
+                    onClick={() => reject(u.id, u.email)}
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={acting === u.id}
+                    onClick={() => approve(u.id, u.email)}
+                  >
+                    {acting === u.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="h-4 w-4 mr-1" />}
+                    Approve
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
@@ -2229,6 +2335,7 @@ export default function AdminPanel() {
       <Tabs value={activeTab}>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
+        <TabsContent value="pending" className="mt-6"><PendingTab /></TabsContent>
         <TabsContent value="users" className="mt-6"><UsersTab /></TabsContent>
         <TabsContent value="courses" className="mt-6"><CoursesTab /></TabsContent>
         <TabsContent value="live-classes" className="mt-6"><AdminLiveClassesTab /></TabsContent>

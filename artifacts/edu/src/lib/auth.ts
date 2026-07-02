@@ -3,10 +3,11 @@ export interface AuthUser {
   email: string;
   displayName: string | null;
   role: string;
+  status?: string;
   avatarUrl?: string | null;
 }
 
-export async function apiLogin(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
+export async function apiLogin(email: string, password: string): Promise<{ token: string; pendingApproval?: boolean; user: AuthUser }> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -21,7 +22,7 @@ export async function apiLogin(email: string, password: string): Promise<{ token
 
 export async function apiRegister(
   email: string, password: string, firstName?: string, lastName?: string
-): Promise<{ token: string; user: AuthUser }> {
+): Promise<{ token: string; pendingApproval?: boolean; user: AuthUser }> {
   const res = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

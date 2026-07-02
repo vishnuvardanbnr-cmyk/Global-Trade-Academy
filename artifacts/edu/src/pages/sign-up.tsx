@@ -62,10 +62,14 @@ export default function SignUpPage() {
     if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
     setLoading(true);
     try {
-      await apiRegister(email, password, firstName.trim(), lastName.trim());
+      const result = await apiRegister(email, password, firstName.trim(), lastName.trim());
       queryClient.clear();
       await refetch();
-      navigate("/dashboard");
+      if (result.pendingApproval) {
+        navigate("/pending-approval");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

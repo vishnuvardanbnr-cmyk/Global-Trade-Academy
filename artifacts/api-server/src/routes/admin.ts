@@ -674,4 +674,58 @@ router.put("/admin/site-settings/:key", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/admin/pending-users ───────────────────────────────── */
+router.get("/admin/pending-users", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const users = await db
+      .select({ id: usersTable.id, email: usersTable.email, displayName: usersTable.displayName, role: usersTable.role, status: usersTable.status, createdAt: usersTable.createdAt })
+      .from(usersTable)
+      .where(eq(usersTable.status, "pending_approval"))
+      .orderBy(desc(usersTable.createdAt));
+
+    res.json(users);
+  } catch (err) {
+    req.log.error({ err }, "Error listing pending users");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/users/:id/approve ─────────────────────────── */
+router.post("/admin/users/:id/approve", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const updated = await db
+      .update(usersTable)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(eq(usersTable.id, req.params.id))
+      .returning({ id: usersTable.id, email: usersTable.email, status: usersTable.status });
+
+    if (!updated[0]) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({ success: true, user: updated[0] });
+  } catch (err) {
+    req.log.error({ err }, "Error approving user");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/users/:id/reject ──────────────────────────── */
+router.post("/admin/users/:id/reject", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.delete(usersTable).where(eq(usersTable.id, req.params.id));
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error rejecting user");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
+

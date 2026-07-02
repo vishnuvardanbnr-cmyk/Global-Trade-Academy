@@ -54,13 +54,18 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       displayName,
       passwordHash: hashed,
       role: "student",
+      status: "pending_approval",
       xp: 0,
       badges: [],
     }).returning();
 
     const token = signToken({ userId: user.id, email: user.email });
     setAuthCookie(res, token);
-    res.status(201).json({ token, user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } });
+    res.status(201).json({
+      token,
+      pendingApproval: true,
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, status: user.status },
+    });
   } catch (err) {
     req.log.error({ err }, "Register error");
     res.status(500).json({ error: "Internal server error" });
@@ -86,9 +91,19 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       res.status(401).json({ error: "Invalid email or password" }); return;
     }
 
+    if (user.status === "suspended") {
+      res.status(403).json({ error: "Your account has been suspended. Please contact support." }); return;
+    }
+
     const token = signToken({ userId: user.id, email: user.email });
     setAuthCookie(res, token);
-    res.json({ token, user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } });
+
+    const pendingApproval = user.status === "pending_approval";
+    res.json({
+      token,
+      pendingApproval,
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, status: user.status },
+    });
   } catch (err) {
     req.log.error({ err }, "Login error");
     res.status(500).json({ error: "Internal server error" });
@@ -109,7 +124,14 @@ router.get("/auth/me", async (req, res): Promise<void> => {
       .where(eq(usersTable.id, userId)).limit(1).then(r => r[0]);
     if (!user) { res.status(401).json({ error: "User not found" }); return; }
 
-    res.json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role, avatarUrl: user.avatarUrl });
+    res.json({
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      status: user.status,
+      avatarUrl: user.avatarUrl,
+    });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }

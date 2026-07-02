@@ -25,9 +25,10 @@ const LiveRoom         = lazy(() => import("@/pages/live-room"));
 const InstructorPanel  = lazy(() => import("@/pages/instructor"));
 const AdminPanel       = lazy(() => import("@/pages/admin"));
 const Settings         = lazy(() => import("@/pages/settings"));
-const SetupPage        = lazy(() => import("@/pages/setup"));
-const VerifyCertificate = lazy(() => import("@/pages/verify"));
-const NotFound         = lazy(() => import("@/pages/not-found"));
+const SetupPage           = lazy(() => import("@/pages/setup"));
+const VerifyCertificate   = lazy(() => import("@/pages/verify"));
+const PendingApproval     = lazy(() => import("@/pages/pending-approval"));
+const NotFound            = lazy(() => import("@/pages/not-found"));
 
 /* ── Minimal fallback while a chunk loads ───────────────────────── */
 function PageLoader() {
@@ -48,6 +49,7 @@ function HomeRedirect() {
   const { data: me, isLoading } = useGetMe();
   if (loading || (user && isLoading)) return null;
   if (user) {
+    if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
     if (me?.role === "instructor") return <Redirect to="/instructor" />;
     if (me?.role === "admin") return <Redirect to="/admin" />;
     return <Redirect to="/dashboard" />;
@@ -59,6 +61,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   const { user, loading } = useAuthContext();
   if (loading) return null;
   if (!user) return <Redirect to="/" />;
+  if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
   return <DashboardLayout><S><Component /></S></DashboardLayout>;
 }
 
@@ -66,6 +69,7 @@ function ProtectedRouteFullScreen({ component: Component }: { component: React.C
   const { user, loading } = useAuthContext();
   if (loading) return null;
   if (!user) return <Redirect to="/" />;
+  if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
   return <S><Component /></S>;
 }
 
@@ -74,6 +78,7 @@ function RoleProtectedRoute({ component: Component, allowedRoles }: { component:
   const { data: me, isLoading } = useGetMe();
   if (loading || isLoading) return null;
   if (!user) return <Redirect to="/" />;
+  if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
   if (!me || !allowedRoles.includes(me.role ?? "")) return <Redirect to="/dashboard" />;
   return <DashboardLayout><S><Component /></S></DashboardLayout>;
 }
@@ -99,6 +104,7 @@ function AppRoutes() {
       <Route path="/admin"><RoleProtectedRoute component={AdminPanel} allowedRoles={["admin"]} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route path="/setup"><ProtectedRoute component={SetupPage} /></Route>
+      <Route path="/pending-approval"><S><PendingApproval /></S></Route>
 
       <Route><S><NotFound /></S></Route>
     </Switch>

@@ -20,10 +20,18 @@ export default function SignInPage() {
     setError(null);
     setLoading(true);
     try {
-      await apiLogin(email, password);
+      const result = await apiLogin(email, password);
       queryClient.clear();
       await refetch();
-      navigate("/dashboard");
+      if (result.pendingApproval) {
+        navigate("/pending-approval");
+      } else if (result.user?.role === "instructor") {
+        navigate("/instructor");
+      } else if (result.user?.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
