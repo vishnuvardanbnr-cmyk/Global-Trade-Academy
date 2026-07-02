@@ -13,6 +13,7 @@ import Home from "@/pages/home";
 import SignInPage from "@/pages/sign-in";
 import SignUpPage from "@/pages/sign-up";
 import DemoLoginPage from "@/pages/demo-login";
+import LiveGuestPage from "@/pages/live-guest";
 
 /* ── Lazy (loaded only when the route is visited) ───────────────── */
 const Dashboard        = lazy(() => import("@/pages/dashboard"));
@@ -94,6 +95,7 @@ function AppRoutes() {
       <Route path="/sign-in" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
       <Route path="/demo-login" component={DemoLoginPage} />
+      <Route path="/live-guest" component={LiveGuestPage} />
       <Route path="/verify/:serial"><S><VerifyCertificate /></S></Route>
 
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
