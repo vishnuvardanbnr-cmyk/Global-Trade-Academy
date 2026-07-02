@@ -232,6 +232,7 @@ export interface LiveClass {
   status: string;
   /** @nullable */
   roomName?: string | null;
+  meetingType?: string;
   /** @nullable */
   meetingUrl?: string | null;
   /** @nullable */
@@ -248,6 +249,14 @@ export interface LiveClass {
   createdAt?: string;
 }
 
+export type LiveClassInputMeetingType = typeof LiveClassInputMeetingType[keyof typeof LiveClassInputMeetingType];
+
+
+export const LiveClassInputMeetingType = {
+  livekit: 'livekit',
+  zoom: 'zoom',
+} as const;
+
 export interface LiveClassInput {
   /** @minLength 1 */
   title: string;
@@ -256,12 +265,21 @@ export interface LiveClassInput {
   duration?: number;
   courseId?: number;
   batchId?: number;
+  meetingType?: LiveClassInputMeetingType;
   meetingUrl?: string;
   category?: string;
   maxAttendees?: number;
   thumbnailUrl?: string;
   agenda?: string;
 }
+
+export type LiveClassUpdateMeetingType = typeof LiveClassUpdateMeetingType[keyof typeof LiveClassUpdateMeetingType];
+
+
+export const LiveClassUpdateMeetingType = {
+  livekit: 'livekit',
+  zoom: 'zoom',
+} as const;
 
 export interface LiveClassUpdate {
   title?: string;
@@ -270,6 +288,7 @@ export interface LiveClassUpdate {
   duration?: number;
   status?: string;
   courseId?: number;
+  meetingType?: LiveClassUpdateMeetingType;
   meetingUrl?: string;
   replayUrl?: string;
   category?: string;

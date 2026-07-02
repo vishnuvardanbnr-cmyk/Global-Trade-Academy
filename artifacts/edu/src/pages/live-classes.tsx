@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Calendar, Clock, Users, Play, Radio, BookOpen,
-  Video, CheckCircle2, ChevronRight, Filter, Inbox,
+  Video, CheckCircle2, ChevronRight, Filter, Inbox, ExternalLink,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -156,11 +156,19 @@ export default function LiveClasses() {
               </div>
 
               {/* CTA */}
-              <Link href={`/live/${cls.id}/room`}
-                className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[13.5px] transition-colors shrink-0 shadow-lg shadow-red-200">
-                <Play className="h-4 w-4 fill-white" />
-                Join Now
-              </Link>
+              {cls.meetingType === "zoom" && cls.meetingUrl ? (
+                <a href={cls.meetingUrl} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[13.5px] transition-colors shrink-0 shadow-lg shadow-blue-200">
+                  <ExternalLink className="h-4 w-4" />
+                  Join Zoom
+                </a>
+              ) : (
+                <Link href={`/live/${cls.id}/room`}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[13.5px] transition-colors shrink-0 shadow-lg shadow-red-200">
+                  <Play className="h-4 w-4 fill-white" />
+                  Join Now
+                </Link>
+              )}
             </div>
           ))}
         </section>

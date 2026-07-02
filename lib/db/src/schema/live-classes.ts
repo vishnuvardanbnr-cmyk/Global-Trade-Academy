@@ -12,6 +12,7 @@ export const liveClassesTable = pgTable("live_classes", {
   duration: integer("duration"),
   status: text("status").notNull().default("scheduled"),
   roomName: text("room_name"),
+  meetingType: text("meeting_type").notNull().default("livekit"),
   meetingUrl: text("meeting_url"),
   replayUrl: text("replay_url"),
   category: text("category"),

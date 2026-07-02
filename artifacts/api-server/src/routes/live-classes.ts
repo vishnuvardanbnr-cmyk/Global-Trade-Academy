@@ -43,6 +43,7 @@ async function buildClassResponse(cls: typeof liveClassesTable.$inferSelect) {
     duration: cls.duration,
     status: cls.status,
     roomName: cls.roomName ?? null,
+    meetingType: cls.meetingType ?? "livekit",
     meetingUrl: cls.meetingUrl,
     replayUrl: cls.replayUrl,
     category: cls.category,
@@ -79,15 +80,20 @@ router.post("/live-classes", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { title, description, scheduledAt, duration, meetingUrl, category, maxAttendees, thumbnailUrl, courseId, agenda, batchId } = req.body;
+    const { title, description, scheduledAt, duration, meetingType, meetingUrl, category, maxAttendees, thumbnailUrl, courseId, agenda, batchId } = req.body;
     if (!title || !scheduledAt) { res.status(400).json({ error: "title and scheduledAt required" }); return; }
+
+    const resolvedMeetingType = meetingType === "zoom" ? "zoom" : "livekit";
 
     const inserted = await db.insert(liveClassesTable).values({
       title, description, instructorId: clerkId,
-      scheduledAt: new Date(scheduledAt), duration, meetingUrl, category, maxAttendees, thumbnailUrl, agenda,
+      scheduledAt: new Date(scheduledAt), duration,
+      meetingType: resolvedMeetingType,
+      meetingUrl: resolvedMeetingType === "zoom" ? (meetingUrl ?? null) : null,
+      category, maxAttendees, thumbnailUrl, agenda,
       courseId: courseId ? parseInt(courseId) : null,
       batchId: batchId ? parseInt(batchId) : null,
-      roomName: generateRoomName(),
+      roomName: resolvedMeetingType === "livekit" ? generateRoomName() : null,
       status: "scheduled",
     }).returning();
 
@@ -117,13 +123,14 @@ router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.classId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { title, description, scheduledAt, duration, status, meetingUrl, replayUrl, category, maxAttendees, courseId, agenda, batchId } = req.body;
+    const { title, description, scheduledAt, duration, status, meetingType, meetingUrl, replayUrl, category, maxAttendees, courseId, agenda, batchId } = req.body;
     const updated = await db.update(liveClassesTable).set({
       ...(title !== undefined && { title }),
       ...(description !== undefined && { description }),
       ...(scheduledAt !== undefined && { scheduledAt: new Date(scheduledAt) }),
       ...(duration !== undefined && { duration }),
       ...(status !== undefined && { status }),
+      ...(meetingType !== undefined && { meetingType: meetingType === "zoom" ? "zoom" : "livekit" }),
       ...(meetingUrl !== undefined && { meetingUrl }),
       ...(replayUrl !== undefined && { replayUrl }),
       ...(category !== undefined && { category }),

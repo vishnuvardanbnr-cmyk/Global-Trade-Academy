@@ -5,6 +5,7 @@
  * Bright Insight API
  * OpenAPI spec version: 0.1.0
  */
+import type { LiveClassUpdateMeetingType } from './liveClassUpdateMeetingType';
 
 export interface LiveClassUpdate {
   title?: string;
@@ -13,6 +14,7 @@ export interface LiveClassUpdate {
   duration?: number;
   status?: string;
   courseId?: number;
+  meetingType?: LiveClassUpdateMeetingType;
   meetingUrl?: string;
   replayUrl?: string;
   category?: string;

@@ -5,6 +5,7 @@
  * Bright Insight API
  * OpenAPI spec version: 0.1.0
  */
+import type { LiveClassInputMeetingType } from './liveClassInputMeetingType';
 
 export interface LiveClassInput {
   /** @minLength 1 */
@@ -14,6 +15,7 @@ export interface LiveClassInput {
   duration?: number;
   courseId?: number;
   batchId?: number;
+  meetingType?: LiveClassInputMeetingType;
   meetingUrl?: string;
   category?: string;
   maxAttendees?: number;

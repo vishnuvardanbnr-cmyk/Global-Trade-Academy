@@ -350,8 +350,9 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
   const [audienceType, setAudienceType] = useState<"all" | "batch">("all");
   const [batches, setBatches] = useState<{ id: number; name: string }[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
+  const [meetingType, setMeetingType] = useState<"livekit" | "zoom">("livekit");
   const { toast } = useToast();
-  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, courseId: "" as string, batchId: "" as string, maxAttendees: "" as string } });
+  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, courseId: "" as string, batchId: "" as string, maxAttendees: "" as string, zoomUrl: "" } });
 
   const selectedCourseId = form.watch("courseId");
 
@@ -370,7 +371,7 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
 
   const create = useCreateLiveClass({
     mutation: {
-      onSuccess: () => { setOpen(false); form.reset(); setAudienceType("all"); setBatches([]); onSuccess(); toast({ title: "Live class scheduled" }); },
+      onSuccess: () => { setOpen(false); form.reset(); setAudienceType("all"); setBatches([]); setMeetingType("livekit"); onSuccess(); toast({ title: "Live class scheduled" }); },
       onError: () => toast({ title: "Failed to schedule live class", variant: "destructive" }),
     },
   });
@@ -385,6 +386,8 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
       courseId: d.courseId ? parseInt(d.courseId) : undefined,
       batchId,
       maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined,
+      meetingType,
+      ...(meetingType === "zoom" && d.zoomUrl ? { meetingUrl: d.zoomUrl } : {}),
     }});
   });
 
@@ -397,6 +400,37 @@ function ScheduleLiveClassDialog({ courses, onSuccess }: { courses?: { id: numbe
         <DialogHeader><DialogTitle>Schedule a Live Class</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Meeting type toggle */}
+            <FormItem>
+              <FormLabel>Meeting Platform</FormLabel>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setMeetingType("livekit")}
+                  className={cn("rounded-lg border px-3 py-2.5 text-sm text-left transition-colors",
+                    meetingType === "livekit" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:bg-secondary/50")}>
+                  <Video className="h-4 w-4 mb-1" />
+                  Built-in LiveKit
+                  <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Audio/video on Bright Insight</p>
+                </button>
+                <button type="button" onClick={() => setMeetingType("zoom")}
+                  className={cn("rounded-lg border px-3 py-2.5 text-sm text-left transition-colors",
+                    meetingType === "zoom" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:bg-secondary/50")}>
+                  <ExternalLink className="h-4 w-4 mb-1" />
+                  Zoom Meeting
+                  <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Students join via Zoom link</p>
+                </button>
+              </div>
+            </FormItem>
+
+            {meetingType === "zoom" && (
+              <FormField control={form.control} name="zoomUrl" rules={{ required: "Zoom link is required" }} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Zoom Meeting Link</FormLabel>
+                  <FormControl><Input placeholder="https://zoom.us/j/..." {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
             <FormField control={form.control} name="title" rules={{ required: "Title is required" }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g. Weekly Market Analysis" {...field} /></FormControl><FormMessage /></FormItem>
             )} />
@@ -1627,8 +1661,9 @@ function BatchDetail({ batch, courses, onBack, onDelete }: { batch: Batch; cours
 /* ─── Batch Schedule Live Class Dialog ─── */
 function BatchScheduleDialog({ batchId, courseId, courses, onSuccess }: { batchId: number; courseId: number; courses: { id: number; title: string }[]; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
+  const [meetingType, setMeetingType] = useState<"livekit" | "zoom">("livekit");
   const { toast } = useToast();
-  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, maxAttendees: "" as string } });
+  const form = useForm({ defaultValues: { title: "", description: "", scheduledAt: "", duration: 60 as number | undefined, maxAttendees: "" as string, zoomUrl: "" } });
 
   const handleSubmit = form.handleSubmit(async (d) => {
     try {
@@ -1641,11 +1676,13 @@ function BatchScheduleDialog({ batchId, courseId, courses, onSuccess }: { batchI
           duration: d.duration || undefined,
           maxAttendees: d.maxAttendees ? parseInt(d.maxAttendees) : undefined,
           courseId, batchId,
+          meetingType,
+          ...(meetingType === "zoom" && d.zoomUrl ? { meetingUrl: d.zoomUrl } : {}),
         }),
       });
       if (!r.ok) throw new Error();
       toast({ title: "Live class scheduled for batch!" });
-      setOpen(false); form.reset(); onSuccess();
+      setOpen(false); form.reset(); setMeetingType("livekit"); onSuccess();
     } catch { toast({ title: "Failed to schedule", variant: "destructive" }); }
   });
 
@@ -1658,6 +1695,37 @@ function BatchScheduleDialog({ batchId, courseId, courses, onSuccess }: { batchI
         <DialogHeader><DialogTitle>Schedule Batch Live Session</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Meeting type toggle */}
+            <FormItem>
+              <FormLabel>Meeting Platform</FormLabel>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setMeetingType("livekit")}
+                  className={cn("rounded-lg border px-3 py-2.5 text-sm text-left transition-colors",
+                    meetingType === "livekit" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:bg-secondary/50")}>
+                  <Video className="h-4 w-4 mb-1" />
+                  Built-in LiveKit
+                  <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Audio/video on Bright Insight</p>
+                </button>
+                <button type="button" onClick={() => setMeetingType("zoom")}
+                  className={cn("rounded-lg border px-3 py-2.5 text-sm text-left transition-colors",
+                    meetingType === "zoom" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:bg-secondary/50")}>
+                  <ExternalLink className="h-4 w-4 mb-1" />
+                  Zoom Meeting
+                  <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Students join via Zoom link</p>
+                </button>
+              </div>
+            </FormItem>
+
+            {meetingType === "zoom" && (
+              <FormField control={form.control} name="zoomUrl" rules={{ required: "Zoom link is required" }} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Zoom Meeting Link</FormLabel>
+                  <FormControl><Input placeholder="https://zoom.us/j/..." {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
             <FormField control={form.control} name="title" rules={{ required: "Title is required" }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g. Week 3 Live Q&A" {...field} /></FormControl><FormMessage /></FormItem>
             )} />

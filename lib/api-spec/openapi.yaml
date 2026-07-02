@@ -2281,6 +2281,7 @@ components:
         duration: { type: ["integer", "null"] }
         status: { type: string }
         roomName: { type: ["string", "null"] }
+        meetingType: { type: string }
         meetingUrl: { type: ["string", "null"] }
         replayUrl: { type: ["string", "null"] }
         category: { type: ["string", "null"] }
@@ -2300,6 +2301,7 @@ components:
         duration: { type: integer }
         courseId: { type: integer }
         batchId: { type: integer }
+        meetingType: { type: string, enum: [livekit, zoom] }
         meetingUrl: { type: string }
         category: { type: string }
         maxAttendees: { type: integer }
@@ -2315,6 +2317,7 @@ components:
         duration: { type: integer }
         status: { type: string }
         courseId: { type: integer }
+        meetingType: { type: string, enum: [livekit, zoom] }
         meetingUrl: { type: string }
         replayUrl: { type: string }
         category: { type: string }

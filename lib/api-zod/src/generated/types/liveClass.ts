@@ -24,6 +24,7 @@ export interface LiveClass {
   status: string;
   /** @nullable */
   roomName?: string | null;
+  meetingType?: string;
   /** @nullable */
   meetingUrl?: string | null;
   /** @nullable */
