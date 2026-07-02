@@ -1,19 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   LiveKitRoom, GridLayout, ParticipantTile, RoomAudioRenderer,
   useTracks, useParticipants, useLocalParticipant, useRoomContext, useStartAudio,
 } from "@livekit/components-react";
-import { Track, RoomEvent, VideoPresets, ConnectionQuality } from "livekit-client";
+import { Track, RoomEvent, VideoPresets, ConnectionState } from "livekit-client";
 import "@livekit/components-styles";
-import { Mic, MicOff, Video, VideoOff, Monitor, PhoneOff, Users, Loader2, AlertTriangle } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, Monitor, PhoneOff, Users, Loader2, AlertTriangle, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ROOM_OPTIONS = {
   adaptiveStream: true,
   dynacast: true,
+  // Keep retrying indefinitely with exponential backoff capped at 15s
   reconnectPolicy: {
     nextRetryDelayInMs: (ctx: { retryCount: number }) =>
-      ctx.retryCount >= 5 ? null : Math.min(1000 * Math.pow(2, ctx.retryCount), 15_000),
+      Math.min(1000 * Math.pow(2, ctx.retryCount), 15_000),
   },
   publishDefaults: {
     simulcast: true,
@@ -35,7 +36,7 @@ const CONNECT_OPTIONS = {
     ],
     iceTransportPolicy: "all" as RTCIceTransportPolicy,
   },
-  maxRetries: 5,
+  maxRetries: 10,
 };
 
 function Controls({ onLeave }: { onLeave: () => void }) {
@@ -115,11 +116,48 @@ function RoomGrid() {
   );
 }
 
+function ReconnectingOverlay() {
+  return (
+    <div className="absolute inset-0 z-20 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+      <WifiOff className="h-8 w-8 text-white/40 animate-pulse" />
+      <p className="text-white/60 text-[14px] font-medium">Reconnecting…</p>
+      <p className="text-white/30 text-[11px]">Hold on, we're restoring your connection</p>
+    </div>
+  );
+}
+
+function RoomWithState({ onLeave }: { onLeave: () => void }) {
+  const room = useRoomContext();
+  const [reconnecting, setReconnecting] = useState(false);
+
+  useEffect(() => {
+    const onStateChange = (state: ConnectionState) => {
+      setReconnecting(state === ConnectionState.Reconnecting);
+    };
+    room.on(RoomEvent.ConnectionStateChanged, onStateChange);
+    return () => { room.off(RoomEvent.ConnectionStateChanged, onStateChange); };
+  }, [room]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 relative overflow-hidden">
+        {reconnecting && <ReconnectingOverlay />}
+        <RoomGrid />
+      </div>
+      <div className="h-16 flex items-center justify-center bg-slate-900/80 border-t border-white/10 shrink-0">
+        <Controls onLeave={onLeave} />
+      </div>
+    </div>
+  );
+}
+
 function GuestRoom({ token, serverUrl }: { token: string; serverUrl: string }) {
   const [joined, setJoined] = useState(false);
   const [left, setLeft] = useState(false);
   const [checkingPerms, setCheckingPerms] = useState(false);
   const [permError, setPermError] = useState<string | null>(null);
+
+  const handleLeave = useCallback(() => setLeft(true), []);
 
   const handleJoin = async () => {
     setCheckingPerms(true);
@@ -186,20 +224,11 @@ function GuestRoom({ token, serverUrl }: { token: string; serverUrl: string }) {
       connect
       audio
       video={false}
-      onConnected={() => {}}
-      onDisconnected={() => setLeft(true)}
       options={ROOM_OPTIONS}
       connectOptions={CONNECT_OPTIONS}
       style={{ height: "100%", background: "transparent" }}
     >
-      <div className="flex flex-col h-full">
-        <div className="flex-1 relative overflow-hidden">
-          <RoomGrid />
-        </div>
-        <div className="h-16 flex items-center justify-center bg-slate-900/80 border-t border-white/10 shrink-0">
-          <Controls onLeave={() => setLeft(true)} />
-        </div>
-      </div>
+      <RoomWithState onLeave={handleLeave} />
       <RoomAudioRenderer />
     </LiveKitRoom>
   );

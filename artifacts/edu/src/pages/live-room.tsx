@@ -809,12 +809,10 @@ function LiveKitGrid({
 const ROOM_OPTIONS = {
   adaptiveStream: true,
   dynacast: true,
-  // Exponential backoff: 1 s, 2 s, 4 s, 8 s, 15 s — then give up (null).
+  // Keep retrying with exponential backoff capped at 15 s — never give up automatically.
   reconnectPolicy: {
-    nextRetryDelayInMs: (ctx: { retryCount: number }) => {
-      if (ctx.retryCount >= 5) return null;
-      return Math.min(1000 * Math.pow(2, ctx.retryCount), 15_000);
-    },
+    nextRetryDelayInMs: (ctx: { retryCount: number }) =>
+      Math.min(1000 * Math.pow(2, ctx.retryCount), 15_000),
   },
   publishDefaults: {
     simulcast: true,
@@ -842,7 +840,7 @@ const CONNECT_OPTIONS = {
     ],
     iceTransportPolicy: "all" as RTCIceTransportPolicy,
   },
-  maxRetries: 5,
+  maxRetries: 10,
 };
 
 function LiveKitVideoArea({
