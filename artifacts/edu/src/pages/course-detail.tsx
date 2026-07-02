@@ -1720,10 +1720,10 @@ function LessonGateBanner({ gate, onGoToQuiz }: { gate: LessonGate; onGoToQuiz: 
 
 /* ════════════════════ Overview Tab ════════════════════ */
 function OverviewTab({
-  cur, chIdx, totalL, isEnrolled, curDone, doEnroll, enrolling, gate, onGoToQuiz,
+  cur, chIdx, totalL, isEnrolled, isPendingEnrollment, curDone, doEnroll, enrolling, gate, onGoToQuiz,
 }: {
   cur: DbLesson | undefined; chIdx: number; totalL: number;
-  isEnrolled: boolean; curDone: boolean;
+  isEnrolled: boolean; isPendingEnrollment: boolean; curDone: boolean;
   doEnroll: () => void; enrolling: boolean;
   gate?: LessonGate; onGoToQuiz: () => void;
 }) {

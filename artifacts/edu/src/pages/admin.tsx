@@ -1903,15 +1903,15 @@ const LANDING_DEFAULT: LandingContent = {
 
 function deepMergeLanding(defaults: LandingContent, overrides: Partial<LandingContent>): LandingContent {
   if (!overrides || typeof overrides !== "object") return defaults;
-  const result = { ...defaults } as Record<string, unknown>;
+  const result = { ...defaults } as unknown as Record<string, unknown>;
   for (const key of Object.keys(overrides)) {
-    const dv = (defaults as Record<string, unknown>)[key];
-    const ov = (overrides as Record<string, unknown>)[key];
+    const dv = (defaults as unknown as Record<string, unknown>)[key];
+    const ov = (overrides as unknown as Record<string, unknown>)[key];
     if (Array.isArray(dv) && Array.isArray(ov)) { result[key] = ov; }
     else if (dv && typeof dv === "object" && ov && typeof ov === "object") { result[key] = { ...(dv as object), ...(ov as object) }; }
     else if (ov !== undefined) { result[key] = ov; }
   }
-  return result as LandingContent;
+  return result as unknown as LandingContent;
 }
 
 function LandingPageTab() {

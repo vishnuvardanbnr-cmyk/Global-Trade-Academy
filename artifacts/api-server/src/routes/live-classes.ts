@@ -80,6 +80,11 @@ router.post("/live-classes", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
+    const caller = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    if (!caller || (caller.role !== "instructor" && caller.role !== "admin")) {
+      res.status(403).json({ error: "Only instructors and admins can create live classes" }); return;
+    }
+
     const { title, description, scheduledAt, duration, meetingType, meetingUrl, category, maxAttendees, thumbnailUrl, courseId, agenda, batchId } = req.body;
     if (!title || !scheduledAt) { res.status(400).json({ error: "title and scheduledAt required" }); return; }
 
@@ -121,8 +126,14 @@ router.get("/live-classes/:classId", async (req, res): Promise<void> => {
 // PATCH /api/live-classes/:classId
 router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
   try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const id = parseInt(req.params.classId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const existing = await db.select({ instructorId: liveClassesTable.instructorId }).from(liveClassesTable).where(eq(liveClassesTable.id, id)).limit(1).then((r) => r[0]);
+    if (!existing) { res.status(404).json({ error: "Live class not found" }); return; }
+    const caller = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    if (existing.instructorId !== clerkId && caller?.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
     const { title, description, scheduledAt, duration, status, meetingType, meetingUrl, replayUrl, category, maxAttendees, courseId, agenda, batchId } = req.body;
     const updated = await db.update(liveClassesTable).set({
       ...(title !== undefined && { title }),
@@ -150,8 +161,14 @@ router.patch("/live-classes/:classId", async (req, res): Promise<void> => {
 // DELETE /api/live-classes/:classId
 router.delete("/live-classes/:classId", async (req, res): Promise<void> => {
   try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const id = parseInt(req.params.classId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const existing = await db.select({ instructorId: liveClassesTable.instructorId }).from(liveClassesTable).where(eq(liveClassesTable.id, id)).limit(1).then((r) => r[0]);
+    if (!existing) { res.status(404).json({ error: "Live class not found" }); return; }
+    const caller = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    if (existing.instructorId !== clerkId && caller?.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
     await db.delete(liveClassesTable).where(eq(liveClassesTable.id, id));
     res.status(204).send();
   } catch (err) {

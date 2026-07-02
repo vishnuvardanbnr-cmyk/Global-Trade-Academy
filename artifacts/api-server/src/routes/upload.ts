@@ -26,7 +26,7 @@ function r2Ready() { const k = r2Keys(); return !!(k.id && k.secret); }
    AWS Sig V4 helpers (pure, no SDK needed)
 ════════════════════════════════════════════════════ */
 async function hmac(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
-  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const k = await crypto.subtle.importKey("raw", key as any, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return crypto.subtle.sign("HMAC", k, new TextEncoder().encode(data));
 }
 function hex(buf: ArrayBuffer): string {
@@ -34,7 +34,7 @@ function hex(buf: ArrayBuffer): string {
 }
 async function sha256hex(data: string | Uint8Array): Promise<string> {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return hex(await crypto.subtle.digest("SHA-256", bytes));
+  return hex(await crypto.subtle.digest("SHA-256", bytes as any));
 }
 async function signingKey(secret: string, dateStamp: string): Promise<ArrayBuffer> {
   const kDate    = await hmac(new TextEncoder().encode("AWS4" + secret), dateStamp);
@@ -99,7 +99,7 @@ async function signRequest(opts: {
    R2 operations via native fetch (no SDK)
 ════════════════════════════════════════════════════ */
 async function r2Put(key: string, body: Buffer, contentType: string): Promise<void> {
-  const bodyHash = hex(await crypto.subtle.digest("SHA-256", body));
+  const bodyHash = hex(await crypto.subtle.digest("SHA-256", body as any));
   const path     = `/${R2_BUCKET}/${key}`;
   const headers  = await signRequest({ method: "PUT", path, contentType, bodyHash });
 
