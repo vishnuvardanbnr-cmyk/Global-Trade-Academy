@@ -249,7 +249,7 @@ function GuestRoom({ token, serverUrl }: { token: string; serverUrl: string }) {
 export default function LiveGuestPage() {
   const params = new URLSearchParams(window.location.search);
   const token = params.get("token");
-  const serverUrl = params.get("url") ?? "wss://bicacademy.com/livekit-ws";
+  const serverUrl = params.get("url") ?? "wss://bi-wun7yf7z.livekit.cloud";
 
   if (!token) {
     return (
