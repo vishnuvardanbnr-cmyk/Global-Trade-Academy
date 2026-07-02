@@ -15,6 +15,8 @@ export default function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const redirectTo = new URLSearchParams(window.location.search).get("redirect");
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -25,6 +27,8 @@ export default function SignInPage() {
       await refetch();
       if (result.pendingApproval) {
         navigate("/pending-approval");
+      } else if (redirectTo) {
+        navigate(redirectTo);
       } else if (result.user?.role === "instructor") {
         navigate("/instructor");
       } else if (result.user?.role === "admin") {

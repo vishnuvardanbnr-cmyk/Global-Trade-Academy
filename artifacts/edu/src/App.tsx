@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
@@ -59,25 +59,28 @@ function HomeRedirect() {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, loading } = useAuthContext();
+  const [location] = useLocation();
   if (loading) return null;
-  if (!user) return <Redirect to="/" />;
+  if (!user) return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
   if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
   return <DashboardLayout><S><Component /></S></DashboardLayout>;
 }
 
 function ProtectedRouteFullScreen({ component: Component }: { component: React.ComponentType }) {
   const { user, loading } = useAuthContext();
+  const [location] = useLocation();
   if (loading) return null;
-  if (!user) return <Redirect to="/" />;
+  if (!user) return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
   if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
   return <S><Component /></S>;
 }
 
 function RoleProtectedRoute({ component: Component, allowedRoles }: { component: React.ComponentType; allowedRoles: string[] }) {
   const { user, loading } = useAuthContext();
+  const [location] = useLocation();
   const { data: me, isLoading } = useGetMe();
   if (loading || isLoading) return null;
-  if (!user) return <Redirect to="/" />;
+  if (!user) return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
   if ((user as any).status === "pending_approval") return <Redirect to="/pending-approval" />;
   if (!me || !allowedRoles.includes(me.role ?? "")) return <Redirect to="/dashboard" />;
   return <DashboardLayout><S><Component /></S></DashboardLayout>;
