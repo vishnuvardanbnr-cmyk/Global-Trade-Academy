@@ -214,9 +214,13 @@ router.post("/live-classes/:classId/end", async (req, res): Promise<void> => {
 
     const cls = await db.select().from(liveClassesTable).where(eq(liveClassesTable.id, id)).limit(1).then((r) => r[0]);
     if (!cls) { res.status(404).json({ error: "Live class not found" }); return; }
-    if (cls.instructorId !== clerkId) { res.status(403).json({ error: "Only the instructor can end this session" }); return; }
 
-    const { replayUrl } = req.body;
+    const caller = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    const isAdmin = caller?.role === "admin";
+    const isOwner = cls.instructorId === clerkId;
+    if (!isOwner && !isAdmin) { res.status(403).json({ error: "Only the instructor or an admin can end this session" }); return; }
+
+    const replayUrl = req.body?.replayUrl;
     const updated = await db.update(liveClassesTable)
       .set({ status: "completed", ...(replayUrl && { replayUrl }) })
       .where(eq(liveClassesTable.id, id))
