@@ -38,8 +38,8 @@ interface OverviewData { coins: CoinData[]; global: GlobalData; newListings: New
 type Timeframe = "1H" | "1D" | "1W" | "1M" | "1Y";
 type MainCategory = "crypto" | "forex" | "commodities" | "stocks";
 type CryptoTab = "bubble" | "gainers" | "losers" | "new";
-type ForexTab = "pairs" | "news";
-type CommoditiesTab = "pairs" | "news";
+type ForexTab = "pairs" | "news" | "upcoming";
+type CommoditiesTab = "pairs" | "news" | "upcoming";
 
 /* live tick keyed by UPPERCASE symbol */
 interface LiveTick { price: number; pct24h: number; updatedAt: number; }
@@ -913,6 +913,33 @@ function CommoditiesPairsPanel() {
    News Panel (shared for Forex + Commodities)
 ───────────────────────────────────────── */
 interface NewsItem { title: string; link: string; description: string; pubDate: string; publisher?: string; }
+interface CalendarEvent {
+  id: string; title: string; country: string; date: string;
+  time: string; impact: string; forecast: string; previous: string; actual: string;
+}
+
+const IMPACT_CFG: Record<string, { label: string; dot: string; text: string; bg: string; border: string }> = {
+  High:   { label: "High",     dot: "bg-[#ef4444]", text: "text-[#ef4444]", bg: "bg-[#ef4444]/10", border: "border-[#ef4444]/30" },
+  Medium: { label: "Moderate", dot: "bg-[#f59e0b]", text: "text-[#f59e0b]", bg: "bg-[#f59e0b]/10", border: "border-[#f59e0b]/30" },
+  Low:    { label: "Low",      dot: "bg-[#22c55e]", text: "text-[#22c55e]", bg: "bg-[#22c55e]/10", border: "border-[#22c55e]/30" },
+};
+
+const COUNTRY_FLAGS: Record<string, string> = {
+  USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵",
+  AUD: "🇦🇺", CAD: "🇨🇦", CHF: "🇨🇭", NZD: "🇳🇿",
+  CNY: "🇨🇳", KRW: "🇰🇷", SGD: "🇸🇬", INR: "🇮🇳",
+  NOK: "🇳🇴", SEK: "🇸🇪", MXN: "🇲🇽", TRY: "🇹🇷",
+};
+
+function fmtCalDate(d: string): string {
+  const [mo, dy, yr] = d.split("-").map(Number);
+  const dt = new Date(yr, mo - 1, dy);
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const tom = new Date(now); tom.setDate(now.getDate() + 1);
+  if (dt.getTime() === now.getTime()) return "Today";
+  if (dt.getTime() === tom.getTime()) return "Tomorrow";
+  return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
 
 function timeAgo(dateStr: string): string {
   const ms = Date.now() - new Date(dateStr).getTime();
@@ -925,6 +952,8 @@ function timeAgo(dateStr: string): string {
 }
 
 function NewsPanel({ type }: { type: "forex" | "commodities" }) {
+  const [selected, setSelected] = useState<NewsItem | null>(null);
+
   const { data, isLoading, error } = useQuery<NewsItem[]>({
     queryKey: ["market-news", type],
     queryFn: async ({ signal }) => {
@@ -949,32 +978,234 @@ function NewsPanel({ type }: { type: "forex" | "commodities" }) {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto divide-y divide-[#1a1d1a]">
-      {data.map((item, i) => (
-        <a
-          key={i}
-          href={item.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex flex-col gap-1 px-4 py-3.5 hover:bg-[#ffffff04] transition-colors group"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-white text-[13px] font-semibold leading-snug group-hover:text-[#00c853] transition-colors line-clamp-2">
-              {item.title}
-            </p>
-            {item.pubDate && (
-              <span className="text-[10px] text-[#4b5563] shrink-0 mt-0.5">{timeAgo(item.pubDate)}</span>
+    <>
+      <div className="flex-1 overflow-y-auto divide-y divide-[#1a1d1a]">
+        {data.map((item, i) => (
+          <button
+            key={i}
+            onClick={() => setSelected(item)}
+            className="w-full flex flex-col gap-1 px-4 py-3.5 hover:bg-[#ffffff06] transition-colors group text-left"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-white text-[13px] font-semibold leading-snug group-hover:text-[#00c853] transition-colors line-clamp-2">
+                {item.title}
+              </p>
+              {item.pubDate && (
+                <span className="text-[10px] text-[#4b5563] shrink-0 mt-0.5">{timeAgo(item.pubDate)}</span>
+              )}
+            </div>
+            {item.description && (
+              <p className="text-[#4b5563] text-[12px] leading-relaxed line-clamp-2">{item.description}</p>
             )}
+            <span className="text-[10px] text-[#00c853]/60 font-medium uppercase tracking-wider mt-0.5">
+              {item.publisher ?? "Yahoo Finance"}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* News article modal */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
+          onClick={() => setSelected(null)}
+        >
+          <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
+          <div
+            className="relative z-10 w-full max-w-lg mx-0 sm:mx-4 bg-[#0d0e13] rounded-t-2xl sm:rounded-2xl border border-[#1a1d1a] shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#1a1d1a]">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#4b5563]">Market News</span>
+              <button onClick={() => setSelected(null)} className="text-[#4b5563] hover:text-white transition-colors text-lg leading-none">✕</button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-5 flex flex-col gap-4">
+              <p className="text-white text-[15px] font-semibold leading-snug">{selected.title}</p>
+
+              <div className="flex items-center gap-3 text-[12px]">
+                <span className="text-[#00c853]/80 font-semibold uppercase tracking-wider">
+                  {selected.publisher ?? "Yahoo Finance"}
+                </span>
+                {selected.pubDate && (
+                  <span className="text-[#4b5563]">{timeAgo(selected.pubDate)}</span>
+                )}
+              </div>
+
+              {selected.description && (
+                <p className="text-[#9ca3af] text-[13px] leading-relaxed">{selected.description}</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 pb-5">
+              <a
+                href={selected.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#00c853]/10 border border-[#00c853]/25 text-[#00c853] text-[13px] font-semibold hover:bg-[#00c853]/20 transition-colors"
+              >
+                Read Full Article →
+              </a>
+            </div>
           </div>
-          {item.description && (
-            <p className="text-[#4b5563] text-[12px] leading-relaxed line-clamp-2">{item.description}</p>
-          )}
-          <span className="text-[10px] text-[#00c853]/60 font-medium uppercase tracking-wider mt-0.5">
-            {item.publisher ?? "Yahoo Finance"}
-          </span>
-        </a>
-      ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────
+   Economic Calendar Panel
+───────────────────────────────────────── */
+function EconomicCalendarPanel() {
+  const [selected, setSelected] = useState<CalendarEvent | null>(null);
+
+  const { data, isLoading, error } = useQuery<CalendarEvent[]>({
+    queryKey: ["econ-calendar"],
+    queryFn: async ({ signal }) => {
+      const r = await fetch("/api/market/economic-calendar", { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 60 * 60_000,
+    refetchInterval: 60 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
     </div>
+  );
+  if (error || !data?.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">Calendar unavailable</p>
+    </div>
+  );
+
+  /* Group events by date string (MM-DD-YYYY) */
+  const grouped: [string, CalendarEvent[]][] = Object.entries(
+    data.reduce<Record<string, CalendarEvent[]>>((acc, ev) => {
+      (acc[ev.date] ??= []).push(ev);
+      return acc;
+    }, {})
+  ).sort(([a], [b]) => {
+    const parse = (s: string) => { const [m, d, y] = s.split("-").map(Number); return new Date(y, m-1, d).getTime(); };
+    return parse(a) - parse(b);
+  });
+
+  return (
+    <>
+      <div className="flex-1 overflow-y-auto">
+        {grouped.map(([date, events]) => (
+          <div key={date}>
+            {/* Date header */}
+            <div className="sticky top-0 z-10 px-4 py-2 bg-[#0a0a0a] border-b border-[#1a1d1a]">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#4b5563]">
+                {fmtCalDate(date)}
+              </span>
+            </div>
+
+            {/* Events for this day */}
+            {events.map(ev => {
+              const cfg = IMPACT_CFG[ev.impact] ?? IMPACT_CFG.Low;
+              const flag = COUNTRY_FLAGS[ev.country] ?? "🌐";
+              return (
+                <button
+                  key={ev.id}
+                  onClick={() => setSelected(ev)}
+                  className="w-full flex items-center gap-3 px-4 py-3 border-b border-[#1a1d1a] hover:bg-[#ffffff05] transition-colors text-left group"
+                >
+                  {/* Impact stripe */}
+                  <div className={cn("w-1 self-stretch rounded-full shrink-0", cfg.dot)} />
+
+                  {/* Time */}
+                  <span className="text-[11px] text-[#4b5563] w-[52px] shrink-0 font-mono">
+                    {ev.time || "—"}
+                  </span>
+
+                  {/* Currency */}
+                  <span className="text-[12px] w-[42px] shrink-0 font-semibold text-[#9ca3af]">
+                    {flag} {ev.country}
+                  </span>
+
+                  {/* Title */}
+                  <span className="flex-1 text-[12px] text-white group-hover:text-[#00c853] transition-colors leading-snug line-clamp-1">
+                    {ev.title}
+                  </span>
+
+                  {/* Impact badge */}
+                  <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0", cfg.text, cfg.bg, cfg.border)}>
+                    {cfg.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+
+        {/* Source note */}
+        <div className="px-4 py-3 text-[10px] text-[#4b5563] text-center">
+          Times shown in ET · Source: ForexFactory
+        </div>
+      </div>
+
+      {/* Event detail modal */}
+      {selected && (() => {
+        const cfg = IMPACT_CFG[selected.impact] ?? IMPACT_CFG.Low;
+        const flag = COUNTRY_FLAGS[selected.country] ?? "🌐";
+        return (
+          <div
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
+            onClick={() => setSelected(null)}
+          >
+            <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
+            <div
+              className="relative z-10 w-full max-w-md mx-0 sm:mx-4 bg-[#0d0e13] rounded-t-2xl sm:rounded-2xl border border-[#1a1d1a] shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header bar */}
+              <div className={cn("h-1 w-full", cfg.dot)} />
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#1a1d1a]">
+                <div className="flex items-center gap-2">
+                  <span className={cn("text-[11px] font-bold px-2.5 py-1 rounded-full border", cfg.text, cfg.bg, cfg.border)}>
+                    ● {cfg.label} Impact
+                  </span>
+                </div>
+                <button onClick={() => setSelected(null)} className="text-[#4b5563] hover:text-white transition-colors text-lg leading-none">✕</button>
+              </div>
+
+              {/* Body */}
+              <div className="px-5 py-5 flex flex-col gap-4">
+                <div>
+                  <p className="text-white text-[16px] font-bold leading-snug">{selected.title}</p>
+                  <p className="text-[#4b5563] text-[13px] mt-1">
+                    {flag} {selected.country} · {fmtCalDate(selected.date)} · {selected.time || "All Day"} ET
+                  </p>
+                </div>
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Forecast", value: selected.forecast || "—" },
+                    { label: "Previous", value: selected.previous || "—" },
+                    { label: "Actual",   value: selected.actual   || "—" },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-[#13141a] rounded-xl border border-[#1a1d1a] px-3 py-3 text-center">
+                      <p className="text-[10px] text-[#4b5563] uppercase tracking-wider mb-1">{label}</p>
+                      <p className={cn("text-[15px] font-bold", value === "—" ? "text-[#4b5563]" : "text-white")}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </>
   );
 }
 
@@ -1086,8 +1317,9 @@ export default function Trading() {
       {category === "forex" && (
         <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
           {([
-            { key: "pairs" as const, label: "Pairs",  icon: "📊" },
-            { key: "news"  as const, label: "News",   icon: "📰" },
+            { key: "pairs"    as const, label: "Pairs",    icon: "📊" },
+            { key: "news"     as const, label: "News",     icon: "📰" },
+            { key: "upcoming" as const, label: "Upcoming", icon: "🗓️" },
           ] satisfies { key: ForexTab; label: string; icon: string }[]).map(({ key, label, icon }) => (
             <button
               key={key}
@@ -1107,8 +1339,9 @@ export default function Trading() {
       {category === "commodities" && (
         <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
           {([
-            { key: "pairs" as const, label: "Pairs", icon: "📊" },
-            { key: "news"  as const, label: "News",  icon: "📰" },
+            { key: "pairs"    as const, label: "Pairs",    icon: "📊" },
+            { key: "news"     as const, label: "News",     icon: "📰" },
+            { key: "upcoming" as const, label: "Upcoming", icon: "🗓️" },
           ] satisfies { key: CommoditiesTab; label: string; icon: string }[]).map(({ key, label, icon }) => (
             <button
               key={key}
@@ -1157,10 +1390,12 @@ export default function Trading() {
         {category === "crypto" && cryptoTab === "new" && (
           <NewListedList listings={listings} loading={ovLoading} />
         )}
-        {category === "forex" && forexTab === "pairs" && <ForexPairsPanel />}
-        {category === "forex" && forexTab === "news"  && <NewsPanel type="forex" />}
-        {category === "commodities" && commoditiesTab === "pairs" && <CommoditiesPairsPanel />}
-        {category === "commodities" && commoditiesTab === "news"  && <NewsPanel type="commodities" />}
+        {category === "forex" && forexTab === "pairs"    && <ForexPairsPanel />}
+        {category === "forex" && forexTab === "news"     && <NewsPanel type="forex" />}
+        {category === "forex" && forexTab === "upcoming" && <EconomicCalendarPanel />}
+        {category === "commodities" && commoditiesTab === "pairs"    && <CommoditiesPairsPanel />}
+        {category === "commodities" && commoditiesTab === "news"     && <NewsPanel type="commodities" />}
+        {category === "commodities" && commoditiesTab === "upcoming" && <EconomicCalendarPanel />}
         {category === "stocks" && <ComingSoon label="US & Global Stocks" />}
       </div>
     </div>

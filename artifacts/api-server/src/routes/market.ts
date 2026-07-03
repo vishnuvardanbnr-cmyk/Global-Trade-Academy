@@ -643,4 +643,63 @@ router.get("/market/news", async (req, res): Promise<void> => {
   }
 });
 
+/* ── Economic Calendar — ForexFactory XML ────────────────────────── */
+interface CalendarEvent {
+  id: string; title: string; country: string; date: string;
+  time: string; impact: string; forecast: string; previous: string; actual: string;
+}
+
+function parseForexFactoryXml(xml: string): CalendarEvent[] {
+  const events: CalendarEvent[] = [];
+  const eventRe = /<event>([\s\S]*?)<\/event>/gi;
+  let m: RegExpExecArray | null;
+  let id = 0;
+  while ((m = eventRe.exec(xml)) !== null) {
+    const block = m[1];
+    const get = (tag: string) => {
+      const r = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
+      const mt = r.exec(block);
+      if (!mt) return '';
+      return mt[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+    };
+    const impact = get('impact');
+    if (!['High', 'Medium', 'Low'].includes(impact)) continue;
+    events.push({
+      id: String(id++), title: get('title'), country: get('country'),
+      date: get('date'), time: get('time'), impact,
+      forecast: get('forecast'), previous: get('previous'), actual: get('actual'),
+    });
+  }
+  return events;
+}
+
+async function fetchEconomicCalendar(): Promise<CalendarEvent[]> {
+  const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0" };
+  const [tw, nw] = await Promise.allSettled([
+    fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.xml", { headers: UA }),
+    fetch("https://nfs.faireconomy.media/ff_calendar_nextweek.xml", { headers: UA }),
+  ]);
+  const all: CalendarEvent[] = [];
+  for (const r of [tw, nw]) {
+    if (r.status === "fulfilled" && r.value.ok)
+      all.push(...parseForexFactoryXml(await r.value.text()));
+  }
+  if (!all.length) throw new Error("Economic calendar unavailable");
+  return all;
+}
+
+router.get("/market/economic-calendar", async (_req, res): Promise<void> => {
+  try {
+    const cached = await dbCacheGet<CalendarEvent[]>("econ_calendar", 60 * 60_000);
+    if (cached) { res.json(cached); return; }
+    const data = await fetchEconomicCalendar();
+    await dbCacheSet("econ_calendar", data);
+    res.json(data);
+  } catch (err) {
+    const stale = await dbCacheGet<CalendarEvent[]>("econ_calendar", Infinity);
+    if (stale) { res.json(stale); return; }
+    res.status(502).json({ error: "Economic calendar unavailable", detail: String(err) });
+  }
+});
+
 export default router;
