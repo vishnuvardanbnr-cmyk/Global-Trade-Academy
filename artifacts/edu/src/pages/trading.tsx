@@ -71,18 +71,25 @@ function fmtLarge(n: number): string {
   return `$${n.toFixed(0)}`;
 }
 
-function getBubbleColor(pct: number): { fill: string; glow: string; border: string } {
+interface BubbleTheme {
+  center: string;   /* bright inner highlight colour */
+  mid: string;      /* main body colour              */
+  edge: string;     /* dark rim colour               */
+  glow: string;     /* outer shadow colour           */
+}
+
+function getBubbleTheme(pct: number): BubbleTheme {
   const a = Math.abs(pct);
   if (pct >= 0) {
-    if (a >= 10) return { fill: "#00c853", glow: "#00e676", border: "#69f0ae" };
-    if (a >= 5)  return { fill: "#00a152", glow: "#00c853", border: "#00e676" };
-    if (a >= 2)  return { fill: "#1b5e20", glow: "#388e3c", border: "#4caf50" };
-    return        { fill: "#0d2e14", glow: "#1b5e20", border: "#2e7d32" };
+    if (a >= 8)  return { center: "#b9f6ca", mid: "#00e676", edge: "#00210d", glow: "#00e676" };
+    if (a >= 4)  return { center: "#69f0ae", mid: "#00c853", edge: "#003018", glow: "#00c853" };
+    if (a >= 1.5)return { center: "#4caf50", mid: "#2e7d32", edge: "#0a2010", glow: "#388e3c" };
+    return        { center: "#388e3c", mid: "#1b5e20", edge: "#071409", glow: "#2e7d32" };
   } else {
-    if (a >= 10) return { fill: "#d32f2f", glow: "#f44336", border: "#ef9a9a" };
-    if (a >= 5)  return { fill: "#b71c1c", glow: "#d32f2f", border: "#f44336" };
-    if (a >= 2)  return { fill: "#7f0000", glow: "#b71c1c", border: "#d32f2f" };
-    return        { fill: "#2d0000", glow: "#7f0000", border: "#b71c1c" };
+    if (a >= 8)  return { center: "#ffcdd2", mid: "#f44336", edge: "#1a0000", glow: "#f44336" };
+    if (a >= 4)  return { center: "#ef9a9a", mid: "#d32f2f", edge: "#200000", glow: "#d32f2f" };
+    if (a >= 1.5)return { center: "#e57373", mid: "#b71c1c", edge: "#180000", glow: "#c62828" };
+    return        { center: "#c62828", mid: "#7f0000", edge: "#100000", glow: "#b71c1c" };
   }
 }
 
@@ -240,89 +247,114 @@ function drawBubble(
   hovered: boolean,
   t: number,
   imgs: Map<string, HTMLImageElement | null>,
-  flashAge: number,   /* ms since last live update, 0 = no flash */
+  flashAge: number,
 ) {
-  /* Organic float — different speed + phase per bubble */
-  const speed1 = 0.0008 + b.index * 0.00003;
-  const speed2 = 0.0006 + b.index * 0.00002;
-  const floatY = Math.sin(t * speed1 + b.index * 0.9) * (b.r * 0.055);
-  const floatX = Math.cos(t * speed2 + b.index * 0.7) * (b.r * 0.038);
-
-  /* Subtle size breathe */
-  const breathe = 1 + 0.018 * Math.sin(t * 0.0014 + b.index * 1.4);
+  /* Organic float — unique speed & phase per bubble */
+  const s1 = 0.0007 + b.index * 0.000025;
+  const s2 = 0.0005 + b.index * 0.000018;
+  const floatY = Math.sin(t * s1 + b.index * 0.95) * (b.r * 0.06);
+  const floatX = Math.cos(t * s2 + b.index * 0.75) * (b.r * 0.04);
+  const breathe = 1 + 0.016 * Math.sin(t * 0.0013 + b.index * 1.5);
 
   const x = b.x + floatX;
   const y = b.y + floatY;
-  const r = (hovered ? b.r * 1.08 : b.r) * breathe;
+  const r = (hovered ? b.r * 1.09 : b.r) * breathe;
 
-  const { fill, glow, border } = getBubbleColor(b.pct);
-
-  /* Flash overlay alpha (fades over 800 ms) */
-  const flashAlpha = flashAge > 0 ? Math.max(0, 1 - flashAge / 800) : 0;
+  const { center, mid, edge, glow } = getBubbleTheme(b.pct);
 
   ctx.save();
 
-  if (hovered) { ctx.shadowColor = glow; ctx.shadowBlur = 36; }
+  /* ── Outer glow ── */
+  ctx.shadowColor = glow;
+  ctx.shadowBlur  = hovered ? r * 1.1 : r * 0.55;
 
-  /* Main gradient */
-  const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.04, x, y, r);
-  grad.addColorStop(0, glow + "cc");
-  grad.addColorStop(0.5, fill + "ff");
-  grad.addColorStop(1,   fill + "99");
+  /* ── Sphere body: off-centre radial gradient (light from top-left) ── */
+  const lx = x - r * 0.28, ly = y - r * 0.30;
+  const body = ctx.createRadialGradient(lx, ly, r * 0.02, x, y, r);
+  body.addColorStop(0,    center);
+  body.addColorStop(0.35, mid);
+  body.addColorStop(0.75, mid + "cc");
+  body.addColorStop(1,    edge);
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = grad; ctx.fill();
+  ctx.fillStyle = body; ctx.fill();
+
   ctx.shadowBlur = 0;
 
-  /* Live-update flash: bright white ring */
-  if (flashAlpha > 0.02) {
+  /* ── Specular highlight (glassy top-left shine) ── */
+  const hx = x - r * 0.36, hy = y - r * 0.36;
+  const spec = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 0.45);
+  spec.addColorStop(0,   "rgba(255,255,255,0.55)");
+  spec.addColorStop(0.5, "rgba(255,255,255,0.10)");
+  spec.addColorStop(1,   "rgba(255,255,255,0)");
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = spec; ctx.fill();
+
+  /* ── Inner rim (thin bright edge on hover) ── */
+  if (hovered) {
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,255,255,${flashAlpha * 0.7})`;
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 1.5; ctx.stroke();
   }
 
-  /* Normal border */
-  ctx.strokeStyle = hovered ? border + "aa" : border + "28";
-  ctx.lineWidth   = hovered ? 1.5 : 0.8;
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  /* ── Live-tick flash ── */
+  const fa = flashAge > 0 ? Math.max(0, 1 - flashAge / 700) : 0;
+  if (fa > 0.02) {
+    ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${fa * 0.65})`;
+    ctx.lineWidth = 2.5; ctx.stroke();
+  }
 
-  /* Text */
+  /* ── Text ── */
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  if (r < 18) { ctx.restore(); return; }
+  if (r < 14) { ctx.restore(); return; }
 
-  const hasPct  = r >= 28;
-  const hasLogo = r >= 36;
+  const hasPct  = r >= 24;
+  const hasLogo = r >= 32;
   const img = imgs.get(b.coin.image);
+  const sym = b.coin.symbol.toUpperCase();
 
   if (hasLogo && img) {
-    const logoR = r * 0.33;
-    const logoY = hasPct ? y - r * 0.34 : y;
+    /* Logo → symbol → % stacked */
+    const logoR = r * 0.30;
+    const gap   = r * 0.06;
+    const symSz = Math.min(r * 0.26, hasPct ? 13 : 16);
+    const pctSz = Math.min(r * 0.21, 11);
+    const totalH = logoR * 2 + gap + symSz * 1.2 + (hasPct ? gap * 0.5 + pctSz * 1.2 : 0);
+    const topY = y - totalH / 2 + logoR;
+
+    /* circular-clipped logo */
     ctx.save();
-    ctx.beginPath(); ctx.arc(x, logoY, logoR, 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(img, x - logoR, logoY - logoR, logoR * 2, logoR * 2);
+    ctx.beginPath(); ctx.arc(x, topY, logoR, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(img, x - logoR, topY - logoR, logoR * 2, logoR * 2);
     ctx.restore();
-    const symSz = Math.min(r * 0.22, 11);
-    const symY  = logoY + logoR + symSz * 0.75;
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.font = `700 ${symSz}px Inter,sans-serif`;
-    ctx.fillText(b.coin.symbol.toUpperCase(), x, symY);
+
+    const symY = topY + logoR + gap + symSz * 0.6;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `800 ${symSz}px Inter,system-ui,sans-serif`;
+    ctx.fillText(sym, x, symY);
+
     if (hasPct) {
-      const pctSz = Math.min(r * 0.20, 10);
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.font = `600 ${pctSz}px Inter,sans-serif`;
-      ctx.fillText(`${b.pct >= 0 ? "+" : ""}${b.pct.toFixed(1)}%`, x, symY + symSz * 1.1);
+      const pctY = symY + symSz * 0.65 + gap * 0.5 + pctSz * 0.6;
+      ctx.fillStyle = "rgba(255,255,255,0.82)";
+      ctx.font = `600 ${pctSz}px Inter,system-ui,sans-serif`;
+      ctx.fillText(`${b.pct >= 0 ? "+" : ""}${b.pct.toFixed(1)}%`, x, pctY);
     }
   } else {
-    const symSz = Math.min(r * (hasPct ? 0.32 : 0.40), 15);
-    const symY  = hasPct ? y - symSz * 0.55 : y;
-    ctx.fillStyle = "rgba(255,255,255,0.97)";
-    ctx.font = `700 ${symSz}px Inter,sans-serif`;
-    ctx.fillText(b.coin.symbol.toUpperCase(), x, symY);
+    /* symbol + % only */
+    const symSz = Math.min(r * (hasPct ? 0.38 : 0.46), hasPct ? 18 : 22);
+    const pctSz = Math.min(r * 0.25, 12);
+    const totalH = symSz * 1.1 + (hasPct ? pctSz * 1.3 : 0);
+    const symY  = y - totalH / 2 + symSz * 0.55;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `800 ${symSz}px Inter,system-ui,sans-serif`;
+    ctx.fillText(sym, x, symY);
+
     if (hasPct) {
-      const pctSz = Math.min(r * 0.24, 11);
+      const pctY = symY + symSz * 0.6 + pctSz * 0.7;
       ctx.fillStyle = "rgba(255,255,255,0.82)";
-      ctx.font = `600 ${pctSz}px Inter,sans-serif`;
-      ctx.fillText(`${b.pct >= 0 ? "+" : ""}${b.pct.toFixed(1)}%`, x, symY + symSz * 0.95);
+      ctx.font = `600 ${pctSz}px Inter,system-ui,sans-serif`;
+      ctx.fillText(`${b.pct >= 0 ? "+" : ""}${b.pct.toFixed(1)}%`, x, pctY);
     }
   }
 
@@ -500,7 +532,7 @@ function BubbleMap({
       })()}
 
       {loading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: "#0b0c10dd" }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: "#0a0a0add" }}>
           <div className="w-9 h-9 border-2 border-[#00c853] border-t-transparent rounded-full animate-spin" />
           <p className="text-[#6b7280] text-sm">Loading market data…</p>
         </div>
@@ -565,7 +597,7 @@ function MoversList({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d25] sticky top-0 bg-[#0b0c10] z-10">
+      <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d1a] sticky top-0 bg-[#0a0a0a] z-10">
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">#</span>
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">Coin</span>
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase text-right">Price</span>
@@ -578,7 +610,7 @@ function MoversList({
         return (
           <div
             key={coin.id}
-            className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center px-4 py-2.5 border-b border-[#1a1d25]/50 hover:bg-[#13141a] transition-colors"
+            className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center px-4 py-2.5 border-b border-[#1a1d1a]/50 hover:bg-[#13141a] transition-colors"
           >
             <span className="text-[11px] text-[#4b5563] w-5 tabular-nums">{idx + 1}</span>
             <div className="flex items-center gap-2.5 min-w-0">
@@ -620,7 +652,7 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
   );
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d25] sticky top-0 bg-[#0b0c10] z-10">
+      <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d1a] sticky top-0 bg-[#0a0a0a] z-10">
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">#</span>
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">Token</span>
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase text-right">Listed</span>
@@ -630,7 +662,7 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
           ? new Date(l.activated_at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
           : "Recent";
         return (
-          <div key={l.id} className="grid grid-cols-[auto_1fr_auto] gap-x-3 items-center px-4 py-3 border-b border-[#1a1d25]/50 hover:bg-[#13141a] transition-colors">
+          <div key={l.id} className="grid grid-cols-[auto_1fr_auto] gap-x-3 items-center px-4 py-3 border-b border-[#1a1d1a]/50 hover:bg-[#13141a] transition-colors">
             <span className="text-[11px] text-[#4b5563] w-5 tabular-nums">{idx + 1}</span>
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-full bg-[#f0b90b]/15 flex items-center justify-center shrink-0">
@@ -655,7 +687,7 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
 function ComingSoon({ label }: { label: string }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
-      <div className="w-16 h-16 rounded-2xl bg-[#13141a] border border-[#1a1d25] flex items-center justify-center text-2xl">📊</div>
+      <div className="w-16 h-16 rounded-2xl bg-[#13141a] border border-[#1a1d1a] flex items-center justify-center text-2xl">📊</div>
       <p className="text-white font-semibold">{label}</p>
       <p className="text-[#4b5563] text-sm">Live data coming soon</p>
     </div>
@@ -706,10 +738,10 @@ export default function Trading() {
   const { ticks: live, connected } = useBinanceTicker(symbols);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden rounded-xl select-none" style={{ background: "#0b0c10", color: "#c6c9d5" }}>
+    <div className="flex flex-col h-full overflow-hidden rounded-xl select-none" style={{ background: "#0a0a0a", color: "#c6c9d5" }}>
 
       {/* ── Top bar ── */}
-      <div className="flex items-center border-b border-[#1a1d25] shrink-0">
+      <div className="flex items-center border-b border-[#1a1d1a] shrink-0">
         <div className="flex flex-1 overflow-x-auto scrollbar-hide">
           {MAIN_CATEGORIES.map(({ key, label, emoji }) => (
             <button
@@ -726,7 +758,7 @@ export default function Trading() {
         </div>
         <button
           onClick={() => void refetch()}
-          className="p-3 text-[#4b5563] hover:text-white transition-colors border-l border-[#1a1d25] shrink-0"
+          className="p-3 text-[#4b5563] hover:text-white transition-colors border-l border-[#1a1d1a] shrink-0"
         >
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
@@ -734,7 +766,7 @@ export default function Trading() {
 
       {/* ── Crypto sub-tabs ── */}
       {category === "crypto" && (
-        <div className="flex items-center border-b border-[#1a1d25] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
+        <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
           {CRYPTO_TABS.map(({ key, label, icon }) => (
             <button
               key={key}
@@ -753,7 +785,7 @@ export default function Trading() {
 
       {/* ── Timeframe bar ── */}
       {category === "crypto" && cryptoTab !== "new" && (
-        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#1a1d25] bg-[#0b0c10] shrink-0">
+        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#1a1d1a] bg-[#0a0a0a] shrink-0">
           <span className="text-[10px] text-[#4b5563] font-semibold uppercase tracking-wide mr-1">Timeframe</span>
           {TF_TABS.map((t) => (
             <button
