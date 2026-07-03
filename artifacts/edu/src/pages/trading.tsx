@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { AlertCircle, RefreshCw, TrendingUp, TrendingDown, Zap } from "lucide-react";
+import { AlertCircle, RefreshCw, TrendingUp, TrendingDown, Zap, Wifi, WifiOff } from "lucide-react";
 
 /* ─────────────────────────────────────────
    Types
@@ -29,27 +29,23 @@ interface GlobalData {
   active_cryptocurrencies?: number;
 }
 
-interface NewListing {
-  id: string;
-  symbol: string;
-  name: string;
-  activated_at: number;
-}
-
-interface OverviewData {
-  coins: CoinData[];
-  global: GlobalData;
-  newListings: NewListing[];
-}
-
+interface NewListing { id: string; symbol: string; name: string; activated_at: number; }
+interface OverviewData { coins: CoinData[]; global: GlobalData; newListings: NewListing[]; }
 type Timeframe = "1H" | "1D" | "1W" | "1M" | "1Y";
 type MainCategory = "crypto" | "forex" | "commodities" | "stocks";
 type CryptoTab = "bubble" | "gainers" | "losers" | "new";
 
+/* live tick keyed by UPPERCASE symbol */
+interface LiveTick { price: number; pct24h: number; updatedAt: number; }
+
 /* ─────────────────────────────────────────
    Helpers
 ───────────────────────────────────────── */
-function getPct(coin: CoinData, tf: Timeframe): number {
+function getPct(coin: CoinData, tf: Timeframe, live: Map<string, LiveTick>): number {
+  if (tf === "1D") {
+    const tick = live.get(coin.symbol.toUpperCase());
+    if (tick) return tick.pct24h;
+  }
   switch (tf) {
     case "1H": return coin.price_change_percentage_1h_in_currency ?? 0;
     case "1W": return coin.price_change_percentage_7d_in_currency ?? 0;
@@ -59,12 +55,15 @@ function getPct(coin: CoinData, tf: Timeframe): number {
   }
 }
 
+function getLivePrice(coin: CoinData, live: Map<string, LiveTick>): number {
+  return live.get(coin.symbol.toUpperCase())?.price ?? coin.current_price;
+}
+
 function fmtPrice(n: number): string {
   if (n >= 1000) return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (n >= 1)    return "$" + n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
   return "$" + n.toFixed(6).replace(/0+$/, "");
 }
-
 function fmtLarge(n: number): string {
   if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
   if (n >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
@@ -88,10 +87,86 @@ function getBubbleColor(pct: number): { fill: string; glow: string; border: stri
 }
 
 /* ─────────────────────────────────────────
+   Binance WebSocket live ticker hook
+───────────────────────────────────────── */
+const STABLE = new Set(["USDT","USDC","BUSD","DAI","TUSD","USDP","FDUSD","PYUSD"]);
+
+function useBinanceTicker(symbols: string[]) {
+  const [ticks, setTicks]   = useState<Map<string, LiveTick>>(new Map());
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!symbols.length) return;
+
+    const tradeable = symbols
+      .map(s => s.toUpperCase())
+      .filter(s => !STABLE.has(s))
+      .slice(0, 50);
+
+    if (!tradeable.length) return;
+
+    const streams = tradeable.map(s => `${s.toLowerCase()}usdt@miniTicker`).join("/");
+    const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
+
+    let ws: WebSocket;
+    let dead = false;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function connect() {
+      if (dead) return;
+      ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => { if (!dead) setConnected(true); };
+
+      ws.onmessage = (ev) => {
+        if (dead) return;
+        try {
+          const msg = JSON.parse(ev.data as string) as {
+            data?: { s: string; c: string; P: string };
+          };
+          const d = msg.data;
+          if (!d) return;
+          const sym = d.s.replace("USDT", "");
+          const price  = parseFloat(d.c);
+          const pct24h = parseFloat(d.P);
+          if (isNaN(price)) return;
+          setTicks(prev => {
+            const next = new Map(prev);
+            next.set(sym, { price, pct24h, updatedAt: Date.now() });
+            return next;
+          });
+        } catch { /* ignore */ }
+      };
+
+      ws.onclose = () => {
+        if (!dead) {
+          setConnected(false);
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+
+    return () => {
+      dead = true;
+      clearTimeout(reconnectTimer);
+      wsRef.current?.close();
+      setConnected(false);
+    };
+  }, [symbols.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { ticks, connected };
+}
+
+/* ─────────────────────────────────────────
    Image cache
 ───────────────────────────────────────── */
 const imgCache = new Map<string, HTMLImageElement | null>();
-
 function loadImg(url: string): Promise<HTMLImageElement | null> {
   if (imgCache.has(url)) return Promise.resolve(imgCache.get(url) ?? null);
   return new Promise((resolve) => {
@@ -109,15 +184,14 @@ function loadImg(url: string): Promise<HTMLImageElement | null> {
 const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
 interface Bubble {
-  index: number;
-  coin: CoinData;
-  x: number;
-  y: number;
-  r: number;
-  pct: number;
+  index: number; coin: CoinData;
+  x: number; y: number; r: number; pct: number;
 }
 
-function computeBubbles(coins: CoinData[], W: number, H: number, tf: Timeframe): Bubble[] {
+function computeBubbles(
+  coins: CoinData[], W: number, H: number,
+  tf: Timeframe, live: Map<string, LiveTick>,
+): Bubble[] {
   const list = coins.slice(0, 60);
   const maxMcap = Math.max(...list.map(c => c.market_cap), 1);
   const scale = Math.min(W, H);
@@ -132,18 +206,16 @@ function computeBubbles(coins: CoinData[], W: number, H: number, tf: Timeframe):
       index: i, coin,
       x: cx + spiral * Math.cos(angle),
       y: cy + spiral * Math.sin(angle),
-      r,
-      pct: getPct(coin, tf),
+      r, pct: getPct(coin, tf, live),
     };
   });
 
-  /* Separation pass */
-  for (let iter = 0; iter < 80; iter++) {
+  for (let iter = 0; iter < 90; iter++) {
     for (let i = 0; i < bubbles.length; i++) {
       for (let j = i + 1; j < bubbles.length; j++) {
         const dx = bubbles[j].x - bubbles[i].x;
         const dy = bubbles[j].y - bubbles[i].y;
-        const d  = Math.hypot(dx, dy) || 0.001;
+        const d   = Math.hypot(dx, dy) || 0.001;
         const minD = bubbles[i].r + bubbles[j].r + 2;
         if (d < minD) {
           const push = (minD - d) * 0.5;
@@ -155,10 +227,9 @@ function computeBubbles(coins: CoinData[], W: number, H: number, tf: Timeframe):
     }
   }
 
-  /* Clamp to canvas */
   for (const b of bubbles) {
-    b.x = Math.max(b.r + 2, Math.min(W - b.r - 2, b.x));
-    b.y = Math.max(b.r + 2, Math.min(H - b.r - 2, b.y));
+    b.x = Math.max(b.r + 4, Math.min(W - b.r - 4, b.x));
+    b.y = Math.max(b.r + 4, Math.min(H - b.r - 4, b.y));
   }
   return bubbles;
 }
@@ -169,42 +240,54 @@ function drawBubble(
   hovered: boolean,
   t: number,
   imgs: Map<string, HTMLImageElement | null>,
+  flashAge: number,   /* ms since last live update, 0 = no flash */
 ) {
-  const floatY = Math.sin(t * 0.0006 + b.index * 0.7) * (b.r * 0.012);
-  const floatX = Math.cos(t * 0.0005 + b.index * 0.55) * (b.r * 0.008);
+  /* Organic float — different speed + phase per bubble */
+  const speed1 = 0.0008 + b.index * 0.00003;
+  const speed2 = 0.0006 + b.index * 0.00002;
+  const floatY = Math.sin(t * speed1 + b.index * 0.9) * (b.r * 0.055);
+  const floatX = Math.cos(t * speed2 + b.index * 0.7) * (b.r * 0.038);
+
+  /* Subtle size breathe */
+  const breathe = 1 + 0.018 * Math.sin(t * 0.0014 + b.index * 1.4);
+
   const x = b.x + floatX;
   const y = b.y + floatY;
-  const r = hovered ? b.r * 1.07 : b.r;
+  const r = (hovered ? b.r * 1.08 : b.r) * breathe;
+
   const { fill, glow, border } = getBubbleColor(b.pct);
+
+  /* Flash overlay alpha (fades over 800 ms) */
+  const flashAlpha = flashAge > 0 ? Math.max(0, 1 - flashAge / 800) : 0;
 
   ctx.save();
 
-  /* Glow on hover */
-  if (hovered) {
-    ctx.shadowColor = glow;
-    ctx.shadowBlur = 32;
-  }
+  if (hovered) { ctx.shadowColor = glow; ctx.shadowBlur = 36; }
 
-  /* Radial gradient fill */
+  /* Main gradient */
   const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.04, x, y, r);
   grad.addColorStop(0, glow + "cc");
   grad.addColorStop(0.5, fill + "ff");
-  grad.addColorStop(1,   fill + "aa");
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
+  grad.addColorStop(1,   fill + "99");
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad; ctx.fill();
   ctx.shadowBlur = 0;
 
-  /* Border */
-  ctx.strokeStyle = hovered ? border + "99" : border + "33";
+  /* Live-update flash: bright white ring */
+  if (flashAlpha > 0.02) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${flashAlpha * 0.7})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  /* Normal border */
+  ctx.strokeStyle = hovered ? border + "aa" : border + "28";
   ctx.lineWidth   = hovered ? 1.5 : 0.8;
-  ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
 
   /* Text */
-  ctx.textAlign    = "center";
-  ctx.textBaseline = "middle";
-
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
   if (r < 18) { ctx.restore(); return; }
 
   const hasPct  = r >= 28;
@@ -212,23 +295,17 @@ function drawBubble(
   const img = imgs.get(b.coin.image);
 
   if (hasLogo && img) {
-    /* Logo + symbol + pct */
     const logoR = r * 0.33;
     const logoY = hasPct ? y - r * 0.34 : y;
-
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, logoY, logoR, 0, Math.PI * 2);
-    ctx.clip();
+    ctx.beginPath(); ctx.arc(x, logoY, logoR, 0, Math.PI * 2); ctx.clip();
     ctx.drawImage(img, x - logoR, logoY - logoR, logoR * 2, logoR * 2);
     ctx.restore();
-
     const symSz = Math.min(r * 0.22, 11);
     const symY  = logoY + logoR + symSz * 0.75;
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.font = `700 ${symSz}px Inter,sans-serif`;
     ctx.fillText(b.coin.symbol.toUpperCase(), x, symY);
-
     if (hasPct) {
       const pctSz = Math.min(r * 0.20, 10);
       ctx.fillStyle = "rgba(255,255,255,0.85)";
@@ -236,13 +313,11 @@ function drawBubble(
       ctx.fillText(`${b.pct >= 0 ? "+" : ""}${b.pct.toFixed(1)}%`, x, symY + symSz * 1.1);
     }
   } else {
-    /* Symbol + pct only */
     const symSz = Math.min(r * (hasPct ? 0.32 : 0.40), 15);
     const symY  = hasPct ? y - symSz * 0.55 : y;
     ctx.fillStyle = "rgba(255,255,255,0.97)";
     ctx.font = `700 ${symSz}px Inter,sans-serif`;
     ctx.fillText(b.coin.symbol.toUpperCase(), x, symY);
-
     if (hasPct) {
       const pctSz = Math.min(r * 0.24, 11);
       ctx.fillStyle = "rgba(255,255,255,0.82)";
@@ -257,61 +332,81 @@ function drawBubble(
 /* ─────────────────────────────────────────
    Bubble Map component
 ───────────────────────────────────────── */
-function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean; tf: Timeframe }) {
+function BubbleMap({
+  coins, loading, tf, live, connected,
+}: {
+  coins: CoinData[];
+  loading: boolean;
+  tf: Timeframe;
+  live: Map<string, LiveTick>;
+  connected: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const bubblesRef   = useRef<Bubble[]>([]);
   const hoveredRef   = useRef<number | null>(null);
   const rafRef       = useRef(0);
   const imgsRef      = useRef<Map<string, HTMLImageElement | null>>(new Map());
-  const [dims, setDims]     = useState({ w: 0, h: 0 });
+  /* track last update time per symbol for flash effect */
+  const flashRef     = useRef<Map<string, number>>(new Map());
+  const prevLiveRef  = useRef<Map<string, LiveTick>>(new Map());
+
+  const [dims, setDims]       = useState({ w: 0, h: 0 });
   const [tooltip, setTooltip] = useState<{ x: number; y: number; b: Bubble } | null>(null);
 
-  /* Resize observer */
+  /* Resize */
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    const el = containerRef.current; if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
       setDims({ w: Math.floor(width), h: Math.floor(height) });
     });
-    ro.observe(el);
-    return () => ro.disconnect();
+    ro.observe(el); return () => ro.disconnect();
   }, []);
 
-  /* HiDPI canvas */
+  /* HiDPI */
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !dims.w || !dims.h) return;
+    const canvas = canvasRef.current; if (!canvas || !dims.w || !dims.h) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width  = dims.w * dpr;
-    canvas.height = dims.h * dpr;
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(dpr, dpr);
+    canvas.width  = dims.w * dpr; canvas.height = dims.h * dpr;
+    const ctx = canvas.getContext("2d")!; ctx.scale(dpr, dpr);
   }, [dims]);
 
   /* Recompute bubbles + preload logos */
   useEffect(() => {
     if (!dims.w || !dims.h || coins.length === 0) return;
-    bubblesRef.current = computeBubbles(coins, dims.w, dims.h, tf);
+    bubblesRef.current = computeBubbles(coins, dims.w, dims.h, tf, live);
     coins.slice(0, 60).forEach((c) => {
-      if (c.image && !imgsRef.current.has(c.image)) {
-        loadImg(c.image).then((img) => imgsRef.current.set(c.image, img));
+      if (c.image && !imgsRef.current.has(c.image))
+        loadImg(c.image).then(img => imgsRef.current.set(c.image, img));
+    });
+  }, [coins, dims, tf, live]);
+
+  /* Detect live updates and mark flash timestamps */
+  useEffect(() => {
+    const now = Date.now();
+    live.forEach((tick, sym) => {
+      const prev = prevLiveRef.current.get(sym);
+      if (!prev || prev.updatedAt !== tick.updatedAt) {
+        flashRef.current.set(sym, now);
       }
     });
-  }, [coins, dims, tf]);
+    prevLiveRef.current = new Map(live);
+  }, [live]);
 
   /* Render loop */
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !dims.w) return;
+    const canvas = canvasRef.current; if (!canvas || !dims.w) return;
     const frame = (t: number) => {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+      const ctx = canvas.getContext("2d"); if (!ctx) return;
       ctx.clearRect(0, 0, dims.w, dims.h);
+      const now = Date.now();
       const bs = bubblesRef.current;
       for (let i = 0; i < bs.length; i++) {
-        drawBubble(ctx, bs[i], hoveredRef.current === i, t, imgsRef.current);
+        const sym = bs[i].coin.symbol.toUpperCase();
+        const flashedAt = flashRef.current.get(sym) ?? 0;
+        const flashAge  = flashedAt ? now - flashedAt : 0;
+        drawBubble(ctx, bs[i], hoveredRef.current === i, t, imgsRef.current, flashAge);
       }
       rafRef.current = requestAnimationFrame(frame);
     };
@@ -321,9 +416,8 @@ function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean
 
   const hitTest = useCallback((mx: number, my: number) => {
     const bs = bubblesRef.current;
-    for (let i = 0; i < bs.length; i++) {
-      if (Math.hypot(mx - bs[i].x, my - bs[i].y) <= bs[i].r + 3) return i;
-    }
+    for (let i = 0; i < bs.length; i++)
+      if (Math.hypot(mx - bs[i].x, my - bs[i].y) <= bs[i].r + 4) return i;
     return -1;
   }, []);
 
@@ -346,44 +440,64 @@ function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean
         className="cursor-crosshair"
       />
 
+      {/* Live indicator */}
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 pointer-events-none">
+        {connected ? (
+          <>
+            <span className="w-2 h-2 rounded-full bg-[#00c853] animate-pulse" />
+            <span className="text-[10px] text-[#00c853] font-semibold">LIVE</span>
+          </>
+        ) : (
+          <>
+            <WifiOff className="w-3 h-3 text-[#4b5563]" />
+            <span className="text-[10px] text-[#4b5563]">Connecting…</span>
+          </>
+        )}
+      </div>
+
       {/* Tooltip */}
-      {tooltip && (
-        <div
-          className="absolute z-50 pointer-events-none"
-          style={{
-            left: Math.min(tooltip.x + 14, dims.w - 200),
-            top:  Math.max(tooltip.y - 90, 6),
-          }}
-        >
-          <div className="bg-[#13141a] border border-[#2a2e3d] rounded-2xl px-4 py-3 shadow-2xl min-w-[190px]">
-            <div className="flex items-center gap-2 mb-2">
-              {tooltip.b.coin.image && (
-                <img src={tooltip.b.coin.image} alt="" className="w-6 h-6 rounded-full shrink-0" />
-              )}
-              <div>
-                <p className="text-white font-bold text-sm leading-tight">{tooltip.b.coin.name}</p>
-                <p className="text-[#6b7280] text-[10px] uppercase font-semibold tracking-wide">
-                  {tooltip.b.coin.symbol} · #{tooltip.b.coin.market_cap_rank}
-                </p>
+      {tooltip && (() => {
+        const price = getLivePrice(tooltip.b.coin, live);
+        return (
+          <div
+            className="absolute z-50 pointer-events-none"
+            style={{ left: Math.min(tooltip.x + 14, dims.w - 200), top: Math.max(tooltip.y - 90, 6) }}
+          >
+            <div className="bg-[#13141a] border border-[#2a2e3d] rounded-2xl px-4 py-3 shadow-2xl min-w-[190px]">
+              <div className="flex items-center gap-2 mb-2">
+                {tooltip.b.coin.image && (
+                  <img src={tooltip.b.coin.image} alt="" className="w-6 h-6 rounded-full shrink-0" />
+                )}
+                <div>
+                  <p className="text-white font-bold text-sm leading-tight">{tooltip.b.coin.name}</p>
+                  <p className="text-[#6b7280] text-[10px] uppercase font-semibold tracking-wide">
+                    {tooltip.b.coin.symbol} · #{tooltip.b.coin.market_cap_rank}
+                  </p>
+                </div>
               </div>
-            </div>
-            <p className="text-white font-mono text-sm font-semibold">{fmtPrice(tooltip.b.coin.current_price)}</p>
-            <p className={cn("text-xs font-bold mt-0.5", tooltip.b.pct >= 0 ? "text-[#00c853]" : "text-[#f44336]")}>
-              {tooltip.b.pct >= 0 ? "▲" : "▼"} {Math.abs(tooltip.b.pct).toFixed(2)}%
-            </p>
-            <div className="mt-2 pt-2 border-t border-[#1f2130] space-y-0.5">
-              <div className="flex justify-between text-[10.5px]">
-                <span className="text-[#6b7280]">Market Cap</span>
-                <span className="text-[#c6c9d5] tabular-nums">{fmtLarge(tooltip.b.coin.market_cap)}</span>
+              <div className="flex items-center gap-1.5">
+                <p className="text-white font-mono text-sm font-semibold">{fmtPrice(price)}</p>
+                {live.has(tooltip.b.coin.symbol.toUpperCase()) && (
+                  <span className="text-[9px] text-[#00c853] font-bold border border-[#00c853]/30 rounded px-1">LIVE</span>
+                )}
               </div>
-              <div className="flex justify-between text-[10.5px]">
-                <span className="text-[#6b7280]">Volume 24h</span>
-                <span className="text-[#c6c9d5] tabular-nums">{fmtLarge(tooltip.b.coin.total_volume)}</span>
+              <p className={cn("text-xs font-bold mt-0.5", tooltip.b.pct >= 0 ? "text-[#00c853]" : "text-[#f44336]")}>
+                {tooltip.b.pct >= 0 ? "▲" : "▼"} {Math.abs(tooltip.b.pct).toFixed(2)}%
+              </p>
+              <div className="mt-2 pt-2 border-t border-[#1f2130] space-y-0.5">
+                <div className="flex justify-between text-[10.5px]">
+                  <span className="text-[#6b7280]">Market Cap</span>
+                  <span className="text-[#c6c9d5] tabular-nums">{fmtLarge(tooltip.b.coin.market_cap)}</span>
+                </div>
+                <div className="flex justify-between text-[10.5px]">
+                  <span className="text-[#6b7280]">Volume 24h</span>
+                  <span className="text-[#c6c9d5] tabular-nums">{fmtLarge(tooltip.b.coin.total_volume)}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {loading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: "#0b0c10dd" }}>
@@ -391,7 +505,6 @@ function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean
           <p className="text-[#6b7280] text-sm">Loading market data…</p>
         </div>
       )}
-
       {!loading && coins.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
           <AlertCircle className="h-8 w-8 text-[#6b7280]/50" />
@@ -399,7 +512,7 @@ function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean
         </div>
       )}
 
-      {/* Color legend */}
+      {/* Legend */}
       <div className="absolute bottom-4 left-4 flex flex-col gap-1 pointer-events-none">
         {[
           { color: "#00c853", label: "> +10%" },
@@ -410,7 +523,7 @@ function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean
           { color: "#d32f2f", label: "> -10%" },
         ].map(({ color, label }) => (
           <div key={label} className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
             <span className="text-[9px] text-[#4b5563] font-medium">{label}</span>
           </div>
         ))}
@@ -420,34 +533,29 @@ function BubbleMap({ coins, loading, tf }: { coins: CoinData[]; loading: boolean
 }
 
 /* ─────────────────────────────────────────
-   Top Gainers / Losers list
+   Gainers / Losers list
 ───────────────────────────────────────── */
 function MoversList({
-  coins,
-  type,
-  tf,
-  loading,
+  coins, type, tf, live, loading,
 }: {
-  coins: CoinData[];
-  type: "gainers" | "losers";
-  tf: Timeframe;
-  loading: boolean;
+  coins: CoinData[]; type: "gainers" | "losers";
+  tf: Timeframe; live: Map<string, LiveTick>; loading: boolean;
 }) {
   const isUp = type === "gainers";
-  const sorted = [...coins]
-    .sort((a, b) =>
-      isUp
-        ? getPct(b, tf) - getPct(a, tf)
-        : getPct(a, tf) - getPct(b, tf),
-    )
-    .slice(0, 50);
+  const sorted = useMemo(() =>
+    [...coins]
+      .sort((a, b) => isUp
+        ? getPct(b, tf, live) - getPct(a, tf, live)
+        : getPct(a, tf, live) - getPct(b, tf, live))
+      .slice(0, 50),
+    [coins, tf, live, isUp],
+  );
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-[#00c853] border-t-transparent rounded-full animate-spin" />
     </div>
   );
-
   if (!coins.length) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-2">
       <AlertCircle className="h-7 w-7 text-[#6b7280]/50" />
@@ -457,7 +565,6 @@ function MoversList({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      {/* Header row */}
       <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d25] sticky top-0 bg-[#0b0c10] z-10">
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">#</span>
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">Coin</span>
@@ -465,7 +572,9 @@ function MoversList({
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase text-right">Change</span>
       </div>
       {sorted.map((coin, idx) => {
-        const pct = getPct(coin, tf);
+        const pct   = getPct(coin, tf, live);
+        const price = getLivePrice(coin, live);
+        const isLive = live.has(coin.symbol.toUpperCase());
         return (
           <div
             key={coin.id}
@@ -475,17 +584,16 @@ function MoversList({
             <div className="flex items-center gap-2.5 min-w-0">
               <img src={coin.image} alt="" className="w-7 h-7 rounded-full shrink-0" loading="lazy" />
               <div className="min-w-0">
-                <p className="text-[12px] font-bold text-white leading-tight">{coin.symbol.toUpperCase()}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[12px] font-bold text-white leading-tight">{coin.symbol.toUpperCase()}</p>
+                  {isLive && <span className="w-1.5 h-1.5 rounded-full bg-[#00c853] animate-pulse shrink-0" />}
+                </div>
                 <p className="text-[10px] text-[#4b5563] truncate leading-tight">{coin.name}</p>
               </div>
             </div>
-            <span className="text-[11.5px] text-white font-mono tabular-nums text-right">
-              {fmtPrice(coin.current_price)}
-            </span>
-            <span className={cn(
-              "text-[11.5px] font-bold tabular-nums text-right min-w-[52px]",
-              pct >= 0 ? "text-[#00c853]" : "text-[#f44336]",
-            )}>
+            <span className="text-[11.5px] text-white font-mono tabular-nums text-right">{fmtPrice(price)}</span>
+            <span className={cn("text-[11.5px] font-bold tabular-nums text-right min-w-[56px]",
+              pct >= 0 ? "text-[#00c853]" : "text-[#f44336]")}>
               {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
             </span>
           </div>
@@ -496,7 +604,7 @@ function MoversList({
 }
 
 /* ─────────────────────────────────────────
-   New Listings list
+   New Listed
 ───────────────────────────────────────── */
 function NewListedList({ listings, loading }: { listings: NewListing[]; loading: boolean }) {
   if (loading) return (
@@ -504,14 +612,12 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
       <div className="w-8 h-8 border-2 border-[#f0b90b] border-t-transparent rounded-full animate-spin" />
     </div>
   );
-
   if (!listings.length) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-2">
       <Zap className="h-7 w-7 text-[#6b7280]/50" />
       <p className="text-[#6b7280] text-sm">No new listings</p>
     </div>
   );
-
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d25] sticky top-0 bg-[#0b0c10] z-10">
@@ -524,10 +630,7 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
           ? new Date(l.activated_at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
           : "Recent";
         return (
-          <div
-            key={l.id}
-            className="grid grid-cols-[auto_1fr_auto] gap-x-3 items-center px-4 py-3 border-b border-[#1a1d25]/50 hover:bg-[#13141a] transition-colors"
-          >
+          <div key={l.id} className="grid grid-cols-[auto_1fr_auto] gap-x-3 items-center px-4 py-3 border-b border-[#1a1d25]/50 hover:bg-[#13141a] transition-colors">
             <span className="text-[11px] text-[#4b5563] w-5 tabular-nums">{idx + 1}</span>
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-full bg-[#f0b90b]/15 flex items-center justify-center shrink-0">
@@ -538,7 +641,7 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
                 <p className="text-[10px] text-[#4b5563]">{l.symbol.toUpperCase()}</p>
               </div>
             </div>
-            <span className="text-[10.5px] text-[#4b5563] text-right tabular-nums whitespace-nowrap">{dt}</span>
+            <span className="text-[10.5px] text-[#4b5563] text-right whitespace-nowrap">{dt}</span>
           </div>
         );
       })}
@@ -547,14 +650,12 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
 }
 
 /* ─────────────────────────────────────────
-   Coming Soon placeholder
+   Coming Soon
 ───────────────────────────────────────── */
 function ComingSoon({ label }: { label: string }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
-      <div className="w-16 h-16 rounded-2xl bg-[#13141a] border border-[#1a1d25] flex items-center justify-center text-2xl">
-        📊
-      </div>
+      <div className="w-16 h-16 rounded-2xl bg-[#13141a] border border-[#1a1d25] flex items-center justify-center text-2xl">📊</div>
       <p className="text-white font-semibold">{label}</p>
       <p className="text-[#4b5563] text-sm">Live data coming soon</p>
     </div>
@@ -574,16 +675,16 @@ const MAIN_CATEGORIES: { key: MainCategory; label: string; emoji: string }[] = [
 ];
 
 const CRYPTO_TABS: { key: CryptoTab; label: string; icon: React.ReactNode }[] = [
-  { key: "bubble",  label: "Bubble Map",   icon: <span className="text-xs">🫧</span> },
-  { key: "gainers", label: "Top Gainers",  icon: <TrendingUp className="h-3.5 w-3.5" /> },
-  { key: "losers",  label: "Top Losers",   icon: <TrendingDown className="h-3.5 w-3.5" /> },
-  { key: "new",     label: "New Listed",   icon: <Zap className="h-3.5 w-3.5" /> },
+  { key: "bubble",  label: "Bubble Map",  icon: <span className="text-xs">🫧</span> },
+  { key: "gainers", label: "Top Gainers", icon: <TrendingUp className="h-3.5 w-3.5" /> },
+  { key: "losers",  label: "Top Losers",  icon: <TrendingDown className="h-3.5 w-3.5" /> },
+  { key: "new",     label: "New Listed",  icon: <Zap className="h-3.5 w-3.5" /> },
 ];
 
 export default function Trading() {
-  const [category, setCategory] = useState<MainCategory>("crypto");
+  const [category,  setCategory]  = useState<MainCategory>("crypto");
   const [cryptoTab, setCryptoTab] = useState<CryptoTab>("bubble");
-  const [tf, setTf] = useState<Timeframe>("1D");
+  const [tf, setTf]               = useState<Timeframe>("1D");
 
   const { data: overview, isLoading: ovLoading, refetch } = useQuery<OverviewData>({
     queryKey: ["market-overview"],
@@ -600,15 +701,14 @@ export default function Trading() {
   const coins    = overview?.coins     ?? [];
   const listings = overview?.newListings ?? [];
 
-  const showTf = category === "crypto" && cryptoTab !== "new";
+  /* Build symbol list for Binance WS — derived from CoinGecko data */
+  const symbols = useMemo(() => coins.map(c => c.symbol), [coins]);
+  const { ticks: live, connected } = useBinanceTicker(symbols);
 
   return (
-    <div
-      className="flex flex-col h-full overflow-hidden rounded-xl select-none"
-      style={{ background: "#0b0c10", color: "#c6c9d5" }}
-    >
+    <div className="flex flex-col h-full overflow-hidden rounded-xl select-none" style={{ background: "#0b0c10", color: "#c6c9d5" }}>
 
-      {/* ── Top bar: main category tabs ── */}
+      {/* ── Top bar ── */}
       <div className="flex items-center border-b border-[#1a1d25] shrink-0">
         <div className="flex flex-1 overflow-x-auto scrollbar-hide">
           {MAIN_CATEGORIES.map(({ key, label, emoji }) => (
@@ -617,22 +717,16 @@ export default function Trading() {
               onClick={() => setCategory(key)}
               className={cn(
                 "flex items-center gap-2 px-5 py-3 border-b-2 shrink-0 font-semibold text-[13px] transition-all",
-                category === key
-                  ? "border-[#00c853] text-white"
-                  : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
+                category === key ? "border-[#00c853] text-white" : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
               )}
             >
-              <span>{emoji}</span>
-              <span>{label}</span>
+              <span>{emoji}</span><span>{label}</span>
             </button>
           ))}
         </div>
-
-        {/* Refresh */}
         <button
           onClick={() => void refetch()}
           className="p-3 text-[#4b5563] hover:text-white transition-colors border-l border-[#1a1d25] shrink-0"
-          title="Refresh"
         >
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
@@ -647,9 +741,7 @@ export default function Trading() {
               onClick={() => setCryptoTab(key)}
               className={cn(
                 "flex items-center gap-2 px-5 py-2.5 border-b-2 shrink-0 text-[12px] font-semibold transition-all",
-                cryptoTab === key
-                  ? "border-[#00c853] text-white bg-[#00c853]/5"
-                  : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
+                cryptoTab === key ? "border-[#00c853] text-white bg-[#00c853]/5" : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
               )}
             >
               <span className={cn(cryptoTab === key ? "text-[#00c853]" : "text-[#4b5563]")}>{icon}</span>
@@ -659,7 +751,7 @@ export default function Trading() {
         </div>
       )}
 
-      {/* ── Timeframe bar — shown below sub-tabs for crypto (not on New Listed) ── */}
+      {/* ── Timeframe bar ── */}
       {category === "crypto" && cryptoTab !== "new" && (
         <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#1a1d25] bg-[#0b0c10] shrink-0">
           <span className="text-[10px] text-[#4b5563] font-semibold uppercase tracking-wide mr-1">Timeframe</span>
@@ -678,29 +770,24 @@ export default function Trading() {
         </div>
       )}
 
-      {/* ── Content area ── */}
+      {/* ── Content ── */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-
-        {/* Crypto views */}
         {category === "crypto" && cryptoTab === "bubble" && (
-          <BubbleMap coins={coins} loading={ovLoading} tf={tf} />
+          <BubbleMap coins={coins} loading={ovLoading} tf={tf} live={live} connected={connected} />
         )}
         {category === "crypto" && cryptoTab === "gainers" && (
-          <MoversList coins={coins} type="gainers" tf={tf} loading={ovLoading} />
+          <MoversList coins={coins} type="gainers" tf={tf} live={live} loading={ovLoading} />
         )}
         {category === "crypto" && cryptoTab === "losers" && (
-          <MoversList coins={coins} type="losers" tf={tf} loading={ovLoading} />
+          <MoversList coins={coins} type="losers" tf={tf} live={live} loading={ovLoading} />
         )}
         {category === "crypto" && cryptoTab === "new" && (
           <NewListedList listings={listings} loading={ovLoading} />
         )}
-
-        {/* Other categories */}
         {category === "forex"       && <ComingSoon label="Forex Markets" />}
         {category === "commodities" && <ComingSoon label="Commodities" />}
         {category === "stocks"      && <ComingSoon label="US & Global Stocks" />}
       </div>
-
     </div>
   );
 }
