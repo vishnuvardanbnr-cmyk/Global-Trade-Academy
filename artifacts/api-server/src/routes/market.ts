@@ -339,12 +339,46 @@ router.get("/market/overview", async (_req, res): Promise<void> => {
       fetch("https://api.coingecko.com/api/v3/global", { headers }).then((r) => r.json()),
       fetch("https://api.coingecko.com/api/v3/coins/list/new", { headers }).then((r) => r.json()),
     ]);
+
+    /* Enrich new listings with market data (price, image, 24h change, mcap) */
+    interface RawNewListing { id: string; symbol: string; name: string; activated_at: number; }
+    const rawNew: RawNewListing[] = newR.status === "fulfilled" && Array.isArray(newR.value)
+      ? (newR.value as RawNewListing[]).slice(0, 20)
+      : [];
+
+    let enrichedNew: unknown[] = rawNew;
+    if (rawNew.length > 0) {
+      const ids = rawNew.map((c) => c.id).join(",");
+      try {
+        const mktRes = await fetch(
+          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=24h`,
+          { headers },
+        );
+        const mktData = await mktRes.json() as Array<{
+          id: string; symbol: string; name: string; image: string;
+          current_price: number; market_cap: number; market_cap_rank: number;
+          price_change_percentage_24h: number; total_volume: number;
+        }>;
+        if (Array.isArray(mktData) && mktData.length > 0) {
+          /* Merge: keep activated_at from rawNew, add market data */
+          const mktMap = new Map(mktData.map((m) => [m.id, m]));
+          enrichedNew = rawNew.map((r) => {
+            const m = mktMap.get(r.id);
+            return m
+              ? { ...r, image: m.image, current_price: m.current_price,
+                  market_cap: m.market_cap, market_cap_rank: m.market_cap_rank,
+                  price_change_percentage_24h: m.price_change_percentage_24h,
+                  total_volume: m.total_volume }
+              : r;
+          });
+        }
+      } catch { /* fall back to basic list */ }
+    }
+
     const data = {
       coins: coinsR.status === "fulfilled" && Array.isArray(coinsR.value) ? coinsR.value : [],
       global: globalR.status === "fulfilled" ? ((globalR.value as { data?: unknown })?.data ?? {}) : {},
-      newListings: newR.status === "fulfilled" && Array.isArray(newR.value)
-        ? newR.value.slice(0, 12)
-        : [],
+      newListings: enrichedNew,
     };
     _overviewCache = { ts: Date.now(), data };
     res.json(data);

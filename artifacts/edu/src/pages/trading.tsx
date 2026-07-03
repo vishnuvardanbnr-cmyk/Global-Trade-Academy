@@ -29,7 +29,11 @@ interface GlobalData {
   active_cryptocurrencies?: number;
 }
 
-interface NewListing { id: string; symbol: string; name: string; activated_at: number; }
+interface NewListing {
+  id: string; symbol: string; name: string; activated_at: number;
+  image?: string; current_price?: number; market_cap?: number;
+  market_cap_rank?: number; price_change_percentage_24h?: number; total_volume?: number;
+}
 interface OverviewData { coins: CoinData[]; global: GlobalData; newListings: NewListing[]; }
 type Timeframe = "1H" | "1D" | "1W" | "1M" | "1Y";
 type MainCategory = "crypto" | "forex" | "commodities" | "stocks";
@@ -676,28 +680,63 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
   );
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d1a] sticky top-0 bg-[#0a0a0a] z-10">
-        <span className="text-[10px] text-[#4b5563] font-semibold uppercase">#</span>
+      {/* header */}
+      <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 px-4 py-2 border-b border-[#1a1d1a] sticky top-0 bg-[#0a0a0a] z-10">
+        <span className="text-[10px] text-[#4b5563] font-semibold uppercase w-5">#</span>
         <span className="text-[10px] text-[#4b5563] font-semibold uppercase">Token</span>
-        <span className="text-[10px] text-[#4b5563] font-semibold uppercase text-right">Listed</span>
+        <span className="text-[10px] text-[#4b5563] font-semibold uppercase text-right">Price</span>
+        <span className="text-[10px] text-[#4b5563] font-semibold uppercase text-right w-16">24h</span>
       </div>
+
       {listings.map((l, idx) => {
-        const dt = l.activated_at
-          ? new Date(l.activated_at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        const pct   = l.price_change_percentage_24h;
+        const hasP  = typeof pct === "number" && isFinite(pct);
+        const up    = hasP && pct! >= 0;
+        const dt    = l.activated_at
+          ? new Date(l.activated_at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })
           : "Recent";
+
         return (
-          <div key={l.id} className="grid grid-cols-[auto_1fr_auto] gap-x-3 items-center px-4 py-3 border-b border-[#1a1d1a]/50 hover:bg-[#13141a] transition-colors">
+          <div key={l.id} className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center px-4 py-3 border-b border-[#1a1d1a]/50 hover:bg-[#111] transition-colors">
+            {/* rank */}
             <span className="text-[11px] text-[#4b5563] w-5 tabular-nums">{idx + 1}</span>
+
+            {/* logo + name */}
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-full bg-[#f0b90b]/15 flex items-center justify-center shrink-0">
-                <span className="text-[8px] font-bold text-[#f0b90b]">{l.symbol.slice(0, 3).toUpperCase()}</span>
-              </div>
+              {l.image
+                ? <img src={l.image} alt={l.symbol} className="w-7 h-7 rounded-full shrink-0 bg-[#1a1d1a]" />
+                : (
+                  <div className="w-7 h-7 rounded-full bg-[#f0b90b]/15 flex items-center justify-center shrink-0">
+                    <span className="text-[8px] font-bold text-[#f0b90b]">{l.symbol.slice(0, 3).toUpperCase()}</span>
+                  </div>
+                )}
               <div className="min-w-0">
                 <p className="text-[12px] font-bold text-white leading-tight truncate">{l.name}</p>
-                <p className="text-[10px] text-[#4b5563]">{l.symbol.toUpperCase()}</p>
+                <p className="text-[10px] text-[#4b5563]">{l.symbol.toUpperCase()} · {dt}</p>
               </div>
             </div>
-            <span className="text-[10.5px] text-[#4b5563] text-right whitespace-nowrap">{dt}</span>
+
+            {/* price */}
+            <div className="text-right">
+              {typeof l.current_price === "number"
+                ? <p className="text-[12px] font-semibold text-white tabular-nums">{fmtPrice(l.current_price)}</p>
+                : <p className="text-[11px] text-[#4b5563]">—</p>}
+              {l.market_cap ? <p className="text-[9.5px] text-[#4b5563] tabular-nums">{fmtLarge(l.market_cap)}</p> : null}
+            </div>
+
+            {/* 24h change */}
+            <div className="w-16 text-right">
+              {hasP
+                ? (
+                  <span className={cn(
+                    "text-[11.5px] font-bold tabular-nums px-1.5 py-0.5 rounded",
+                    up ? "text-[#00c853] bg-[#00c853]/10" : "text-[#f44336] bg-[#f44336]/10",
+                  )}>
+                    {up ? "+" : ""}{pct!.toFixed(2)}%
+                  </span>
+                )
+                : <span className="text-[11px] text-[#4b5563]">—</span>}
+            </div>
           </div>
         );
       })}
