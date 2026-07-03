@@ -1,7 +1,7 @@
 import { Router } from "express";
 import WebSocket from "ws";
 import { db } from "@workspace/db";
-import { marketCandlesTable } from "@workspace/db";
+import { marketCandlesTable, marketCacheTable } from "@workspace/db";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 const SYMBOL_MAP: Record<string, string> = {
@@ -321,38 +321,73 @@ router.get("/market/stocks", async (_req, res): Promise<void> => {
   }
 });
 
-/* ── CMC new listings helper ─────────────────────────────────────── */
+/* ── CMC new listings — DB-backed hourly cache ───────────────────── */
+const CMC_CACHE_KEY = "cmc_new_listings";
+const CMC_TTL_MS    = 60 * 60 * 1000; /* 1 hour */
+
 interface CmcListing {
   id: number; name: string; symbol: string; slug: string;
   date_added: string;
   quote: { USD: { price: number; percent_change_24h: number; market_cap: number; volume_24h: number } };
 }
 
-async function fetchCmcNewListings(limit = 20): Promise<unknown[]> {
-  const apiKey = process.env.CMC_API_KEY;
-  if (!apiKey) return [];
-  const url = `https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?sort=date_added&sort_dir=desc&limit=${limit}&convert=USD`;
-  const res = await fetch(url, {
-    headers: { "X-CMC_PRO_API_KEY": apiKey, "Accept": "application/json" },
-  });
-  if (!res.ok) throw new Error(`CMC ${res.status}`);
-  const json = await res.json() as { data?: CmcListing[] };
-  if (!Array.isArray(json.data)) return [];
-
-  return json.data.map((c) => ({
-    id: String(c.id),
-    symbol: c.symbol,
-    name: c.name,
-    activated_at: Math.floor(new Date(c.date_added).getTime() / 1000),
-    /* CMC logo URL pattern */
-    image: `https://s2.coinmarketcap.com/static/img/coins/64x64/${c.id}.png`,
-    current_price: c.quote.USD.price,
+function cmcToRow(c: CmcListing) {
+  return {
+    id:                        String(c.id),
+    symbol:                    c.symbol,
+    name:                      c.name,
+    activated_at:              Math.floor(new Date(c.date_added).getTime() / 1000),
+    image:                     `https://s2.coinmarketcap.com/static/img/coins/64x64/${c.id}.png`,
+    current_price:             c.quote.USD.price,
     price_change_percentage_24h: c.quote.USD.percent_change_24h,
-    market_cap: c.quote.USD.market_cap,
-    total_volume: c.quote.USD.volume_24h,
-    market_cap_rank: null,
-  }));
+    market_cap:                c.quote.USD.market_cap,
+    total_volume:              c.quote.USD.volume_24h,
+    market_cap_rank:           null,
+  };
 }
+
+async function fetchFromCmc(): Promise<unknown[]> {
+  const apiKey = process.env.CMC_API_KEY;
+  if (!apiKey) { console.warn("[CMC] CMC_API_KEY not set"); return []; }
+  const url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?sort=date_added&sort_dir=desc&limit=20&convert=USD";
+  const res  = await fetch(url, { headers: { "X-CMC_PRO_API_KEY": apiKey, "Accept": "application/json" } });
+  if (!res.ok) throw new Error(`CMC HTTP ${res.status}`);
+  const json = await res.json() as { data?: CmcListing[] };
+  if (!Array.isArray(json.data)) throw new Error("CMC: unexpected response shape");
+  return json.data.map(cmcToRow);
+}
+
+async function refreshCmcCache(): Promise<void> {
+  try {
+    const listings = await fetchFromCmc();
+    await db.insert(marketCacheTable)
+      .values({ key: CMC_CACHE_KEY, data: listings })
+      .onConflictDoUpdate({ target: marketCacheTable.key, set: { data: listings, fetchedAt: new Date() } });
+    console.info(`[CMC] Saved ${listings.length} new listings to DB`);
+  } catch (err) {
+    console.error("[CMC] Refresh failed:", err);
+  }
+}
+
+async function getCmcListings(): Promise<unknown[]> {
+  try {
+    const row = await db.select().from(marketCacheTable).where(eq(marketCacheTable.key, CMC_CACHE_KEY)).limit(1);
+    if (row.length && row[0].fetchedAt && Date.now() - row[0].fetchedAt.getTime() < CMC_TTL_MS) {
+      return row[0].data as unknown[];
+    }
+    /* Stale or missing — refresh now and return whatever we get */
+    await refreshCmcCache();
+    const fresh = await db.select().from(marketCacheTable).where(eq(marketCacheTable.key, CMC_CACHE_KEY)).limit(1);
+    return fresh.length ? (fresh[0].data as unknown[]) : [];
+  } catch (err) {
+    console.error("[CMC] getCmcListings error:", err);
+    return [];
+  }
+}
+
+/* Kick off on server start and refresh every hour */
+getCmcListings().catch(() => {});
+setInterval(() => refreshCmcCache().catch(() => {}), CMC_TTL_MS);
 
 /* ── GET /api/market/overview — CoinGecko proxy with 2-min cache ─── */
 let _overviewCache: { ts: number; data: unknown } | null = null;
@@ -370,7 +405,7 @@ router.get("/market/overview", async (_req, res): Promise<void> => {
         { headers: cgHeaders },
       ).then((r) => r.json()),
       fetch("https://api.coingecko.com/api/v3/global", { headers: cgHeaders }).then((r) => r.json()),
-      fetchCmcNewListings(20),
+      getCmcListings(),
     ]);
 
     const data = {

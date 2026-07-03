@@ -16,5 +16,6 @@ export * from "./events";
 export * from "./resources";
 export * from "./discussions";
 export * from "./market-candles";
+export * from "./market-cache";
 export * from "./site-settings";
 export * from "./livekit-accounts";
