@@ -21,18 +21,14 @@ export default function Courses() {
   const { data: enrollments } = useListEnrollments();
   const enrolledIds = new Set((enrollments ?? []).map((e) => e.courseId));
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeCategory, setActiveCategory] = useState("");
   const [activeLevel, setActiveLevel] = useState("All Levels");
 
-  const categories = [
-    "All",
-    ...Array.from(new Set((courses ?? []).map((c) => c.category).filter(Boolean)))
-      .sort() as string[],
-  ];
+  const categories = Array.from(new Set((courses ?? []).map((c) => c.category).filter(Boolean))).sort() as string[];
 
   const filtered = (courses ?? []).filter((c) => {
     const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase());
-    const matchCat = activeCategory === "All" || c.category?.toLowerCase() === activeCategory.toLowerCase();
+    const matchCat = !activeCategory || c.category?.toLowerCase() === activeCategory.toLowerCase();
     const matchLevel = activeLevel === "All Levels" || c.level?.toLowerCase() === activeLevel.toLowerCase();
     return matchSearch && matchCat && matchLevel;
   });
@@ -214,7 +210,7 @@ export default function Courses() {
           <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or filters.</p>
           <button
             className="text-sm text-primary mt-3 hover:underline font-medium"
-            onClick={() => { setSearch(""); setActiveCategory("All"); setActiveLevel("All Levels"); }}
+            onClick={() => { setSearch(""); setActiveCategory(""); setActiveLevel("All Levels"); }}
           >
             Clear filters
           </button>
