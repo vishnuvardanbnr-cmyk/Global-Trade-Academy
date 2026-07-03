@@ -333,7 +333,7 @@ router.get("/market/overview", async (_req, res): Promise<void> => {
     const headers = { "Accept": "application/json", "User-Agent": "brightinsight/1.0" };
     const [coinsR, globalR, newR] = await Promise.allSettled([
       fetch(
-        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h",
+        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=80&page=1&sparkline=false&price_change_percentage=1h,24h,7d,30d,1y",
         { headers },
       ).then((r) => r.json()),
       fetch("https://api.coingecko.com/api/v3/global", { headers }).then((r) => r.json()),
