@@ -367,7 +367,7 @@ function GrantAccessDialog({
 
 /* ─── types ─── */
 type DetailedStats = { totalUsers: number; totalCourses: number; publishedCourses: number; totalEnrollments: number; activeEnrollments: number; completedEnrollments: number; instructors: number; admins: number; newUsersWeek: number; newUsersMonth: number; totalLessons: number; totalQuizAttempts: number; totalCertificates: number; totalXpAwarded: number; };
-type AdminCourse = { id: number; title: string; status: string; level: string | null; category: string | null; price: string | null; instructorName: string; enrollments: number; isFeatured: boolean | null; createdAt: string; };
+type AdminCourse = { id: number; title: string; status: string; level: string | null; category: string | null; subCategory: string | null; price: string | null; instructorName: string; enrollments: number; isFeatured: boolean | null; createdAt: string; };
 type AdminEnrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; };
 type AdminActivity = { id: number; type: string; userId: string | null; userName: string | null; description: string | null; metadata: unknown; createdAt: string; };
 type AdminUser = { id: string; email: string; displayName: string | null; role: string; xp: number; createdAt: string; };
@@ -625,6 +625,8 @@ function CoursesTab() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [acting, setActing] = useState<number | null>(null);
+  const [editingSubCat, setEditingSubCat] = useState<number | null>(null);
+  const [subCatInput, setSubCatInput] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -666,6 +668,24 @@ function CoursesTab() {
     finally { setActing(null); }
   };
 
+  const openSubCatEdit = (c: AdminCourse) => {
+    setEditingSubCat(c.id);
+    setSubCatInput(c.subCategory ?? "");
+  };
+
+  const saveSubCat = async (id: number) => {
+    try {
+      await fetch(`/api/courses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subCategory: subCatInput.trim() || null }),
+      });
+      toast({ title: "Sub-category saved" });
+      setEditingSubCat(null);
+      load();
+    } catch { toast({ title: "Failed to save", variant: "destructive" }); }
+  };
+
   const filtered = courses.filter((c) => !search || c.title.toLowerCase().includes(search.toLowerCase()) || c.instructorName.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -686,6 +706,7 @@ function CoursesTab() {
             <thead className="bg-secondary/40">
               <tr className="border-b border-border text-muted-foreground text-xs">
                 <th className="text-left px-4 py-3 font-medium">Course</th>
+                <th className="text-left px-4 py-3 font-medium">Sub-category</th>
                 <th className="text-left px-4 py-3 font-medium">Instructor</th>
                 <th className="text-center px-4 py-3 font-medium">Status</th>
                 <th className="text-right px-4 py-3 font-medium">Students</th>
@@ -703,6 +724,31 @@ function CoursesTab() {
                       <Badge variant="outline" className="text-[10px] capitalize px-1 py-0">{c.category}</Badge>
                       <Badge variant="outline" className="text-[10px] capitalize px-1 py-0">{c.level}</Badge>
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {editingSubCat === c.id ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          className="h-7 text-xs w-32"
+                          value={subCatInput}
+                          autoFocus
+                          onChange={e => setSubCatInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") saveSubCat(c.id); if (e.key === "Escape") setEditingSubCat(null); }}
+                          placeholder="e.g. Scalping"
+                        />
+                        <Button size="sm" className="h-7 px-2 text-xs" onClick={() => saveSubCat(c.id)}><Check className="h-3 w-3" /></Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditingSubCat(null)}><X className="h-3 w-3" /></Button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openSubCatEdit(c)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground group"
+                        title="Click to edit sub-category"
+                      >
+                        <span className={c.subCategory ? "capitalize" : "italic opacity-50"}>{c.subCategory ?? "None"}</span>
+                        <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{c.instructorName}</td>
                   <td className="px-4 py-3 text-center"><StatusBadge status={c.status} /></td>

@@ -46,6 +46,8 @@ export interface Course {
   /** @nullable */
   instructorName?: string | null;
   category: string;
+  /** @nullable */
+  subCategory?: string | null;
   level: string;
   status: string;
   /** @nullable */
@@ -68,6 +70,7 @@ export interface CourseInput {
   title: string;
   description?: string;
   category: string;
+  subCategory?: string;
   level: string;
   thumbnailUrl?: string;
   price?: number;
@@ -78,6 +81,7 @@ export interface CourseUpdate {
   title?: string;
   description?: string;
   category?: string;
+  subCategory?: string;
   level?: string;
   status?: string;
   thumbnailUrl?: string;

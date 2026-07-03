@@ -152,7 +152,7 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const form = useForm({
-    defaultValues: { title: "", description: "", category: "forex", level: "beginner", price: undefined as number | undefined, thumbnailUrl: "" },
+    defaultValues: { title: "", description: "", category: "forex", subCategory: "", level: "beginner", price: undefined as number | undefined, thumbnailUrl: "" },
   });
   const thumbnailUrl = form.watch("thumbnailUrl");
   const create = useCreateCourse({
@@ -169,7 +169,7 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
       <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>New Course</DialogTitle></DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((d) => create.mutate({ data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
+          <form onSubmit={form.handleSubmit((d) => create.mutate({ data: { title: d.title, description: d.description || undefined, category: d.category, subCategory: d.subCategory || undefined, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
             <FormField control={form.control} name="title" rules={{ required: true }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input data-testid="input-course-title" {...field} /></FormControl><FormMessage /></FormItem>
             )} />
@@ -201,6 +201,13 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
                 </FormItem>
               )} />
             </div>
+            <FormField control={form.control} name="subCategory" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sub-category <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                <FormControl><Input placeholder="e.g. Scalping, Day Trading, Swing Trading…" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
             <FormField control={form.control} name="price" render={({ field }) => (
               <FormItem><FormLabel>Price (USD, blank = free)</FormLabel><FormControl><Input data-testid="input-course-price" type="number" min="0" step="0.01" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} /></FormControl><FormMessage /></FormItem>
             )} />
@@ -216,13 +223,13 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
 
 /* ─── Edit Course Dialog ─── */
 function EditCourseDialog({ course, onSuccess }: {
-  course: { id: number; title: string; description?: string | null; category?: string | null; level?: string | null; price?: string | null; thumbnailUrl?: string | null };
+  course: { id: number; title: string; description?: string | null; category?: string | null; subCategory?: string | null; level?: string | null; price?: string | null; thumbnailUrl?: string | null };
   onSuccess: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const form = useForm({
-    defaultValues: { title: course.title, description: course.description ?? "", category: course.category ?? "forex", level: course.level ?? "beginner", price: course.price ? parseFloat(course.price) : undefined as number | undefined, thumbnailUrl: course.thumbnailUrl ?? "" },
+    defaultValues: { title: course.title, description: course.description ?? "", category: course.category ?? "forex", subCategory: course.subCategory ?? "", level: course.level ?? "beginner", price: course.price ? parseFloat(course.price) : undefined as number | undefined, thumbnailUrl: course.thumbnailUrl ?? "" },
   });
   const thumbnailUrl = form.watch("thumbnailUrl");
   const update = useUpdateCourse({
@@ -234,7 +241,7 @@ function EditCourseDialog({ course, onSuccess }: {
   return (
     <Dialog open={open} onOpenChange={(v) => {
       setOpen(v);
-      if (v) form.reset({ title: course.title, description: course.description ?? "", category: course.category ?? "forex", level: course.level ?? "beginner", price: course.price ? parseFloat(course.price) : undefined, thumbnailUrl: course.thumbnailUrl ?? "" });
+      if (v) form.reset({ title: course.title, description: course.description ?? "", category: course.category ?? "forex", subCategory: course.subCategory ?? "", level: course.level ?? "beginner", price: course.price ? parseFloat(course.price) : undefined, thumbnailUrl: course.thumbnailUrl ?? "" });
     }}>
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" data-testid={`button-edit-course-${course.id}`}><Pencil className="h-3.5 w-3.5 mr-1.5" />Edit</Button>
@@ -242,7 +249,7 @@ function EditCourseDialog({ course, onSuccess }: {
       <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>Edit Course</DialogTitle></DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((d) => update.mutate({ courseId: course.id, data: { title: d.title, description: d.description || undefined, category: d.category, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
+          <form onSubmit={form.handleSubmit((d) => update.mutate({ courseId: course.id, data: { title: d.title, description: d.description || undefined, category: d.category, subCategory: d.subCategory || undefined, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
             <FormField control={form.control} name="title" rules={{ required: true }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
             )} />
@@ -274,6 +281,13 @@ function EditCourseDialog({ course, onSuccess }: {
                 </FormItem>
               )} />
             </div>
+            <FormField control={form.control} name="subCategory" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sub-category <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                <FormControl><Input placeholder="e.g. Scalping, Day Trading, Swing Trading…" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
             <FormField control={form.control} name="price" render={({ field }) => (
               <FormItem><FormLabel>Price (USD, blank = free)</FormLabel><FormControl><Input type="number" min="0" step="0.01" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} /></FormControl></FormItem>
             )} />

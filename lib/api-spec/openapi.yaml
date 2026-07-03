@@ -2085,6 +2085,7 @@ components:
         instructorId: { type: string }
         instructorName: { type: ["string", "null"] }
         category: { type: string }
+        subCategory: { type: ["string", "null"] }
         level: { type: string }
         status: { type: string }
         thumbnailUrl: { type: ["string", "null"] }
@@ -2104,6 +2105,7 @@ components:
         title: { type: string, minLength: 1 }
         description: { type: string }
         category: { type: string }
+        subCategory: { type: string }
         level: { type: string }
         thumbnailUrl: { type: string }
         price: { type: number }
@@ -2115,6 +2117,7 @@ components:
         title: { type: string }
         description: { type: string }
         category: { type: string }
+        subCategory: { type: string }
         level: { type: string }
         status: { type: string }
         thumbnailUrl: { type: string }

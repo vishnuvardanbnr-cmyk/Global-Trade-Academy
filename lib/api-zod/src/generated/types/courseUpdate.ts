@@ -10,6 +10,7 @@ export interface CourseUpdate {
   title?: string;
   description?: string;
   category?: string;
+  subCategory?: string;
   level?: string;
   status?: string;
   thumbnailUrl?: string;

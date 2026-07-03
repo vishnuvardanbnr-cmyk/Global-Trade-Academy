@@ -15,6 +15,8 @@ export interface Course {
   /** @nullable */
   instructorName?: string | null;
   category: string;
+  /** @nullable */
+  subCategory?: string | null;
   level: string;
   status: string;
   /** @nullable */

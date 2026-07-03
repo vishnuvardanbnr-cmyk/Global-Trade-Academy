@@ -34,6 +34,7 @@ async function buildCourseResponse(course: typeof coursesTable.$inferSelect) {
     instructorId: course.instructorId,
     instructorName: instructor[0]?.displayName ?? null,
     category: course.category,
+    subCategory: course.subCategory ?? null,
     level: course.level,
     status: course.status,
     thumbnailUrl: course.thumbnailUrl,
@@ -98,7 +99,7 @@ router.post("/courses", async (req, res): Promise<void> => {
       res.status(403).json({ error: "Only instructors and admins can create courses" }); return;
     }
 
-    const { title, description, category, level, thumbnailUrl, price, duration } = req.body;
+    const { title, description, category, subCategory, level, thumbnailUrl, price, duration } = req.body;
     if (!title || !category || !level) { res.status(400).json({ error: "title, category, level required" }); return; }
 
     const inserted = await db.insert(coursesTable).values({
@@ -106,6 +107,7 @@ router.post("/courses", async (req, res): Promise<void> => {
       description,
       instructorId: clerkId,
       category,
+      subCategory: subCategory || null,
       level,
       thumbnailUrl,
       price: price?.toString(),
@@ -147,11 +149,12 @@ router.patch("/courses/:courseId", async (req, res): Promise<void> => {
 
     if (!(await ownsCourse(clerkId, id))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-    const { title, description, category, level, status, thumbnailUrl, price, isFeatured } = req.body;
+    const { title, description, category, subCategory, level, status, thumbnailUrl, price, isFeatured } = req.body;
     const updated = await db.update(coursesTable).set({
       ...(title !== undefined && { title }),
       ...(description !== undefined && { description }),
       ...(category !== undefined && { category }),
+      ...(subCategory !== undefined && { subCategory: subCategory || null }),
       ...(level !== undefined && { level }),
       ...(status !== undefined && { status }),
       ...(thumbnailUrl !== undefined && { thumbnailUrl }),

@@ -11,6 +11,7 @@ export interface CourseInput {
   title: string;
   description?: string;
   category: string;
+  subCategory?: string;
   level: string;
   thumbnailUrl?: string;
   price?: number;

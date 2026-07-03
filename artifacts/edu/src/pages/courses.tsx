@@ -22,15 +22,26 @@ export default function Courses() {
   const enrolledIds = new Set((enrollments ?? []).map((e) => e.courseId));
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
+  const [activeSubCategory, setActiveSubCategory] = useState("");
   const [activeLevel, setActiveLevel] = useState("All Levels");
 
   const categories = Array.from(new Set((courses ?? []).map((c) => c.category).filter(Boolean))).sort() as string[];
 
+  // Sub-categories for the selected category
+  const subCategories = activeCategory
+    ? Array.from(new Set(
+        (courses ?? [])
+          .filter(c => c.category?.toLowerCase() === activeCategory.toLowerCase() && c.subCategory)
+          .map(c => c.subCategory!)
+      )).sort()
+    : [];
+
   const filtered = (courses ?? []).filter((c) => {
     const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase());
     const matchCat = !activeCategory || c.category?.toLowerCase() === activeCategory.toLowerCase();
+    const matchSub = !activeSubCategory || c.subCategory?.toLowerCase() === activeSubCategory.toLowerCase();
     const matchLevel = activeLevel === "All Levels" || c.level?.toLowerCase() === activeLevel.toLowerCase();
-    return matchSearch && matchCat && matchLevel;
+    return matchSearch && matchCat && matchSub && matchLevel;
   });
 
   return (
@@ -63,7 +74,15 @@ export default function Courses() {
         {categories.map((cat) => (
           <button
             key={cat}
-            onClick={() => setActiveCategory(cat)}
+            onClick={() => {
+              if (activeCategory.toLowerCase() === cat.toLowerCase()) {
+                setActiveCategory("");
+                setActiveSubCategory("");
+              } else {
+                setActiveCategory(cat);
+                setActiveSubCategory("");
+              }
+            }}
             className={cn(
               "px-3.5 py-1.5 rounded-full text-sm font-medium border transition-all capitalize",
               activeCategory.toLowerCase() === cat.toLowerCase()
@@ -75,6 +94,27 @@ export default function Courses() {
           </button>
         ))}
       </div>
+
+      {/* Sub-category pills — only visible when a category is selected and has sub-categories */}
+      {subCategories.length > 0 && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Topic:</span>
+          {subCategories.map((sub) => (
+            <button
+              key={sub}
+              onClick={() => setActiveSubCategory(activeSubCategory === sub ? "" : sub)}
+              className={cn(
+                "px-3 py-1 rounded-full text-xs font-medium border transition-all capitalize",
+                activeSubCategory === sub
+                  ? "bg-primary/15 text-primary border-primary/40 shadow-sm"
+                  : "bg-white text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+              )}
+            >
+              {sub}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Stats row */}
       {!isLoading && (
@@ -210,7 +250,7 @@ export default function Courses() {
           <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or filters.</p>
           <button
             className="text-sm text-primary mt-3 hover:underline font-medium"
-            onClick={() => { setSearch(""); setActiveCategory(""); setActiveLevel("All Levels"); }}
+            onClick={() => { setSearch(""); setActiveCategory(""); setActiveSubCategory(""); setActiveLevel("All Levels"); }}
           >
             Clear filters
           </button>

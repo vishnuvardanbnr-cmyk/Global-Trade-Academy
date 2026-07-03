@@ -330,6 +330,7 @@ router.get("/admin/courses", async (req, res): Promise<void> => {
       status: c.status,
       level: c.level,
       category: c.category,
+      subCategory: c.subCategory ?? null,
       price: c.price,
       thumbnailUrl: c.thumbnailUrl,
       instructorId: c.instructorId,

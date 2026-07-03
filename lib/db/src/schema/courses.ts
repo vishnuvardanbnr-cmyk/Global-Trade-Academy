@@ -8,6 +8,7 @@ export const coursesTable = pgTable("courses", {
   description: text("description"),
   instructorId: text("instructor_id").notNull(),
   category: text("category").notNull(), // forex | crypto | futures | options | stocks
+  subCategory: text("sub_category"),
   level: text("level").notNull(), // beginner | intermediate | advanced
   status: text("status").notNull().default("draft"), // draft | published | archived
   thumbnailUrl: text("thumbnail_url"),
