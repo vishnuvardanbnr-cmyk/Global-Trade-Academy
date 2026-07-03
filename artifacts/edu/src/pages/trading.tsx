@@ -208,7 +208,6 @@ function computeBubbles(
   const BASE = 1.2;
   const pctAbs = list.map(c => Math.abs(getPct(c, tf, new Map())));
   const weights = pctAbs.map(p => p + BASE);
-  const sumW    = weights.reduce((a, b) => a + b, 0);
 
   /* Derive K so Σ π·(K·w_i)² ≈ 0.90·W·H  →  K = sqrt(0.90·W·H / (π·Σw_i²)) */
   const sumWSq = weights.reduce((a, w) => a + w * w, 0);
@@ -218,7 +217,7 @@ function computeBubbles(
   /* Build raw bubbles, sorted largest-first for grid placement */
   const raw = list.map((coin, i) => ({
     origIdx: i, coin,
-    pct: getPct(coin, tf, live),
+    pct: getPct(coin, tf, new Map()),
     r: Math.max(minR, Math.min(maxR, K * weights[i])),
   })).sort((a, b) => b.r - a.r);
 
