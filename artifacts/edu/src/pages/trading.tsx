@@ -619,7 +619,7 @@ export default function Trading() {
                 "flex items-center gap-2 px-5 py-3 border-b-2 shrink-0 font-semibold text-[13px] transition-all",
                 category === key
                   ? "border-[#00c853] text-white"
-                  : "border-transparent text-[#4b5563] hover:text-[#9ca3af] hover:border-[#1a1d25]",
+                  : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
               )}
             >
               <span>{emoji}</span>
@@ -627,24 +627,6 @@ export default function Trading() {
             </button>
           ))}
         </div>
-
-        {/* Timeframe pills */}
-        {showTf && (
-          <div className="flex items-center gap-1 px-4 border-l border-[#1a1d25] shrink-0">
-            {TF_TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTf(t)}
-                className={cn(
-                  "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all",
-                  tf === t
-                    ? "bg-[#00c853]/15 text-[#00c853] border border-[#00c853]/30"
-                    : "text-[#4b5563] hover:text-[#9ca3af]",
-                )}
-              >{t}</button>
-            ))}
-          </div>
-        )}
 
         {/* Refresh */}
         <button
@@ -673,6 +655,25 @@ export default function Trading() {
               <span className={cn(cryptoTab === key ? "text-[#00c853]" : "text-[#4b5563]")}>{icon}</span>
               {label}
             </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Timeframe bar — shown below sub-tabs for crypto (not on New Listed) ── */}
+      {category === "crypto" && cryptoTab !== "new" && (
+        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#1a1d25] bg-[#0b0c10] shrink-0">
+          <span className="text-[10px] text-[#4b5563] font-semibold uppercase tracking-wide mr-1">Timeframe</span>
+          {TF_TABS.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTf(t)}
+              className={cn(
+                "px-3 py-1 rounded-lg text-[11px] font-bold transition-all",
+                tf === t
+                  ? "bg-[#00c853]/15 text-[#00c853] border border-[#00c853]/30"
+                  : "text-[#4b5563] hover:text-[#9ca3af] border border-transparent",
+              )}
+            >{t}</button>
           ))}
         </div>
       )}
