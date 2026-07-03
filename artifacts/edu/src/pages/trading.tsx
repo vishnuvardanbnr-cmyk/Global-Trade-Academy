@@ -138,7 +138,7 @@ function useBinanceTicker(symbols: string[]) {
           const sym = d.s.replace("USDT", "");
           const price  = parseFloat(d.c);
           const pct24h = parseFloat(d.P);
-          if (isNaN(price)) return;
+          if (isNaN(price) || isNaN(pct24h)) return;
           setTicks(prev => {
             const next = new Map(prev);
             next.set(sym, { price, pct24h, updatedAt: Date.now() });
@@ -265,6 +265,9 @@ function drawBubble(
   imgs: Map<string, HTMLImageElement | null>,
   flashAge: number,
 ) {
+  /* Sanitise pct — guard against NaN from stale/missing data */
+  if (!isFinite(b.pct)) b.pct = 0;
+
   /* Organic float — unique speed & phase per bubble */
   const s1 = 0.0007 + b.index * 0.000025;
   const s2 = 0.0005 + b.index * 0.000018;
@@ -456,7 +459,7 @@ function BubbleMap({
         const sym = b.coin.symbol.toUpperCase();
         /* patch pct from live tick each frame so colour/text stay current */
         const tick = live.get(sym);
-        if (tick) b.pct = tick.pct24h;
+        if (tick && !isNaN(tick.pct24h)) b.pct = tick.pct24h;
         const flashedAt = flashRef.current.get(sym) ?? 0;
         const flashAge  = flashedAt ? now - flashedAt : 0;
         drawBubble(ctx, b, hoveredRef.current === i, t, imgsRef.current, flashAge);
@@ -535,7 +538,7 @@ function BubbleMap({
                 )}
               </div>
               <p className={cn("text-xs font-bold mt-0.5", tooltip.b.pct >= 0 ? "text-[#00c853]" : "text-[#f44336]")}>
-                {tooltip.b.pct >= 0 ? "▲" : "▼"} {Math.abs(tooltip.b.pct).toFixed(2)}%
+                {tooltip.b.pct >= 0 ? "▲" : "▼"} {isFinite(tooltip.b.pct) ? Math.abs(tooltip.b.pct).toFixed(2) : "0.00"}%
               </p>
               <div className="mt-2 pt-2 border-t border-[#1f2130] space-y-0.5">
                 <div className="flex justify-between text-[10.5px]">
