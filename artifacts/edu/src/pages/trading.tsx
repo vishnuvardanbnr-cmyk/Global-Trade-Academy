@@ -941,6 +941,21 @@ function fmtCalDate(d: string): string {
   return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
+/* Parse ForexFactory date "MM-DD-YYYY" + time "8:30am" → UTC Date (times are ET = UTC-4 in summer) */
+function parseFFDateTime(date: string, time: string): Date {
+  const [mo, dy, yr] = date.split("-").map(Number);
+  const mm = String(mo).padStart(2, "0");
+  const dd = String(dy).padStart(2, "0");
+  const m = /^(\d+):(\d+)(am|pm)$/i.exec(time ?? "");
+  if (!m) return new Date(`${yr}-${mm}-${dd}T23:59:00-04:00`);
+  let h = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const ap = m[3].toLowerCase();
+  if (ap === "pm" && h !== 12) h += 12;
+  if (ap === "am" && h === 12) h = 0;
+  return new Date(`${yr}-${mm}-${dd}T${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}:00-04:00`);
+}
+
 function timeAgo(dateStr: string): string {
   const ms = Date.now() - new Date(dateStr).getTime();
   if (isNaN(ms) || ms < 0) return "";
@@ -1086,9 +1101,13 @@ function EconomicCalendarPanel() {
     </div>
   );
 
-  /* Group events by date string (MM-DD-YYYY) */
+  /* Only future events (date+time in ET not yet passed) */
+  const now = new Date();
+  const upcoming = (data ?? []).filter(ev => parseFFDateTime(ev.date, ev.time) >= now);
+
+  /* Group by date string (MM-DD-YYYY), sorted ascending */
   const grouped: [string, CalendarEvent[]][] = Object.entries(
-    data.reduce<Record<string, CalendarEvent[]>>((acc, ev) => {
+    upcoming.reduce<Record<string, CalendarEvent[]>>((acc, ev) => {
       (acc[ev.date] ??= []).push(ev);
       return acc;
     }, {})
@@ -1188,6 +1207,122 @@ function EconomicCalendarPanel() {
                 </div>
 
                 {/* Stats grid */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Forecast", value: selected.forecast || "—" },
+                    { label: "Previous", value: selected.previous || "—" },
+                    { label: "Actual",   value: selected.actual   || "—" },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-[#13141a] rounded-xl border border-[#1a1d1a] px-3 py-3 text-center">
+                      <p className="text-[10px] text-[#4b5563] uppercase tracking-wider mb-1">{label}</p>
+                      <p className={cn("text-[15px] font-bold", value === "—" ? "text-[#4b5563]" : "text-white")}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────
+   Calendar News Panel — ended/released events
+───────────────────────────────────────── */
+function CalendarNewsPanel() {
+  const [selected, setSelected] = useState<CalendarEvent | null>(null);
+
+  const { data, isLoading, error } = useQuery<CalendarEvent[]>({
+    queryKey: ["econ-calendar"],
+    queryFn: async ({ signal }) => {
+      const r = await fetch("/api/market/economic-calendar", { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 60 * 60_000,
+    refetchInterval: 60 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
+    </div>
+  );
+
+  /* Past events = date+time already passed; sort newest first */
+  const now = new Date();
+  const past = (data ?? [])
+    .filter(ev => parseFFDateTime(ev.date, ev.time) < now)
+    .sort((a, b) => parseFFDateTime(b.date, b.time).getTime() - parseFFDateTime(a.date, a.time).getTime());
+
+  if (error || !past.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">No released events yet this week</p>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="flex-1 overflow-y-auto divide-y divide-[#1a1d1a]">
+        {past.map(ev => {
+          const cfg = IMPACT_CFG[ev.impact] ?? IMPACT_CFG.Low;
+          const flag = COUNTRY_FLAGS[ev.country] ?? "🌐";
+          return (
+            <button
+              key={ev.id}
+              onClick={() => setSelected(ev)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#ffffff05] transition-colors text-left group"
+            >
+              {/* Impact stripe */}
+              <div className={cn("w-1 self-stretch rounded-full shrink-0", cfg.dot)} />
+
+              {/* Currency */}
+              <span className="text-[12px] w-[44px] shrink-0 font-semibold text-[#9ca3af]">{flag} {ev.country}</span>
+
+              {/* Title */}
+              <span className="flex-1 text-[12px] text-white group-hover:text-[#00c853] transition-colors leading-snug line-clamp-1">{ev.title}</span>
+
+              {/* Right side: impact badge + time */}
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", cfg.text, cfg.bg, cfg.border)}>
+                  {cfg.label}
+                </span>
+                <span className="text-[10px] text-[#4b5563]">{fmtCalDate(ev.date)} {ev.time}</span>
+              </div>
+            </button>
+          );
+        })}
+        <div className="px-4 py-3 text-[10px] text-[#4b5563] text-center">
+          Released this week · Times in ET · Source: ForexFactory
+        </div>
+      </div>
+
+      {/* Event detail modal */}
+      {selected && (() => {
+        const cfg = IMPACT_CFG[selected.impact] ?? IMPACT_CFG.Low;
+        const flag = COUNTRY_FLAGS[selected.country] ?? "🌐";
+        return (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center" onClick={() => setSelected(null)}>
+            <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
+            <div
+              className="relative z-10 w-full max-w-md mx-0 sm:mx-4 bg-[#0d0e13] rounded-t-2xl sm:rounded-2xl border border-[#1a1d1a] shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className={cn("h-1 w-full", cfg.dot)} />
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#1a1d1a]">
+                <span className={cn("text-[11px] font-bold px-2.5 py-1 rounded-full border", cfg.text, cfg.bg, cfg.border)}>
+                  ● {cfg.label} Impact · Released
+                </span>
+                <button onClick={() => setSelected(null)} className="text-[#4b5563] hover:text-white transition-colors text-lg leading-none">✕</button>
+              </div>
+              <div className="px-5 py-5 flex flex-col gap-4">
+                <div>
+                  <p className="text-white text-[16px] font-bold leading-snug">{selected.title}</p>
+                  <p className="text-[#4b5563] text-[13px] mt-1">{flag} {selected.country} · {fmtCalDate(selected.date)} · {selected.time || "All Day"} ET</p>
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: "Forecast", value: selected.forecast || "—" },
@@ -1391,10 +1526,10 @@ export default function Trading() {
           <NewListedList listings={listings} loading={ovLoading} />
         )}
         {category === "forex" && forexTab === "pairs"    && <ForexPairsPanel />}
-        {category === "forex" && forexTab === "news"     && <NewsPanel type="forex" />}
+        {category === "forex" && forexTab === "news"     && <CalendarNewsPanel />}
         {category === "forex" && forexTab === "upcoming" && <EconomicCalendarPanel />}
         {category === "commodities" && commoditiesTab === "pairs"    && <CommoditiesPairsPanel />}
-        {category === "commodities" && commoditiesTab === "news"     && <NewsPanel type="commodities" />}
+        {category === "commodities" && commoditiesTab === "news"     && <CalendarNewsPanel />}
         {category === "commodities" && commoditiesTab === "upcoming" && <EconomicCalendarPanel />}
         {category === "stocks" && <ComingSoon label="US & Global Stocks" />}
       </div>
