@@ -420,4 +420,227 @@ router.get("/market/overview", async (_req, res): Promise<void> => {
   }
 });
 
+/* ── Helpers ─────────────────────────────────────────────────────── */
+async function dbCacheGet<T>(key: string, ttlMs: number): Promise<T | null> {
+  const rows = await db.select().from(marketCacheTable).where(eq(marketCacheTable.key, key)).limit(1);
+  if (rows.length && Date.now() - rows[0].fetchedAt.getTime() < ttlMs) return rows[0].data as T;
+  return null;
+}
+async function dbCacheSet(key: string, data: unknown): Promise<void> {
+  await db.insert(marketCacheTable).values({ key, data })
+    .onConflictDoUpdate({ target: marketCacheTable.key, set: { data, fetchedAt: new Date() } });
+}
+
+/* ── Forex pairs — frankfurter.app (free, no key) ────────────────── */
+const FOREX_PAIR_LIST = [
+  "EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","NZD/USD","USD/CAD","EUR/GBP","EUR/JPY","GBP/JPY",
+];
+const FOREX_FLAGS: Record<string, string> = {
+  "EUR/USD":"🇪🇺🇺🇸","GBP/USD":"🇬🇧🇺🇸","USD/JPY":"🇺🇸🇯🇵","USD/CHF":"🇺🇸🇨🇭",
+  "AUD/USD":"🇦🇺🇺🇸","NZD/USD":"🇳🇿🇺🇸","USD/CAD":"🇺🇸🇨🇦","EUR/GBP":"🇪🇺🇬🇧",
+  "EUR/JPY":"🇪🇺🇯🇵","GBP/JPY":"🇬🇧🇯🇵",
+};
+
+function calcFxRate(pair: string, rates: Record<string, number>): number | null {
+  const [b, q] = pair.split("/");
+  if (!b || !q) return null;
+  if (b === "USD") return rates[q] ?? null;
+  if (q === "USD") return rates[b] ? 1 / rates[b] : null;
+  return (rates[q] && rates[b]) ? rates[q] / rates[b] : null;
+}
+
+/* ECB 90-day history XML — EUR-based rates (1 EUR = X foreign) */
+function parseEcbXml(xml: string): Array<{ date: string; rates: Record<string, number> }> {
+  /* Match outer day blocks — ECB uses double quotes in hist XML */
+  const dayRe = /<Cube time=["']([\d-]+)["'][^>]*>([\s\S]*?)<\/Cube>/g;
+  const results: Array<{ date: string; rates: Record<string, number> }> = [];
+  let dm: RegExpExecArray | null;
+  while ((dm = dayRe.exec(xml)) !== null && results.length < 2) {
+    const rates: Record<string, number> = {};
+    const rr = /<Cube currency=["']([A-Z]+)["'] rate=["']([\d.]+)["']\/>/g;
+    let rm: RegExpExecArray | null;
+    while ((rm = rr.exec(dm[2])) !== null) rates[rm[1]] = parseFloat(rm[2]);
+    results.push({ date: dm[1], rates });
+  }
+  return results;
+}
+
+/* Compute pair rate from ECB EUR-base rates */
+function calcEcbRate(pair: string, r: Record<string, number>): number | null {
+  switch (pair) {
+    case "EUR/USD": return r.USD ?? null;
+    case "GBP/USD": return r.USD && r.GBP ? r.USD / r.GBP : null;
+    case "USD/JPY": return r.JPY && r.USD ? r.JPY / r.USD : null;
+    case "USD/CHF": return r.CHF && r.USD ? r.CHF / r.USD : null;
+    case "AUD/USD": return r.USD && r.AUD ? r.USD / r.AUD : null;
+    case "NZD/USD": return r.USD && r.NZD ? r.USD / r.NZD : null;
+    case "USD/CAD": return r.CAD && r.USD ? r.CAD / r.USD : null;
+    case "EUR/GBP": return r.GBP ?? null;
+    case "EUR/JPY": return r.JPY ?? null;
+    case "GBP/JPY": return r.JPY && r.GBP ? r.JPY / r.GBP : null;
+    default: return null;
+  }
+}
+
+async function fetchForexPairs() {
+  const res = await fetch("https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist-90d.xml", {
+    headers: { "User-Agent": "brightinsight/1.0", "Accept": "application/xml, text/xml" },
+  });
+  if (!res.ok) throw new Error(`ECB ${res.status}`);
+  const xml  = await res.text();
+  const days = parseEcbXml(xml);
+  const today = days[0]?.rates ?? {};
+  const yday  = days[1]?.rates ?? {};
+  return FOREX_PAIR_LIST.map((pair) => {
+    const price  = calcEcbRate(pair, today);
+    const prev   = calcEcbRate(pair, yday);
+    const change = price && prev ? ((price - prev) / prev) * 100 : null;
+    return { pair, flags: FOREX_FLAGS[pair] ?? "🌐", price, change };
+  }).filter((r) => r.price !== null);
+}
+
+router.get("/market/forex-pairs", async (_req, res): Promise<void> => {
+  try {
+    const cached = await dbCacheGet<unknown[]>("forex_pairs", 10 * 60_000);
+    if (cached) { res.json(cached); return; }
+    const data = await fetchForexPairs();
+    await dbCacheSet("forex_pairs", data);
+    res.json(data);
+  } catch (err) {
+    const stale = await dbCacheGet<unknown[]>("forex_pairs", Infinity);
+    if (stale) { res.json(stale); return; }
+    res.status(502).json({ error: "Forex data unavailable", detail: String(err) });
+  }
+});
+
+/* ── Commodities pairs — Yahoo Finance v7 quote ──────────────────── */
+const COMMODITY_META: Record<string, { name: string; unit: string; emoji: string }> = {
+  "GC=F":  { name: "Gold",         unit: "oz",    emoji: "🥇" },
+  "SI=F":  { name: "Silver",       unit: "oz",    emoji: "🥈" },
+  "CL=F":  { name: "Crude Oil WTI",unit: "bbl",   emoji: "🛢️" },
+  "NG=F":  { name: "Natural Gas",  unit: "MMBtu", emoji: "🔥" },
+  "HG=F":  { name: "Copper",       unit: "lb",    emoji: "🔶" },
+  "ZW=F":  { name: "Wheat",        unit: "bu",    emoji: "🌾" },
+};
+
+/* metals.live — free, no key, returns { gold, silver, platinum, palladium } in USD/oz */
+const METALS_KEY_MAP: Record<string, { yfSym: string; name: string; unit: string; emoji: string }> = {
+  gold:      { yfSym: "GC=F", name: "Gold",      unit: "oz",   emoji: "🥇" },
+  silver:    { yfSym: "SI=F", name: "Silver",     unit: "oz",   emoji: "🥈" },
+  platinum:  { yfSym: "PL=F", name: "Platinum",   unit: "oz",   emoji: "⚪" },
+  palladium: { yfSym: "PA=F", name: "Palladium",  unit: "oz",   emoji: "🔘" },
+};
+const ENERGY_SYMS: Record<string, { name: string; unit: string; emoji: string }> = {
+  "CL=F": { name: "Crude Oil WTI", unit: "bbl",   emoji: "🛢️" },
+  "NG=F": { name: "Natural Gas",   unit: "MMBtu", emoji: "🔥" },
+  "HG=F": { name: "Copper",        unit: "lb",    emoji: "🔶" },
+  "ZW=F": { name: "Wheat",         unit: "bu",    emoji: "🌾" },
+};
+const YF_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept": "application/json",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer": "https://finance.yahoo.com/",
+};
+
+async function fetchYFChart(sym: string): Promise<{ price: number | null; change: number | null }> {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
+  const res = await fetch(url, { headers: YF_HEADERS });
+  if (!res.ok) return { price: null, change: null };
+  type ChartMeta = { regularMarketPrice?: number; regularMarketChangePercent?: number; chartPreviousClose?: number };
+  const json = await res.json() as { chart?: { result?: Array<{ meta?: ChartMeta }> } };
+  const meta = json.chart?.result?.[0]?.meta ?? {};
+  const price = meta.regularMarketPrice ?? null;
+  const prev  = meta.chartPreviousClose ?? null;
+  const change = price && prev ? ((price - prev) / prev) * 100 : (meta.regularMarketChangePercent ?? null);
+  return { price, change };
+}
+
+async function fetchCommoditiesPairs() {
+  /* 1. Precious metals via metals.live (free, no key) */
+  const metalsRes = await fetch("https://api.metals.live/v1/spot", {
+    headers: { "User-Agent": "brightinsight/1.0", "Accept": "application/json" },
+  }).catch(() => null);
+  const metalsRaw: Record<string, number> = (metalsRes?.ok ? await metalsRes.json() : {}) as Record<string, number>;
+
+  const metalRows = await Promise.all(
+    Object.entries(METALS_KEY_MAP).map(async ([key, meta]) => {
+      const spotPrice = metalsRaw[key] ?? null;
+      /* try YF for % change even when we have metals.live spot price */
+      const { price: yfPrice, change } = await fetchYFChart(meta.yfSym).catch(() => ({ price: null, change: null }));
+      return {
+        symbol: key, name: meta.name, unit: meta.unit, emoji: meta.emoji,
+        price: spotPrice ?? yfPrice, change,
+      };
+    }),
+  );
+
+  /* 2. Energy / grains via Yahoo Finance v8 chart */
+  const energyRows = await Promise.all(
+    Object.entries(ENERGY_SYMS).map(async ([sym, meta]) => {
+      const { price, change } = await fetchYFChart(sym).catch(() => ({ price: null, change: null }));
+      return { symbol: sym, name: meta.name, unit: meta.unit, emoji: meta.emoji, price, change };
+    }),
+  );
+
+  return [...metalRows, ...energyRows].filter((r) => r.price !== null);
+}
+
+router.get("/market/commodities-pairs", async (_req, res): Promise<void> => {
+  try {
+    const cached = await dbCacheGet<unknown[]>("commodities_pairs", 10 * 60_000);
+    if (cached) { res.json(cached); return; }
+    const data = await fetchCommoditiesPairs();
+    await dbCacheSet("commodities_pairs", data);
+    res.json(data);
+  } catch (err) {
+    const stale = await dbCacheGet<unknown[]>("commodities_pairs", Infinity);
+    if (stale) { res.json(stale); return; }
+    res.status(502).json({ error: "Commodities data unavailable", detail: String(err) });
+  }
+});
+
+/* ── Market news — Yahoo Finance search API (JSON, no auth) ──────── */
+const NEWS_QUERIES: Record<string, string> = {
+  forex:       "forex currency trading EUR USD GBP",
+  commodities: "gold oil commodities metals energy prices",
+};
+
+router.get("/market/news", async (req, res): Promise<void> => {
+  const type = (req.query.type as string) === "commodities" ? "commodities" : "forex";
+  const cacheKey = `news_${type}`;
+  try {
+    const cached = await dbCacheGet<unknown[]>(cacheKey, 30 * 60_000);
+    if (cached) { res.json(cached); return; }
+
+    const q = encodeURIComponent(NEWS_QUERIES[type]);
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${q}&newsCount=12&quotesCount=0&enableFuzzyQuery=false`;
+    const newsRes = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://finance.yahoo.com/",
+      },
+    });
+    if (!newsRes.ok) throw new Error(`YF news ${newsRes.status}`);
+
+    type YFNews = { title?: string; link?: string; publisher?: string; providerPublishTime?: number };
+    const json = await newsRes.json() as { news?: YFNews[] };
+    const data = (json.news ?? []).map((n) => ({
+      title:       n.title ?? "",
+      link:        n.link  ?? "",
+      description: "",
+      publisher:   n.publisher ?? "Yahoo Finance",
+      pubDate:     n.providerPublishTime ? new Date(n.providerPublishTime * 1000).toUTCString() : "",
+    })).filter((n) => n.title);
+
+    if (data.length) await dbCacheSet(cacheKey, data);
+    res.json(data);
+  } catch (err) {
+    const stale = await dbCacheGet<unknown[]>(cacheKey, Infinity);
+    if (stale) { res.json(stale); return; }
+    res.status(502).json({ error: "News unavailable", detail: String(err) });
+  }
+});
+
 export default router;

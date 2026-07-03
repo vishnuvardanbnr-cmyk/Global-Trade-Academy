@@ -38,6 +38,8 @@ interface OverviewData { coins: CoinData[]; global: GlobalData; newListings: New
 type Timeframe = "1H" | "1D" | "1W" | "1M" | "1Y";
 type MainCategory = "crypto" | "forex" | "commodities" | "stocks";
 type CryptoTab = "bubble" | "gainers" | "losers" | "new";
+type ForexTab = "pairs" | "news";
+type CommoditiesTab = "pairs" | "news";
 
 /* live tick keyed by UPPERCASE symbol */
 interface LiveTick { price: number; pct24h: number; updatedAt: number; }
@@ -745,6 +747,238 @@ function NewListedList({ listings, loading }: { listings: NewListing[]; loading:
 }
 
 /* ─────────────────────────────────────────
+   Forex Pairs Panel
+───────────────────────────────────────── */
+interface ForexPairRow { pair: string; flags: string; price: number | null; change: number | null; }
+
+function fmtFxPrice(n: number): string {
+  if (n >= 100) return n.toFixed(3);
+  return n.toFixed(5);
+}
+
+function ForexPairsPanel() {
+  const { data, isLoading, error } = useQuery<ForexPairRow[]>({
+    queryKey: ["forex-pairs"],
+    queryFn: async ({ signal }) => {
+      const r = await fetch("/api/market/forex-pairs", { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 10 * 60_000,
+    refetchInterval: 10 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
+    </div>
+  );
+  if (error || !data?.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">Rates unavailable</p>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <table className="w-full text-[13px] border-collapse">
+        <thead>
+          <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#4b5563] border-b border-[#1a1d1a]">
+            <th className="text-left px-4 py-2.5">Pair</th>
+            <th className="text-right px-4 py-2.5">Rate</th>
+            <th className="text-right px-4 py-2.5">24h Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row) => {
+            const up = (row.change ?? 0) >= 0;
+            return (
+              <tr key={row.pair} className="border-b border-[#1a1d1a]/60 hover:bg-[#ffffff05] transition-colors">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base leading-none">{row.flags}</span>
+                    <span className="text-white font-bold tracking-wide">{row.pair}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-white font-semibold">
+                  {row.price !== null ? fmtFxPrice(row.price) : "—"}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {row.change !== null ? (
+                    <span className={cn(
+                      "inline-flex items-center gap-0.5 font-bold",
+                      up ? "text-[#00c853]" : "text-[#f44336]",
+                    )}>
+                      {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      {up ? "+" : ""}{row.change.toFixed(4)}%
+                    </span>
+                  ) : <span className="text-[#4b5563]">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   Commodities Pairs Panel
+───────────────────────────────────────── */
+interface CommodityRow {
+  symbol: string; name: string; unit: string; emoji: string;
+  price: number | null; change: number | null; prevClose: number | null;
+}
+
+function fmtCommodityPrice(n: number): string {
+  if (n >= 1000) return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (n >= 10)   return "$" + n.toFixed(3);
+  return "$" + n.toFixed(4);
+}
+
+function CommoditiesPairsPanel() {
+  const { data, isLoading, error } = useQuery<CommodityRow[]>({
+    queryKey: ["commodities-pairs"],
+    queryFn: async ({ signal }) => {
+      const r = await fetch("/api/market/commodities-pairs", { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 10 * 60_000,
+    refetchInterval: 10 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
+    </div>
+  );
+  if (error || !data?.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">Prices unavailable</p>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <table className="w-full text-[13px] border-collapse">
+        <thead>
+          <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#4b5563] border-b border-[#1a1d1a]">
+            <th className="text-left px-4 py-2.5">Commodity</th>
+            <th className="text-right px-4 py-2.5">Price</th>
+            <th className="text-right px-4 py-2.5">24h Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row) => {
+            const up = (row.change ?? 0) >= 0;
+            return (
+              <tr key={row.symbol} className="border-b border-[#1a1d1a]/60 hover:bg-[#ffffff05] transition-colors">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl leading-none">{row.emoji}</span>
+                    <div>
+                      <p className="text-white font-bold">{row.name}</p>
+                      <p className="text-[#4b5563] text-[11px]">per {row.unit}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-white font-semibold">
+                  {row.price !== null ? fmtCommodityPrice(row.price) : "—"}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {row.change !== null ? (
+                    <span className={cn(
+                      "inline-flex items-center gap-0.5 font-bold",
+                      up ? "text-[#00c853]" : "text-[#f44336]",
+                    )}>
+                      {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      {up ? "+" : ""}{row.change.toFixed(2)}%
+                    </span>
+                  ) : <span className="text-[#4b5563]">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   News Panel (shared for Forex + Commodities)
+───────────────────────────────────────── */
+interface NewsItem { title: string; link: string; description: string; pubDate: string; publisher?: string; }
+
+function timeAgo(dateStr: string): string {
+  const ms = Date.now() - new Date(dateStr).getTime();
+  if (isNaN(ms) || ms < 0) return "";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function NewsPanel({ type }: { type: "forex" | "commodities" }) {
+  const { data, isLoading, error } = useQuery<NewsItem[]>({
+    queryKey: ["market-news", type],
+    queryFn: async ({ signal }) => {
+      const r = await fetch(`/api/market/news?type=${type}`, { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 30 * 60_000,
+    refetchInterval: 30 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
+    </div>
+  );
+  if (error || !data?.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">News unavailable</p>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto divide-y divide-[#1a1d1a]">
+      {data.map((item, i) => (
+        <a
+          key={i}
+          href={item.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col gap-1 px-4 py-3.5 hover:bg-[#ffffff04] transition-colors group"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-white text-[13px] font-semibold leading-snug group-hover:text-[#00c853] transition-colors line-clamp-2">
+              {item.title}
+            </p>
+            {item.pubDate && (
+              <span className="text-[10px] text-[#4b5563] shrink-0 mt-0.5">{timeAgo(item.pubDate)}</span>
+            )}
+          </div>
+          {item.description && (
+            <p className="text-[#4b5563] text-[12px] leading-relaxed line-clamp-2">{item.description}</p>
+          )}
+          <span className="text-[10px] text-[#00c853]/60 font-medium uppercase tracking-wider mt-0.5">
+            {item.publisher ?? "Yahoo Finance"}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
    Coming Soon
 ───────────────────────────────────────── */
 function ComingSoon({ label }: { label: string }) {
@@ -777,9 +1011,11 @@ const CRYPTO_TABS: { key: CryptoTab; label: string; icon: React.ReactNode }[] = 
 ];
 
 export default function Trading() {
-  const [category,  setCategory]  = useState<MainCategory>("crypto");
-  const [cryptoTab, setCryptoTab] = useState<CryptoTab>("bubble");
-  const [tf, setTf]               = useState<Timeframe>("1D");
+  const [category,       setCategory]       = useState<MainCategory>("crypto");
+  const [cryptoTab,      setCryptoTab]      = useState<CryptoTab>("bubble");
+  const [forexTab,       setForexTab]       = useState<ForexTab>("pairs");
+  const [commoditiesTab, setCommoditiesTab] = useState<CommoditiesTab>("pairs");
+  const [tf, setTf]                         = useState<Timeframe>("1D");
 
   const { data: overview, isLoading: ovLoading, refetch } = useQuery<OverviewData>({
     queryKey: ["market-overview"],
@@ -846,6 +1082,48 @@ export default function Trading() {
         </div>
       )}
 
+      {/* ── Forex sub-tabs ── */}
+      {category === "forex" && (
+        <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
+          {([
+            { key: "pairs" as const, label: "Pairs",  icon: "📊" },
+            { key: "news"  as const, label: "News",   icon: "📰" },
+          ] satisfies { key: ForexTab; label: string; icon: string }[]).map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setForexTab(key)}
+              className={cn(
+                "flex items-center gap-2 px-5 py-2.5 border-b-2 shrink-0 text-[12px] font-semibold transition-all",
+                forexTab === key ? "border-[#00c853] text-white bg-[#00c853]/5" : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
+              )}
+            >
+              <span>{icon}</span>{label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Commodities sub-tabs ── */}
+      {category === "commodities" && (
+        <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
+          {([
+            { key: "pairs" as const, label: "Pairs", icon: "📊" },
+            { key: "news"  as const, label: "News",  icon: "📰" },
+          ] satisfies { key: CommoditiesTab; label: string; icon: string }[]).map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setCommoditiesTab(key)}
+              className={cn(
+                "flex items-center gap-2 px-5 py-2.5 border-b-2 shrink-0 text-[12px] font-semibold transition-all",
+                commoditiesTab === key ? "border-[#00c853] text-white bg-[#00c853]/5" : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
+              )}
+            >
+              <span>{icon}</span>{label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Timeframe bar ── */}
       {category === "crypto" && cryptoTab !== "new" && (
         <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#1a1d1a] bg-[#0a0a0a] shrink-0">
@@ -879,9 +1157,11 @@ export default function Trading() {
         {category === "crypto" && cryptoTab === "new" && (
           <NewListedList listings={listings} loading={ovLoading} />
         )}
-        {category === "forex"       && <ComingSoon label="Forex Markets" />}
-        {category === "commodities" && <ComingSoon label="Commodities" />}
-        {category === "stocks"      && <ComingSoon label="US & Global Stocks" />}
+        {category === "forex" && forexTab === "pairs" && <ForexPairsPanel />}
+        {category === "forex" && forexTab === "news"  && <NewsPanel type="forex" />}
+        {category === "commodities" && commoditiesTab === "pairs" && <CommoditiesPairsPanel />}
+        {category === "commodities" && commoditiesTab === "news"  && <NewsPanel type="commodities" />}
+        {category === "stocks" && <ComingSoon label="US & Global Stocks" />}
       </div>
     </div>
   );
