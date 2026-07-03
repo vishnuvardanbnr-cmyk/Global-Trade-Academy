@@ -199,45 +199,61 @@ function computeBubbles(
   coins: CoinData[], W: number, H: number,
   tf: Timeframe, live: Map<string, LiveTick>,
 ): Bubble[] {
-  const list = coins.slice(0, 60);
-  const maxMcap = Math.max(...list.map(c => c.market_cap), 1);
-  const scale = Math.min(W, H);
-  const cx = W / 2, cy = H / 2;
+  if (W === 0 || H === 0) return [];
+  const list = coins.slice(0, 75);
+  const n = list.length;
 
-  const bubbles: Bubble[] = list.map((coin, i) => {
-    const frac = Math.sqrt(coin.market_cap / maxMcap);
-    const r = Math.max(14, Math.min(scale * 0.16, scale * 0.16 * frac));
-    const spiral = scale * 0.038 * Math.sqrt(i + 0.5);
-    const angle  = i * GOLDEN;
-    return {
-      index: i, coin,
-      x: cx + spiral * Math.cos(angle),
-      y: cy + spiral * Math.sin(angle),
-      r, pct: getPct(coin, tf, live),
-    };
-  });
+  /* ── Radius based on |pct|, normalised so total area fills ~90 % of canvas ── */
+  const BASE = 1.2;          /* floor weight so 0 % coins still show        */
+  const pctAbs = list.map(c => Math.abs(getPct(c, tf, live)));
+  const weights = pctAbs.map(p => p + BASE);        /* linear weight         */
+  const sumW    = weights.reduce((a, b) => a + b, 0);
 
-  for (let iter = 0; iter < 90; iter++) {
-    for (let i = 0; i < bubbles.length; i++) {
-      for (let j = i + 1; j < bubbles.length; j++) {
+  /* Derive K so Σ π·(K·w_i)² ≈ 0.90·W·H  →  K = sqrt(0.90·W·H / (π·Σw_i²)) */
+  const sumWSq = weights.reduce((a, w) => a + w * w, 0);
+  const K = Math.sqrt((W * H * 0.90) / (Math.PI * sumWSq));
+  const minR = 11, maxR = Math.min(W, H) * 0.22;
+
+  /* Build raw bubbles, sorted largest-first for grid placement */
+  const raw = list.map((coin, i) => ({
+    origIdx: i, coin,
+    pct: getPct(coin, tf, live),
+    r: Math.max(minR, Math.min(maxR, K * weights[i])),
+  })).sort((a, b) => b.r - a.r);
+
+  /* ── Initial placement: grid across the full canvas ── */
+  const cols = Math.max(1, Math.round(Math.sqrt(n * (W / H))));
+  const rows = Math.ceil(n / cols);
+  const cw   = W / cols, ch = H / rows;
+
+  const bubbles: Bubble[] = raw.map((s, gi) => ({
+    index: s.origIdx, coin: s.coin, pct: s.pct, r: s.r,
+    x: (gi % cols + 0.5) * cw,
+    y: (Math.floor(gi / cols) + 0.5) * ch,
+  }));
+
+  /* ── Collision resolution (push-apart + boundary clamp) ── */
+  for (let iter = 0; iter < 160; iter++) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
         const dx = bubbles[j].x - bubbles[i].x;
         const dy = bubbles[j].y - bubbles[i].y;
         const d   = Math.hypot(dx, dy) || 0.001;
-        const minD = bubbles[i].r + bubbles[j].r + 2;
-        if (d < minD) {
-          const push = (minD - d) * 0.5;
+        const gap = bubbles[i].r + bubbles[j].r + 1.5;
+        if (d < gap) {
+          const push = (gap - d) * 0.52;
           const nx = dx / d, ny = dy / d;
-          bubbles[i].x -= nx * push; bubbles[i].y -= ny * push;
-          bubbles[j].x += nx * push; bubbles[j].y += ny * push;
+          bubbles[i].x -= nx * push;  bubbles[i].y -= ny * push;
+          bubbles[j].x += nx * push;  bubbles[j].y += ny * push;
         }
       }
+      /* Clamp inside canvas on every inner pass */
+      const b = bubbles[i];
+      b.x = Math.max(b.r + 1, Math.min(W - b.r - 1, b.x));
+      b.y = Math.max(b.r + 1, Math.min(H - b.r - 1, b.y));
     }
   }
 
-  for (const b of bubbles) {
-    b.x = Math.max(b.r + 4, Math.min(W - b.r - 4, b.x));
-    b.y = Math.max(b.r + 4, Math.min(H - b.r - 4, b.y));
-  }
   return bubbles;
 }
 
