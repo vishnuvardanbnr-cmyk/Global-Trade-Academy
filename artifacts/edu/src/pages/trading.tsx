@@ -197,16 +197,17 @@ interface Bubble {
 
 function computeBubbles(
   coins: CoinData[], W: number, H: number,
-  tf: Timeframe, live: Map<string, LiveTick>,
+  tf: Timeframe,
+  /* live intentionally omitted — layout only recomputes on static data changes */
 ): Bubble[] {
   if (W === 0 || H === 0) return [];
   const list = coins.slice(0, 75);
   const n = list.length;
 
-  /* ── Radius based on |pct|, normalised so total area fills ~90 % of canvas ── */
-  const BASE = 1.2;          /* floor weight so 0 % coins still show        */
-  const pctAbs = list.map(c => Math.abs(getPct(c, tf, live)));
-  const weights = pctAbs.map(p => p + BASE);        /* linear weight         */
+  /* ── Radius based on |pct| from static CoinGecko data (not live ticks) ── */
+  const BASE = 1.2;
+  const pctAbs = list.map(c => Math.abs(getPct(c, tf, new Map())));
+  const weights = pctAbs.map(p => p + BASE);
   const sumW    = weights.reduce((a, b) => a + b, 0);
 
   /* Derive K so Σ π·(K·w_i)² ≈ 0.90·W·H  →  K = sqrt(0.90·W·H / (π·Σw_i²)) */
@@ -395,9 +396,10 @@ function BubbleMap({
   const hoveredRef   = useRef<number | null>(null);
   const rafRef       = useRef(0);
   const imgsRef      = useRef<Map<string, HTMLImageElement | null>>(new Map());
-  /* track last update time per symbol for flash effect */
   const flashRef     = useRef<Map<string, number>>(new Map());
   const prevLiveRef  = useRef<Map<string, LiveTick>>(new Map());
+  /* live data kept in a ref so the render loop reads it every frame without re-renders */
+  const liveRef      = useRef<Map<string, LiveTick>>(new Map());
 
   const [dims, setDims]       = useState({ w: 0, h: 0 });
   const [tooltip, setTooltip] = useState<{ x: number; y: number; b: Bubble } | null>(null);
@@ -420,41 +422,45 @@ function BubbleMap({
     const ctx = canvas.getContext("2d")!; ctx.scale(dpr, dpr);
   }, [dims]);
 
-  /* Recompute bubbles + preload logos */
+  /* Recompute bubbles + preload logos — does NOT depend on live ticks */
   useEffect(() => {
     if (!dims.w || !dims.h || coins.length === 0) return;
-    bubblesRef.current = computeBubbles(coins, dims.w, dims.h, tf, live);
-    coins.slice(0, 60).forEach((c) => {
+    bubblesRef.current = computeBubbles(coins, dims.w, dims.h, tf);
+    coins.slice(0, 75).forEach((c) => {
       if (c.image && !imgsRef.current.has(c.image))
         loadImg(c.image).then(img => imgsRef.current.set(c.image, img));
     });
-  }, [coins, dims, tf, live]);
+  }, [coins, dims, tf]); // ← live intentionally excluded
 
-  /* Detect live updates and mark flash timestamps */
+  /* Keep liveRef current + track flash timestamps — never triggers layout recompute */
   useEffect(() => {
+    liveRef.current = live;
     const now = Date.now();
     live.forEach((tick, sym) => {
       const prev = prevLiveRef.current.get(sym);
-      if (!prev || prev.updatedAt !== tick.updatedAt) {
-        flashRef.current.set(sym, now);
-      }
+      if (!prev || prev.updatedAt !== tick.updatedAt) flashRef.current.set(sym, now);
     });
     prevLiveRef.current = new Map(live);
   }, [live]);
 
-  /* Render loop */
+  /* Render loop — reads liveRef every frame for colour/text, never recomputes layout */
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas || !dims.w) return;
     const frame = (t: number) => {
       const ctx = canvas.getContext("2d"); if (!ctx) return;
       ctx.clearRect(0, 0, dims.w, dims.h);
-      const now = Date.now();
-      const bs = bubblesRef.current;
+      const now  = Date.now();
+      const bs   = bubblesRef.current;
+      const live = liveRef.current;
       for (let i = 0; i < bs.length; i++) {
-        const sym = bs[i].coin.symbol.toUpperCase();
+        const b   = bs[i];
+        const sym = b.coin.symbol.toUpperCase();
+        /* patch pct from live tick each frame so colour/text stay current */
+        const tick = live.get(sym);
+        if (tick) b.pct = tick.pct24h;
         const flashedAt = flashRef.current.get(sym) ?? 0;
         const flashAge  = flashedAt ? now - flashedAt : 0;
-        drawBubble(ctx, bs[i], hoveredRef.current === i, t, imgsRef.current, flashAge);
+        drawBubble(ctx, b, hoveredRef.current === i, t, imgsRef.current, flashAge);
       }
       rafRef.current = requestAnimationFrame(frame);
     };
