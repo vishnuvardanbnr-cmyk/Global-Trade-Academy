@@ -9,6 +9,7 @@ export const enrollmentsTable = pgTable("enrollments", {
   status: text("status").notNull().default("active"), // active | completed | cancelled
   enrolledAt: timestamp("enrolled_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
 });
 
 export const insertEnrollmentSchema = createInsertSchema(enrollmentsTable).omit({ id: true, enrolledAt: true });

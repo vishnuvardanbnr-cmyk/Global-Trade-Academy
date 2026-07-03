@@ -11,7 +11,7 @@ import {
   quizzesTable,
   lessonGatesTable,
 } from "@workspace/db";
-import { eq, and, sql, inArray, desc, isNull } from "drizzle-orm";
+import { eq, and, sql, inArray, desc, isNull, gt } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
 export const XP = {
@@ -195,7 +195,7 @@ export async function ownsCourse(userId: string, courseId: number): Promise<bool
   return !!course && course.instructorId === userId;
 }
 
-/** Whether the user has an active (approved) enrollment for the course. Pending requests are excluded. */
+/** Whether the user has an active (approved) non-expired enrollment for the course. Pending and expired enrollments are excluded. */
 export async function isEnrolled(userId: string, courseId: number): Promise<boolean> {
   const e = await db
     .select({ id: enrollmentsTable.id })
@@ -204,6 +204,8 @@ export async function isEnrolled(userId: string, courseId: number): Promise<bool
       eq(enrollmentsTable.userId, userId),
       eq(enrollmentsTable.courseId, courseId),
       inArray(enrollmentsTable.status, ["active", "completed"]),
+      // Either no expiry date, or expiry is in the future
+      sql`(${enrollmentsTable.expiresAt} IS NULL OR ${enrollmentsTable.expiresAt} > now())`,
     ))
     .limit(1)
     .then((r) => r[0]);

@@ -8,8 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   BookOpen, Trophy, TrendingUp, Video, ArrowUpRight,
   Star, Clock, CheckCircle2, Target, Zap, BarChart3, Activity,
-  Users, GraduationCap, Radio, Calendar, Megaphone, Bell,
+  Users, GraduationCap, Radio, Calendar, Megaphone, Bell, AlertTriangle, RefreshCw,
 } from "lucide-react";
+import { useCreateEnrollment } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 
@@ -78,16 +80,55 @@ function timeAgo(date: string | Date) {
   return `${Math.floor(d / 7)}w ago`;
 }
 
+/** Returns days remaining until expiry (negative = expired). Null if no expiry set. */
+function daysUntilExpiry(expiresAt: string | null | undefined): number | null {
+  if (!expiresAt) return null;
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  return Math.ceil(diff / 86400000);
+}
+
+function ExpiryBadge({ expiresAt }: { expiresAt: string | null | undefined }) {
+  const days = daysUntilExpiry(expiresAt);
+  if (days === null) return null;
+  if (days <= 0) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+        <AlertTriangle className="h-2.5 w-2.5" /> Expired
+      </span>
+    );
+  }
+  if (days <= 30) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+        <Clock className="h-2.5 w-2.5" /> {days}d left
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground bg-secondary border border-border rounded-full px-2 py-0.5">
+      <Clock className="h-2.5 w-2.5" /> {days}d left
+    </span>
+  );
+}
+
 export default function Dashboard() {
+  const { toast } = useToast();
   const { data: user, isLoading: userLoading } = useGetMe();
   const { items: announcements, loading: announcementsLoading } = useAnnouncements();
   const { events: upcomingEvents, loading: eventsLoading } = useUpcomingEvents();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
   const { data: leaderboard, isLoading: leaderLoading } = useGetLeaderboard();
   const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
-  const { data: enrollments } = useListEnrollments();
+  const { data: enrollments, refetch: refetchEnrollments } = useListEnrollments();
   const { data: allCourses } = useListCourses({});
   const { data: liveClasses, isLoading: liveLoading } = useListLiveClasses({});
+
+  const reEnroll = useCreateEnrollment({
+    mutation: {
+      onSuccess: () => { toast({ title: "Re-enrolled! Awaiting approval." }); refetchEnrollments(); },
+      onError: () => toast({ title: "Re-enrollment failed", variant: "destructive" }),
+    },
+  });
 
   const isLoading = userLoading || summaryLoading;
 
@@ -125,7 +166,7 @@ export default function Dashboard() {
   const enrolledCourses = (enrollments ?? [])
     .map(e => ({ enrollment: e, course: (allCourses ?? []).find(c => c.id === e.courseId) }))
     .filter(ec => ec.course)
-    .slice(0, 3);
+    .slice(0, 4);
 
   return (
     <div className="space-y-6">
@@ -181,26 +222,48 @@ export default function Dashboard() {
                 {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
             ) : enrolledCourses.length > 0 ? (
-              <div className="space-y-5">
-                {enrolledCourses.map(({ enrollment, course }) => (
-                  <Link key={enrollment.id} href={`/courses/${course!.id}`}>
-                    <div className="cursor-pointer group">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate max-w-[280px]">{course!.title}</span>
-                        <div className="flex items-center gap-2 ml-2 shrink-0">
+              <div className="space-y-4">
+                {enrolledCourses.map(({ enrollment, course }) => {
+                  const days = daysUntilExpiry(enrollment.expiresAt);
+                  const isExpired = days !== null && days <= 0;
+                  return (
+                    <div key={enrollment.id} className={cn("rounded-xl border p-3 transition-colors", isExpired ? "border-red-200 bg-red-50/50" : "border-border hover:bg-secondary/30")}>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <Link href={`/courses/${course!.id}`}>
+                          <span className={cn("text-sm font-medium leading-tight truncate block max-w-[220px]", isExpired ? "text-muted-foreground" : "text-foreground hover:text-primary transition-colors cursor-pointer")}>{course!.title}</span>
+                        </Link>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <ExpiryBadge expiresAt={enrollment.expiresAt} />
                           <Badge variant="outline" className="text-[10px] capitalize">{course!.level}</Badge>
-                          <span className="text-xs text-muted-foreground">{course!.lessonCount} lessons</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 bg-secondary rounded-full h-2 overflow-hidden">
-                          <div className={cn("h-full rounded-full transition-all", enrollment.status === "completed" ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${enrollment.progress ?? 0}%` }} />
+                      {isExpired ? (
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-red-600/80">Your access has expired. Re-enroll to continue.</p>
+                          <button
+                            onClick={() => reEnroll.mutate({ data: { courseId: course!.id } })}
+                            disabled={reEnroll.isPending}
+                            className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline shrink-0 ml-3 disabled:opacity-50"
+                          >
+                            <RefreshCw className="h-3 w-3" /> Re-enroll
+                          </button>
                         </div>
-                        <span className="text-xs font-semibold text-muted-foreground w-9 text-right">{enrollment.progress ?? 0}%</span>
-                      </div>
+                      ) : (
+                        <Link href={`/courses/${course!.id}`}>
+                          <div className="flex items-center gap-3 cursor-pointer">
+                            <div className="flex-1 bg-secondary rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={cn("h-full rounded-full transition-all", enrollment.status === "completed" ? "bg-emerald-500" : "bg-blue-500")}
+                                style={{ width: `${enrollment.progress ?? 0}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold text-muted-foreground w-9 text-right">{enrollment.progress ?? 0}%</span>
+                          </div>
+                        </Link>
+                      )}
                     </div>
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-8">

@@ -54,6 +54,7 @@ router.get("/enrollments", async (req, res): Promise<void> => {
         totalLessons: total,
         enrolledAt: enr.enrolledAt,
         completedAt: enr.completedAt,
+        expiresAt: enr.expiresAt,
         course: course ? {
           id: course.id,
           title: course.title,
@@ -99,7 +100,15 @@ router.post("/enrollments", async (req, res): Promise<void> => {
       .limit(1)
       .then((r) => r[0]);
 
-    if (existing) { res.status(409).json({ error: "Already enrolled" }); return; }
+    // If there's an existing enrollment that has expired, allow re-enrollment by deleting it first
+    if (existing) {
+      const isExpired = existing.expiresAt && existing.expiresAt < new Date();
+      if (!isExpired) {
+        res.status(409).json({ error: "Already enrolled" }); return;
+      }
+      // Delete the expired enrollment so a fresh one can be created
+      await db.delete(enrollmentsTable).where(eq(enrollmentsTable.id, existing.id));
+    }
 
     // Enforce prerequisites: every required course must be completed by this user.
     const prereqs = await db
@@ -125,10 +134,14 @@ router.post("/enrollments", async (req, res): Promise<void> => {
       }
     }
 
+    const oneYearFromNow = new Date();
+    oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
     const inserted = await db.insert(enrollmentsTable).values({
       courseId,
       userId: clerkId,
       status: "pending",
+      expiresAt: oneYearFromNow,
     }).returning();
 
     const enr = inserted[0];
@@ -142,6 +155,7 @@ router.post("/enrollments", async (req, res): Promise<void> => {
       totalLessons: 0,
       enrolledAt: enr.enrolledAt,
       completedAt: null,
+      expiresAt: enr.expiresAt,
       course: null,
     });
   } catch (err) {

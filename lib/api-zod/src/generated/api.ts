@@ -423,6 +423,7 @@ export const ListEnrollmentsResponseItem = zod.object({
   "totalLessons": zod.number().optional(),
   "enrolledAt": zod.string().optional(),
   "completedAt": zod.string().nullish(),
+  "expiresAt": zod.string().nullish(),
   "course": zod.object({
   "id": zod.number(),
   "title": zod.string(),

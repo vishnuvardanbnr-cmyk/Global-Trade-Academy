@@ -211,6 +211,8 @@ export interface Enrollment {
   enrolledAt?: string;
   /** @nullable */
   completedAt?: string | null;
+  /** @nullable */
+  expiresAt?: string | null;
   course?: Course;
 }
 
