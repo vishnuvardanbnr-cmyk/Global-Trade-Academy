@@ -321,6 +321,39 @@ router.get("/market/stocks", async (_req, res): Promise<void> => {
   }
 });
 
+/* ── CMC new listings helper ─────────────────────────────────────── */
+interface CmcListing {
+  id: number; name: string; symbol: string; slug: string;
+  date_added: string;
+  quote: { USD: { price: number; percent_change_24h: number; market_cap: number; volume_24h: number } };
+}
+
+async function fetchCmcNewListings(limit = 20): Promise<unknown[]> {
+  const apiKey = process.env.CMC_API_KEY;
+  if (!apiKey) return [];
+  const url = `https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?sort=date_added&sort_dir=desc&limit=${limit}&convert=USD`;
+  const res = await fetch(url, {
+    headers: { "X-CMC_PRO_API_KEY": apiKey, "Accept": "application/json" },
+  });
+  if (!res.ok) throw new Error(`CMC ${res.status}`);
+  const json = await res.json() as { data?: CmcListing[] };
+  if (!Array.isArray(json.data)) return [];
+
+  return json.data.map((c) => ({
+    id: String(c.id),
+    symbol: c.symbol,
+    name: c.name,
+    activated_at: Math.floor(new Date(c.date_added).getTime() / 1000),
+    /* CMC logo URL pattern */
+    image: `https://s2.coinmarketcap.com/static/img/coins/64x64/${c.id}.png`,
+    current_price: c.quote.USD.price,
+    price_change_percentage_24h: c.quote.USD.percent_change_24h,
+    market_cap: c.quote.USD.market_cap,
+    total_volume: c.quote.USD.volume_24h,
+    market_cap_rank: null,
+  }));
+}
+
 /* ── GET /api/market/overview — CoinGecko proxy with 2-min cache ─── */
 let _overviewCache: { ts: number; data: unknown } | null = null;
 
@@ -330,55 +363,20 @@ router.get("/market/overview", async (_req, res): Promise<void> => {
     return;
   }
   try {
-    const headers = { "Accept": "application/json", "User-Agent": "brightinsight/1.0" };
+    const cgHeaders = { "Accept": "application/json", "User-Agent": "brightinsight/1.0" };
     const [coinsR, globalR, newR] = await Promise.allSettled([
       fetch(
         "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=80&page=1&sparkline=false&price_change_percentage=1h,24h,7d,30d,1y",
-        { headers },
+        { headers: cgHeaders },
       ).then((r) => r.json()),
-      fetch("https://api.coingecko.com/api/v3/global", { headers }).then((r) => r.json()),
-      fetch("https://api.coingecko.com/api/v3/coins/list/new", { headers }).then((r) => r.json()),
+      fetch("https://api.coingecko.com/api/v3/global", { headers: cgHeaders }).then((r) => r.json()),
+      fetchCmcNewListings(20),
     ]);
-
-    /* Enrich new listings with market data (price, image, 24h change, mcap) */
-    interface RawNewListing { id: string; symbol: string; name: string; activated_at: number; }
-    const rawNew: RawNewListing[] = newR.status === "fulfilled" && Array.isArray(newR.value)
-      ? (newR.value as RawNewListing[]).slice(0, 20)
-      : [];
-
-    let enrichedNew: unknown[] = rawNew;
-    if (rawNew.length > 0) {
-      const ids = rawNew.map((c) => c.id).join(",");
-      try {
-        const mktRes = await fetch(
-          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=24h`,
-          { headers },
-        );
-        const mktData = await mktRes.json() as Array<{
-          id: string; symbol: string; name: string; image: string;
-          current_price: number; market_cap: number; market_cap_rank: number;
-          price_change_percentage_24h: number; total_volume: number;
-        }>;
-        if (Array.isArray(mktData) && mktData.length > 0) {
-          /* Merge: keep activated_at from rawNew, add market data */
-          const mktMap = new Map(mktData.map((m) => [m.id, m]));
-          enrichedNew = rawNew.map((r) => {
-            const m = mktMap.get(r.id);
-            return m
-              ? { ...r, image: m.image, current_price: m.current_price,
-                  market_cap: m.market_cap, market_cap_rank: m.market_cap_rank,
-                  price_change_percentage_24h: m.price_change_percentage_24h,
-                  total_volume: m.total_volume }
-              : r;
-          });
-        }
-      } catch { /* fall back to basic list */ }
-    }
 
     const data = {
       coins: coinsR.status === "fulfilled" && Array.isArray(coinsR.value) ? coinsR.value : [],
       global: globalR.status === "fulfilled" ? ((globalR.value as { data?: unknown })?.data ?? {}) : {},
-      newListings: enrichedNew,
+      newListings: newR.status === "fulfilled" ? newR.value : [],
     };
     _overviewCache = { ts: Date.now(), data };
     res.json(data);
