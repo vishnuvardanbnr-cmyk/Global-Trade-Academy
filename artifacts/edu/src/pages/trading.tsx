@@ -1488,6 +1488,96 @@ function CalendarNewsPanel() {
 }
 
 /* ─────────────────────────────────────────
+   Finnhub WebSocket hook (real-time stock quotes)
+───────────────────────────────────────── */
+interface FinnhubTick { price: number; updatedAt: number; }
+
+function useFinnhubTicker(symbols: string[]) {
+  const [ticks, setTicks]         = useState<Map<string, FinnhubTick>>(new Map());
+  const [connected, setConnected] = useState(false);
+  const wsRef   = useRef<WebSocket | null>(null);
+  const tokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!symbols.length) return;
+    let ws: WebSocket;
+    let dead = false;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    async function connect() {
+      if (dead) return;
+
+      // Fetch token from our backend (keeps API key out of the JS bundle)
+      if (!tokenRef.current) {
+        try {
+          const r = await fetch("/api/market/finnhub-token");
+          if (!r.ok) return;
+          const j = await r.json() as { token?: string };
+          if (!j.token) return;
+          tokenRef.current = j.token;
+        } catch { return; }
+      }
+
+      if (dead) return;
+      ws = new WebSocket(`wss://ws.finnhub.io?token=${tokenRef.current}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (dead) return;
+        setConnected(true);
+        symbols.forEach(sym => ws.send(JSON.stringify({ type: "subscribe", symbol: sym })));
+      };
+
+      ws.onmessage = (ev) => {
+        if (dead) return;
+        try {
+          const msg = JSON.parse(ev.data as string) as {
+            type: string;
+            data?: Array<{ s: string; p: number; t: number }>;
+          };
+          if (msg.type !== "trade" || !msg.data?.length) return;
+          setTicks(prev => {
+            const next = new Map(prev);
+            for (const trade of msg.data!) {
+              next.set(trade.s, { price: trade.p, updatedAt: trade.t });
+            }
+            return next;
+          });
+        } catch { /* ignore */ }
+      };
+
+      ws.onclose = () => {
+        if (!dead) {
+          setConnected(false);
+          reconnectTimer = setTimeout(connect, 4000);
+        }
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    void connect();
+
+    return () => {
+      dead = true;
+      clearTimeout(reconnectTimer);
+      if (wsRef.current) {
+        // Unsubscribe cleanly before closing
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          symbols.forEach(sym =>
+            wsRef.current!.send(JSON.stringify({ type: "unsubscribe", symbol: sym }))
+          );
+        }
+        wsRef.current.close();
+      }
+      setConnected(false);
+    };
+  }, [symbols.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { ticks, connected };
+}
+
+/* ─────────────────────────────────────────
    Stocks — Watchlist Panel
 ───────────────────────────────────────── */
 interface StockRow {
@@ -1521,9 +1611,16 @@ function fmtStockPrice(n: number): string {
 
 const ALL_SECTORS = ["All", "Tech", "Finance", "Health", "Energy", "Retail", "Auto", "Transport"];
 
+const STOCK_SYMBOLS = [
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","JPM","V",
+  "WMT","XOM","UNH","LLY","JNJ","MA","NFLX","AMD","ORCL","COST",
+  "UBER","PYPL","INTC","QCOM","TXN","CRM","ADBE","MU","PANW","AMAT",
+];
+
 function StocksWatchlistPanel() {
   const [sector, setSector] = useState("All");
 
+  /* Base data from Yahoo Finance (price, change%, 52wk range) */
   const { data, isLoading, error } = useQuery<StockRow[]>({
     queryKey: ["stocks"],
     queryFn: async ({ signal }) => {
@@ -1534,6 +1631,9 @@ function StocksWatchlistPanel() {
     staleTime: 5 * 60_000,
     refetchInterval: 5 * 60_000,
   });
+
+  /* Live prices overlaid via Finnhub WebSocket */
+  const { ticks: liveTicks, connected } = useFinnhubTicker(STOCK_SYMBOLS);
 
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center">
@@ -1551,7 +1651,7 @@ function StocksWatchlistPanel() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Sector filter chips */}
+      {/* Sector filter chips + live indicator */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#1a1d1a] overflow-x-auto scrollbar-hide shrink-0">
         {ALL_SECTORS.filter(s => s === "All" || data.some(r => r.sector === s)).map(s => (
           <button
@@ -1565,6 +1665,10 @@ function StocksWatchlistPanel() {
             )}
           >{s}</button>
         ))}
+        <div className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
+          <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-[#00c853] animate-pulse" : "bg-[#4b5563]")} />
+          <span className="text-[10px] text-[#4b5563]">{connected ? "Live" : "Connecting…"}</span>
+        </div>
       </div>
 
       {/* Stock table */}
@@ -1580,10 +1684,19 @@ function StocksWatchlistPanel() {
           </thead>
           <tbody>
             {filtered.map((row) => {
-              const up  = row.regularMarketChangePercent >= 0;
-              const sc  = SECTOR_COLORS[row.sector] ?? SECTOR_COLORS.Other;
-              const rangePct = row.fiftyTwoWeekHigh > row.fiftyTwoWeekLow
-                ? ((row.regularMarketPrice - row.fiftyTwoWeekLow) / (row.fiftyTwoWeekHigh - row.fiftyTwoWeekLow)) * 100
+              /* Use Finnhub live price if available, else Yahoo base */
+              const livePrice = liveTicks.get(row.symbol)?.price;
+              const price     = livePrice ?? row.regularMarketPrice;
+              const basePrice = row.regularMarketPrice;
+              /* Recalculate change against Yahoo's previousClose */
+              const prevClose = basePrice - row.regularMarketChange;
+              const chg       = price - prevClose;
+              const chgPct    = prevClose > 0 ? (chg / prevClose) * 100 : row.regularMarketChangePercent;
+              const up        = chgPct >= 0;
+              const sc        = SECTOR_COLORS[row.sector] ?? SECTOR_COLORS.Other;
+              const isLive    = !!livePrice;
+              const rangePct  = row.fiftyTwoWeekHigh > row.fiftyTwoWeekLow
+                ? ((price - row.fiftyTwoWeekLow) / (row.fiftyTwoWeekHigh - row.fiftyTwoWeekLow)) * 100
                 : 50;
               return (
                 <tr key={row.symbol} className="border-b border-[#1a1d1a]/60 hover:bg-[#ffffff05] transition-colors">
@@ -1602,7 +1715,10 @@ function StocksWatchlistPanel() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <p className="text-white font-bold font-mono tabular-nums text-[13px]">{fmtStockPrice(row.regularMarketPrice)}</p>
+                    <div className="flex items-center justify-end gap-1">
+                      {isLive && <span className="h-1.5 w-1.5 rounded-full bg-[#00c853] animate-pulse shrink-0" />}
+                      <p className="text-white font-bold font-mono tabular-nums text-[13px]">{fmtStockPrice(price)}</p>
+                    </div>
                     <div className="flex items-center justify-end gap-1 mt-0.5">
                       <div className="h-1 w-16 bg-[#1a1d1a] rounded-full overflow-hidden">
                         <div className="h-full bg-[#00c853]/40 rounded-full" style={{ width: `${Math.min(100, Math.max(0, rangePct))}%` }} />
@@ -1612,10 +1728,10 @@ function StocksWatchlistPanel() {
                   <td className="px-4 py-3 text-right">
                     <span className={cn("inline-flex items-center gap-0.5 font-bold text-[12px]", up ? "text-[#00c853]" : "text-[#f44336]")}>
                       {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      {up ? "+" : ""}{row.regularMarketChangePercent.toFixed(2)}%
+                      {up ? "+" : ""}{chgPct.toFixed(2)}%
                     </span>
                     <p className={cn("text-[10px] mt-0.5", up ? "text-[#00c853]/70" : "text-[#f44336]/70")}>
-                      {up ? "+" : ""}{fmtStockPrice(Math.abs(row.regularMarketChange))}
+                      {up ? "+" : ""}{fmtStockPrice(Math.abs(chg))}
                     </p>
                   </td>
                   <td className="px-3 py-3 text-right hidden sm:table-cell">
@@ -1628,7 +1744,7 @@ function StocksWatchlistPanel() {
           </tbody>
         </table>
         <div className="px-4 py-2 text-[10px] text-[#4b5563] text-center">
-          US equities · Refreshes every 5 min · Source: Yahoo Finance
+          US equities · Live via Finnhub WS · Base data: Yahoo Finance
         </div>
       </div>
     </div>

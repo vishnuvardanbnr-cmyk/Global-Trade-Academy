@@ -222,6 +222,13 @@ router.get("/market/prices", async (req, res): Promise<void> => {
   res.json(prices);
 });
 
+/* ── GET /api/market/finnhub-token ──────────────────────────────── */
+router.get("/market/finnhub-token", (_req, res): void => {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) { res.status(503).json({ error: "Finnhub not configured" }); return; }
+  res.json({ token: key });
+});
+
 /* ── GET /api/market/stocks ──────────────────────────────────────── */
 const STOCK_TICKERS = [
   "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","JPM","V",
