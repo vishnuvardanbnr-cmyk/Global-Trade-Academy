@@ -1167,8 +1167,11 @@ export default function CourseDetail() {
       {/* ── Two-column main area ──────────────────────────── */}
       <div className="flex-1 min-h-0 bg-slate-100 flex flex-col md:flex-row gap-3 p-3 overflow-y-auto md:overflow-hidden pb-20 md:pb-3">
 
-        {/* LEFT: player / quiz / task — takes remaining space */}
-        <div className="flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
+        {/* LEFT: player / quiz / task — takes remaining space; hidden on mobile when panel is open */}
+        <div className={cn(
+          "flex-1 min-w-0 flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10",
+          showTabPanel ? "hidden md:flex" : "flex",
+        )}>
 
           {activeLiveSession !== null ? (
             /* ── Jitsi live meeting in video area ── */
