@@ -160,18 +160,17 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
       }
     };
 
+    // Use `seeked` (not `seeking`) — fires once after the seek commits,
+    // so our currentTime override is honoured by both the browser and hls.js.
     let isProgrammaticSeek = false;
-    const onSeeking = () => {
-      if (isProgrammaticSeek) return;
+    const onSeeked = () => {
+      if (isProgrammaticSeek) {
+        isProgrammaticSeek = false; // our own correction landed — done
+        return;
+      }
       if (video.currentTime > maxWatchedRef.current + 0.5) {
         isProgrammaticSeek = true;
         video.currentTime = maxWatchedRef.current;
-        // Reset flag after the browser finishes the programmatic seek
-        const onSeeked = () => {
-          isProgrammaticSeek = false;
-          video.removeEventListener("seeked", onSeeked);
-        };
-        video.addEventListener("seeked", onSeeked);
         setBlocked(true);
         if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
         blockTimerRef.current = setTimeout(() => setBlocked(false), 2200);
@@ -180,11 +179,11 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
 
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("timeupdate", onTimeUpdate);
-    video.addEventListener("seeking", onSeeking);
+    video.addEventListener("seeked", onSeeked);
     return () => {
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("timeupdate", onTimeUpdate);
-      video.removeEventListener("seeking", onSeeking);
+      video.removeEventListener("seeked", onSeeked);
       if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
     };
   // videoRef is stable; url/lessonId trigger the outer effect
