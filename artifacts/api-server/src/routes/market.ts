@@ -337,8 +337,8 @@ interface IndexRow {
 
 const INDEX_META: { symbol: string; name: string; short: string; emoji: string }[] = [
   { symbol: "^GSPC", name: "S&P 500",          short: "SPX",  emoji: "🇺🇸" },
-  { symbol: "^IXIC", name: "NASDAQ Composite",  short: "COMP", emoji: "💻" },
-  { symbol: "^DJI",  name: "Dow Jones",         short: "DJIA", emoji: "🏛️"  },
+  { symbol: "^DJI",  name: "Dow Jones 30",      short: "DJIA", emoji: "🏛️"  },
+  { symbol: "^NDX",  name: "Nasdaq 100",        short: "NDX",  emoji: "💻" },
   { symbol: "^RUT",  name: "Russell 2000",      short: "RUT",  emoji: "📊" },
   { symbol: "^VIX",  name: "Volatility Index",  short: "VIX",  emoji: "⚡" },
 ];
