@@ -1235,15 +1235,18 @@ function EconomicCalendarPanel() {
                 {/* Stats grid */}
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Forecast", value: selected.forecast || "—" },
-                    { label: "Previous", value: selected.previous || "—" },
-                    { label: "Actual",   value: selected.actual   || "—" },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-[#13141a] rounded-xl border border-[#1a1d1a] px-3 py-3 text-center">
-                      <p className="text-[10px] text-[#4b5563] uppercase tracking-wider mb-1">{label}</p>
-                      <p className={cn("text-[15px] font-bold", value === "—" ? "text-[#4b5563]" : "text-white")}>{value}</p>
-                    </div>
-                  ))}
+                    { label: "Forecast", value: selected.forecast, emptyLabel: "N/A"      },
+                    { label: "Previous", value: selected.previous, emptyLabel: "N/A"      },
+                    { label: "Actual",   value: selected.actual,   emptyLabel: "Upcoming" },
+                  ].map(({ label, value, emptyLabel }) => {
+                    const display = value || emptyLabel;
+                    return (
+                      <div key={label} className="bg-[#13141a] rounded-xl border border-[#1a1d1a] px-3 py-3 text-center">
+                        <p className="text-[10px] text-[#4b5563] uppercase tracking-wider mb-1">{label}</p>
+                        <p className={cn("text-[14px] font-bold", value ? "text-white" : "text-[#4b5563]")}>{display}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1277,16 +1280,20 @@ function CalendarNewsPanel() {
     </div>
   );
 
-  /* Past events = date+time already passed; sort newest first */
+  /* Past DATA events only — skip speech/commentary events that have no numeric data */
   const now = new Date();
   const past = (data ?? [])
-    .filter(ev => parseFFDateTime(ev.date, ev.time) < now)
+    .filter(ev => {
+      if (parseFFDateTime(ev.date, ev.time) >= now) return false;
+      // Keep only events with at least forecast or previous (data releases, not speeches)
+      return ev.forecast || ev.previous || ev.actual;
+    })
     .sort((a, b) => parseFFDateTime(b.date, b.time).getTime() - parseFFDateTime(a.date, a.time).getTime());
 
   if (error || !past.length) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
       <AlertCircle className="h-5 w-5" />
-      <p className="text-sm">No released events yet this week</p>
+      <p className="text-sm">No released data events yet this week</p>
     </div>
   );
 
@@ -1353,16 +1360,26 @@ function CalendarNewsPanel() {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Forecast", value: selected.forecast || "—" },
-                    { label: "Previous", value: selected.previous || "—" },
-                    { label: "Actual",   value: selected.actual   || "—" },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-[#13141a] rounded-xl border border-[#1a1d1a] px-3 py-3 text-center">
-                      <p className="text-[10px] text-[#4b5563] uppercase tracking-wider mb-1">{label}</p>
-                      <p className={cn("text-[15px] font-bold", value === "—" ? "text-[#4b5563]" : "text-white")}>{value}</p>
-                    </div>
-                  ))}
+                    { label: "Forecast", value: selected.forecast, pending: false },
+                    { label: "Previous", value: selected.previous, pending: false },
+                    { label: "Actual",   value: selected.actual,   pending: true  },
+                  ].map(({ label, value, pending }) => {
+                    const isEmpty = !value;
+                    const display = isEmpty ? (pending ? "Pending" : "N/A") : value;
+                    return (
+                      <div key={label} className="bg-[#13141a] rounded-xl border border-[#1a1d1a] px-3 py-3 text-center">
+                        <p className="text-[10px] text-[#4b5563] uppercase tracking-wider mb-1">{label}</p>
+                        <p className={cn(
+                          "text-[14px] font-bold",
+                          !isEmpty ? "text-white" : pending ? "text-[#f59e0b]" : "text-[#4b5563]"
+                        )}>{display}</p>
+                      </div>
+                    );
+                  })}
                 </div>
+                <p className="text-[10px] text-[#4b5563] text-center -mt-1">
+                  Actual values are published by official sources after release
+                </p>
               </div>
             </div>
           </div>
