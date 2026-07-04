@@ -941,7 +941,7 @@ function fmtCalDate(d: string): string {
   return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
-/* Parse ForexFactory date "MM-DD-YYYY" + time "8:30am" → UTC Date (times are ET = UTC-4 in summer) */
+/* Parse ForexFactory date "MM-DD-YYYY" + time "8:30am" → UTC Date (FF times are US Eastern = UTC-4 EDT / UTC-5 EST) */
 function parseFFDateTime(date: string, time: string): Date {
   const [mo, dy, yr] = date.split("-").map(Number);
   const mm = String(mo).padStart(2, "0");
@@ -954,6 +954,29 @@ function parseFFDateTime(date: string, time: string): Date {
   if (ap === "pm" && h !== 12) h += 12;
   if (ap === "am" && h === 12) h = 0;
   return new Date(`${yr}-${mm}-${dd}T${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}:00-04:00`);
+}
+
+/* ── Malaysia Time (MYT = UTC+8) helpers ── */
+const MYT = "Asia/Kuala_Lumpur";
+
+/** Format a UTC Date as a MYT time string, e.g. "8:30 PM" */
+function toMYTTime(date: Date): string {
+  return date.toLocaleTimeString("en-US", { timeZone: MYT, hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+/** YYYY-MM-DD key for the date in MYT (for grouping) */
+function toMYTDateKey(date: Date): string {
+  return date.toLocaleDateString("en-CA", { timeZone: MYT });
+}
+
+/** Human label for a MYT date key: "Today", "Tomorrow", or "Mon, Jul 7" */
+function mytKeyToLabel(key: string): string {
+  const today    = new Date().toLocaleDateString("en-CA", { timeZone: MYT });
+  const tomorrow = new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA", { timeZone: MYT });
+  if (key === today)    return "Today";
+  if (key === tomorrow) return "Tomorrow";
+  const [y, mo, d] = key.split("-").map(Number);
+  return new Date(y, mo - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
 function timeAgo(dateStr: string): string {
@@ -1101,20 +1124,22 @@ function EconomicCalendarPanel() {
     </div>
   );
 
-  /* Only future events (date+time in ET not yet passed) */
+  /* Upcoming events within next 7 days (compared in UTC, displayed in MYT) */
   const now = new Date();
-  const upcoming = (data ?? []).filter(ev => parseFFDateTime(ev.date, ev.time) >= now);
+  const oneWeekLater = new Date(now.getTime() + 7 * 86_400_000);
+  const upcoming = (data ?? []).filter(ev => {
+    const t = parseFFDateTime(ev.date, ev.time);
+    return t >= now && t <= oneWeekLater;
+  });
 
-  /* Group by date string (MM-DD-YYYY), sorted ascending */
+  /* Group by MYT date key (YYYY-MM-DD in UTC+8), sorted ascending */
   const grouped: [string, CalendarEvent[]][] = Object.entries(
     upcoming.reduce<Record<string, CalendarEvent[]>>((acc, ev) => {
-      (acc[ev.date] ??= []).push(ev);
+      const key = toMYTDateKey(parseFFDateTime(ev.date, ev.time));
+      (acc[key] ??= []).push(ev);
       return acc;
     }, {})
-  ).sort(([a], [b]) => {
-    const parse = (s: string) => { const [m, d, y] = s.split("-").map(Number); return new Date(y, m-1, d).getTime(); };
-    return parse(a) - parse(b);
-  });
+  ).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <>
@@ -1124,7 +1149,7 @@ function EconomicCalendarPanel() {
             {/* Date header */}
             <div className="sticky top-0 z-10 px-4 py-2 bg-[#0a0a0a] border-b border-[#1a1d1a]">
               <span className="text-[11px] font-bold uppercase tracking-widest text-[#4b5563]">
-                {fmtCalDate(date)}
+                {mytKeyToLabel(date)}
               </span>
             </div>
 
@@ -1132,6 +1157,7 @@ function EconomicCalendarPanel() {
             {events.map(ev => {
               const cfg = IMPACT_CFG[ev.impact] ?? IMPACT_CFG.Low;
               const flag = COUNTRY_FLAGS[ev.country] ?? "🌐";
+              const evDate = parseFFDateTime(ev.date, ev.time);
               return (
                 <button
                   key={ev.id}
@@ -1141,9 +1167,9 @@ function EconomicCalendarPanel() {
                   {/* Impact stripe */}
                   <div className={cn("w-1 self-stretch rounded-full shrink-0", cfg.dot)} />
 
-                  {/* Time */}
-                  <span className="text-[11px] text-[#4b5563] w-[52px] shrink-0 font-mono">
-                    {ev.time || "—"}
+                  {/* Time in MYT */}
+                  <span className="text-[11px] text-[#4b5563] w-[60px] shrink-0 font-mono">
+                    {ev.time ? toMYTTime(evDate) : "—"}
                   </span>
 
                   {/* Currency */}
@@ -1168,7 +1194,7 @@ function EconomicCalendarPanel() {
 
         {/* Source note */}
         <div className="px-4 py-3 text-[10px] text-[#4b5563] text-center">
-          Times shown in ET · Source: ForexFactory
+          Times in MYT (UTC+8) · Source: ForexFactory
         </div>
       </div>
 
@@ -1202,7 +1228,7 @@ function EconomicCalendarPanel() {
                 <div>
                   <p className="text-white text-[16px] font-bold leading-snug">{selected.title}</p>
                   <p className="text-[#4b5563] text-[13px] mt-1">
-                    {flag} {selected.country} · {fmtCalDate(selected.date)} · {selected.time || "All Day"} ET
+                    {flag} {selected.country} · {mytKeyToLabel(toMYTDateKey(parseFFDateTime(selected.date, selected.time)))} · {selected.time ? toMYTTime(parseFFDateTime(selected.date, selected.time)) : "All Day"} MYT
                   </p>
                 </div>
 
@@ -1285,18 +1311,20 @@ function CalendarNewsPanel() {
               {/* Title */}
               <span className="flex-1 text-[12px] text-white group-hover:text-[#00c853] transition-colors leading-snug line-clamp-1">{ev.title}</span>
 
-              {/* Right side: impact badge + time */}
+              {/* Right side: impact badge + time in MYT */}
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", cfg.text, cfg.bg, cfg.border)}>
                   {cfg.label}
                 </span>
-                <span className="text-[10px] text-[#4b5563]">{fmtCalDate(ev.date)} {ev.time}</span>
+                <span className="text-[10px] text-[#4b5563]">
+                  {mytKeyToLabel(toMYTDateKey(parseFFDateTime(ev.date, ev.time)))} {ev.time ? toMYTTime(parseFFDateTime(ev.date, ev.time)) : ""}
+                </span>
               </div>
             </button>
           );
         })}
         <div className="px-4 py-3 text-[10px] text-[#4b5563] text-center">
-          Released this week · Times in ET · Source: ForexFactory
+          Released events · Times in MYT (UTC+8) · Source: ForexFactory
         </div>
       </div>
 
@@ -1321,7 +1349,7 @@ function CalendarNewsPanel() {
               <div className="px-5 py-5 flex flex-col gap-4">
                 <div>
                   <p className="text-white text-[16px] font-bold leading-snug">{selected.title}</p>
-                  <p className="text-[#4b5563] text-[13px] mt-1">{flag} {selected.country} · {fmtCalDate(selected.date)} · {selected.time || "All Day"} ET</p>
+                  <p className="text-[#4b5563] text-[13px] mt-1">{flag} {selected.country} · {mytKeyToLabel(toMYTDateKey(parseFFDateTime(selected.date, selected.time)))} · {selected.time ? toMYTTime(parseFFDateTime(selected.date, selected.time)) : "All Day"} MYT</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {[

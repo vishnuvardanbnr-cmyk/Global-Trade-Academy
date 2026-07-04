@@ -690,7 +690,7 @@ async function fetchEconomicCalendar(): Promise<CalendarEvent[]> {
 
 router.get("/market/economic-calendar", async (_req, res): Promise<void> => {
   try {
-    const cached = await dbCacheGet<CalendarEvent[]>("econ_calendar", 60 * 60_000);
+    const cached = await dbCacheGet<CalendarEvent[]>("econ_calendar", 15 * 60_000);
     if (cached) { res.json(cached); return; }
     const data = await fetchEconomicCalendar();
     await dbCacheSet("econ_calendar", data);
