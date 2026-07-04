@@ -160,9 +160,18 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
       }
     };
 
+    let isProgrammaticSeek = false;
     const onSeeking = () => {
+      if (isProgrammaticSeek) return;
       if (video.currentTime > maxWatchedRef.current + 0.5) {
+        isProgrammaticSeek = true;
         video.currentTime = maxWatchedRef.current;
+        // Reset flag after the browser finishes the programmatic seek
+        const onSeeked = () => {
+          isProgrammaticSeek = false;
+          video.removeEventListener("seeked", onSeeked);
+        };
+        video.addEventListener("seeked", onSeeked);
         setBlocked(true);
         if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
         blockTimerRef.current = setTimeout(() => setBlocked(false), 2200);
@@ -208,7 +217,6 @@ function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => vo
     // Safari handles HLS natively
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
-      video.play().catch(() => {});
       return;
     }
     if (!Hls.isSupported()) return;
@@ -243,7 +251,7 @@ function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => vo
     hls.attachMedia(video);
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      video.play().catch(() => {});
+      // Don't auto-play; user clicks the native play button
     });
 
     hls.on(Hls.Events.ERROR, (_evt, data) => {
@@ -274,7 +282,7 @@ function DirectVideoPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: 
   return (
     <div className="w-full aspect-video bg-black relative">
       <SeekBlockedOverlay visible={blocked} />
-      <video ref={videoRef} src={url} controls autoPlay className="w-full h-full" onEnded={onEnded}>
+      <video ref={videoRef} src={url} controls className="w-full h-full" onEnded={onEnded}>
         <source src={url} />
       </video>
     </div>
