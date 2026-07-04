@@ -222,7 +222,7 @@ router.get("/market/prices", async (req, res): Promise<void> => {
   res.json(prices);
 });
 
-/* ── GET /api/market/stocks — Stooq CSV (no API key, server-friendly) ── */
+/* ── GET /api/market/stocks ──────────────────────────────────────── */
 const STOCK_TICKERS = [
   "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","JPM","V",
   "WMT","XOM","UNH","LLY","JNJ","MA","NFLX","AMD","ORCL","COST",
@@ -239,58 +239,65 @@ const STOCK_NAMES: Record<string, string> = {
   CRM:"Salesforce", ADBE:"Adobe", MU:"Micron", PANW:"Palo Alto", AMAT:"Applied Materials",
 };
 
+const STOCK_SECTORS: Record<string, string> = {
+  AAPL:"Tech", MSFT:"Tech", NVDA:"Tech", GOOGL:"Tech", AMZN:"Tech",
+  META:"Tech", TSLA:"Auto", AVGO:"Tech", NFLX:"Tech", AMD:"Tech",
+  ORCL:"Tech", INTC:"Tech", QCOM:"Tech", TXN:"Tech", CRM:"Tech",
+  ADBE:"Tech", MU:"Tech", PANW:"Tech", AMAT:"Tech",
+  JPM:"Finance", V:"Finance", MA:"Finance", PYPL:"Finance",
+  WMT:"Retail", COST:"Retail",
+  XOM:"Energy",
+  UNH:"Health", LLY:"Health", JNJ:"Health",
+  UBER:"Transport",
+};
+
 interface StockRow {
-  symbol: string; shortName: string;
+  symbol: string; shortName: string; sector: string;
   regularMarketPrice: number; regularMarketChange: number;
-  regularMarketChangePercent: number; marketCap: number;
+  regularMarketChangePercent: number;
   regularMarketVolume: number; regularMarketDayHigh: number; regularMarketDayLow: number;
+  fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
 }
 
-/** Fetch one stock via Yahoo Finance /v8/finance/chart (works from VPS). */
+const YF_CHART_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "Accept": "application/json",
+};
+
+/** Fetch one quote via Yahoo Finance v8 chart. */
 async function fetchYahooChart(symbol: string): Promise<StockRow | null> {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`;
-  const r = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      "Accept": "application/json",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`;
+  const r = await fetch(url, { headers: YF_CHART_HEADERS, signal: AbortSignal.timeout(10_000) });
   if (!r.ok) return null;
   const json = (await r.json()) as {
-    chart?: {
-      result?: Array<{
-        meta?: {
-          regularMarketPrice?: number;
-          previousClose?: number;
-          regularMarketDayHigh?: number;
-          regularMarketDayLow?: number;
-          regularMarketVolume?: number;
-          marketCap?: number;
-        };
-      }>;
-    };
+    chart?: { result?: Array<{ meta?: {
+      regularMarketPrice?: number; chartPreviousClose?: number;
+      regularMarketDayHigh?: number; regularMarketDayLow?: number;
+      regularMarketVolume?: number;
+      fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number;
+    } }> };
   };
   const meta = json?.chart?.result?.[0]?.meta;
   if (!meta?.regularMarketPrice) return null;
   const price = meta.regularMarketPrice;
-  const prev  = meta.previousClose ?? price;
+  const prev  = meta.chartPreviousClose ?? price;
   const chg   = price - prev;
   const pct   = prev > 0 ? (chg / prev) * 100 : 0;
   return {
     symbol,
     shortName: STOCK_NAMES[symbol] ?? symbol,
+    sector: STOCK_SECTORS[symbol] ?? "Other",
     regularMarketPrice: price,
     regularMarketChange: chg,
     regularMarketChangePercent: pct,
-    marketCap: meta.marketCap ?? 0,
     regularMarketVolume: meta.regularMarketVolume ?? 0,
     regularMarketDayHigh: meta.regularMarketDayHigh ?? price,
     regularMarketDayLow:  meta.regularMarketDayLow  ?? price,
+    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? price,
+    fiftyTwoWeekLow:  meta.fiftyTwoWeekLow  ?? price,
   };
 }
 
-/** Fetch all stocks in parallel batches of 8 to avoid rate limits. */
 async function fetchAllStocks(): Promise<StockRow[]> {
   const BATCH = 8;
   const results: StockRow[] = [];
@@ -318,6 +325,56 @@ router.get("/market/stocks", async (_req, res): Promise<void> => {
   } catch (err) {
     if (_stocksCache) { res.json(_stocksCache.data); return; }
     res.status(502).json({ error: "Stock data unavailable", detail: String(err) });
+  }
+});
+
+/* ── GET /api/market/indices ─────────────────────────────────────── */
+interface IndexRow {
+  symbol: string; name: string; short: string; emoji: string;
+  price: number; change: number; changePct: number;
+  dayHigh: number; dayLow: number;
+}
+
+const INDEX_META: { symbol: string; name: string; short: string; emoji: string }[] = [
+  { symbol: "^GSPC", name: "S&P 500",          short: "SPX",  emoji: "🇺🇸" },
+  { symbol: "^IXIC", name: "NASDAQ Composite",  short: "COMP", emoji: "💻" },
+  { symbol: "^DJI",  name: "Dow Jones",         short: "DJIA", emoji: "🏛️"  },
+  { symbol: "^RUT",  name: "Russell 2000",      short: "RUT",  emoji: "📊" },
+  { symbol: "^VIX",  name: "Volatility Index",  short: "VIX",  emoji: "⚡" },
+];
+
+async function fetchAllIndices(): Promise<IndexRow[]> {
+  const results = await Promise.allSettled(
+    INDEX_META.map(async (m) => {
+      const row = await fetchYahooChart(m.symbol);
+      if (!row) return null;
+      return {
+        symbol: m.symbol, name: m.name, short: m.short, emoji: m.emoji,
+        price: row.regularMarketPrice,
+        change: row.regularMarketChange,
+        changePct: row.regularMarketChangePercent,
+        dayHigh: row.regularMarketDayHigh,
+        dayLow:  row.regularMarketDayLow,
+      } satisfies IndexRow;
+    }),
+  );
+  return results.flatMap(r => (r.status === "fulfilled" && r.value ? [r.value] : []));
+}
+
+let _indicesCache: { ts: number; data: IndexRow[] } | null = null;
+
+router.get("/market/indices", async (_req, res): Promise<void> => {
+  if (_indicesCache && Date.now() - _indicesCache.ts < 5 * 60_000) {
+    res.json(_indicesCache.data); return;
+  }
+  try {
+    const data = await fetchAllIndices();
+    if (data.length === 0) throw new Error("No index data");
+    _indicesCache = { ts: Date.now(), data };
+    res.json(data);
+  } catch (err) {
+    if (_indicesCache) { res.json(_indicesCache.data); return; }
+    res.status(502).json({ error: "Index data unavailable", detail: String(err) });
   }
 });
 

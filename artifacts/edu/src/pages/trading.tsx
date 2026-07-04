@@ -37,6 +37,7 @@ interface NewListing {
 interface OverviewData { coins: CoinData[]; global: GlobalData; newListings: NewListing[]; }
 type Timeframe = "1H" | "1D" | "1W" | "1M" | "1Y";
 type MainCategory = "crypto" | "forex" | "commodities" | "stocks";
+type StocksTab    = "watchlist" | "indices";
 type CryptoTab = "bubble" | "gainers" | "losers" | "new";
 type ForexTab = "pairs" | "news" | "upcoming";
 type CommoditiesTab = "pairs" | "news" | "upcoming";
@@ -1487,6 +1488,244 @@ function CalendarNewsPanel() {
 }
 
 /* ─────────────────────────────────────────
+   Stocks — Watchlist Panel
+───────────────────────────────────────── */
+interface StockRow {
+  symbol: string; shortName: string; sector: string;
+  regularMarketPrice: number; regularMarketChange: number;
+  regularMarketChangePercent: number;
+  regularMarketVolume: number; regularMarketDayHigh: number; regularMarketDayLow: number;
+  fiftyTwoWeekHigh: number; fiftyTwoWeekLow: number;
+}
+
+const SECTOR_COLORS: Record<string, string> = {
+  Tech:      "text-[#60a5fa] bg-[#60a5fa]/10 border-[#60a5fa]/20",
+  Finance:   "text-[#34d399] bg-[#34d399]/10 border-[#34d399]/20",
+  Health:    "text-[#f472b6] bg-[#f472b6]/10 border-[#f472b6]/20",
+  Energy:    "text-[#fb923c] bg-[#fb923c]/10 border-[#fb923c]/20",
+  Retail:    "text-[#a78bfa] bg-[#a78bfa]/10 border-[#a78bfa]/20",
+  Auto:      "text-[#2dd4bf] bg-[#2dd4bf]/10 border-[#2dd4bf]/20",
+  Transport: "text-[#818cf8] bg-[#818cf8]/10 border-[#818cf8]/20",
+  Other:     "text-[#9ca3af] bg-[#9ca3af]/10 border-[#9ca3af]/20",
+};
+
+function fmtVol(n: number): string {
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "B";
+  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)         return (n / 1_000).toFixed(0) + "K";
+  return String(n);
+}
+function fmtStockPrice(n: number): string {
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const ALL_SECTORS = ["All", "Tech", "Finance", "Health", "Energy", "Retail", "Auto", "Transport"];
+
+function StocksWatchlistPanel() {
+  const [sector, setSector] = useState("All");
+
+  const { data, isLoading, error } = useQuery<StockRow[]>({
+    queryKey: ["stocks"],
+    queryFn: async ({ signal }) => {
+      const r = await fetch("/api/market/stocks", { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
+    </div>
+  );
+  if (error || !data?.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">Stock data unavailable</p>
+    </div>
+  );
+
+  const filtered = sector === "All" ? data : data.filter(s => s.sector === sector);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Sector filter chips */}
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#1a1d1a] overflow-x-auto scrollbar-hide shrink-0">
+        {ALL_SECTORS.filter(s => s === "All" || data.some(r => r.sector === s)).map(s => (
+          <button
+            key={s}
+            onClick={() => setSector(s)}
+            className={cn(
+              "px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 border transition-all",
+              sector === s
+                ? "bg-[#00c853]/15 text-[#00c853] border-[#00c853]/40"
+                : "text-[#4b5563] border-[#1a1d1a] hover:text-[#9ca3af] bg-transparent",
+            )}
+          >{s}</button>
+        ))}
+      </div>
+
+      {/* Stock table */}
+      <div className="flex-1 overflow-y-auto">
+        <table className="w-full text-[12px] border-collapse">
+          <thead>
+            <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#4b5563] border-b border-[#1a1d1a] sticky top-0 bg-[#0a0a0a]">
+              <th className="text-left px-4 py-2.5">Stock</th>
+              <th className="text-right px-4 py-2.5">Price</th>
+              <th className="text-right px-4 py-2.5">Change</th>
+              <th className="text-right px-3 py-2.5 hidden sm:table-cell">Volume</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((row) => {
+              const up  = row.regularMarketChangePercent >= 0;
+              const sc  = SECTOR_COLORS[row.sector] ?? SECTOR_COLORS.Other;
+              const rangePct = row.fiftyTwoWeekHigh > row.fiftyTwoWeekLow
+                ? ((row.regularMarketPrice - row.fiftyTwoWeekLow) / (row.fiftyTwoWeekHigh - row.fiftyTwoWeekLow)) * 100
+                : 50;
+              return (
+                <tr key={row.symbol} className="border-b border-[#1a1d1a]/60 hover:bg-[#ffffff05] transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#13141a] border border-[#1a1d1a] flex items-center justify-center shrink-0">
+                        <span className="text-[10px] font-black text-white leading-none">{row.symbol.slice(0, 2)}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white font-bold text-[13px]">{row.symbol}</span>
+                          <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full border", sc)}>{row.sector}</span>
+                        </div>
+                        <p className="text-[#4b5563] text-[11px] truncate">{row.shortName}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <p className="text-white font-bold font-mono tabular-nums text-[13px]">{fmtStockPrice(row.regularMarketPrice)}</p>
+                    <div className="flex items-center justify-end gap-1 mt-0.5">
+                      <div className="h-1 w-16 bg-[#1a1d1a] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#00c853]/40 rounded-full" style={{ width: `${Math.min(100, Math.max(0, rangePct))}%` }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={cn("inline-flex items-center gap-0.5 font-bold text-[12px]", up ? "text-[#00c853]" : "text-[#f44336]")}>
+                      {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      {up ? "+" : ""}{row.regularMarketChangePercent.toFixed(2)}%
+                    </span>
+                    <p className={cn("text-[10px] mt-0.5", up ? "text-[#00c853]/70" : "text-[#f44336]/70")}>
+                      {up ? "+" : ""}{fmtStockPrice(Math.abs(row.regularMarketChange))}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3 text-right hidden sm:table-cell">
+                    <p className="text-[#9ca3af] text-[11px] font-mono">{fmtVol(row.regularMarketVolume)}</p>
+                    <p className="text-[#4b5563] text-[10px]">Vol</p>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="px-4 py-2 text-[10px] text-[#4b5563] text-center">
+          US equities · Refreshes every 5 min · Source: Yahoo Finance
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   Stocks — Indices Panel
+───────────────────────────────────────── */
+interface IndexRow {
+  symbol: string; name: string; short: string; emoji: string;
+  price: number; change: number; changePct: number;
+  dayHigh: number; dayLow: number;
+}
+
+function fmtIndexPrice(n: number): string {
+  if (n >= 10_000) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (n >= 1_000)  return n.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  return n.toFixed(2);
+}
+
+function StocksIndicesPanel() {
+  const { data, isLoading, error } = useQuery<IndexRow[]>({
+    queryKey: ["indices"],
+    queryFn: async ({ signal }) => {
+      const r = await fetch("/api/market/indices", { signal });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <RefreshCw className="h-5 w-5 text-[#4b5563] animate-spin" />
+    </div>
+  );
+  if (error || !data?.length) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[#4b5563]">
+      <AlertCircle className="h-5 w-5" />
+      <p className="text-sm">Index data unavailable</p>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+      {data.map((row) => {
+        const up = row.changePct >= 0;
+        const rangePct = row.dayHigh > row.dayLow
+          ? ((row.price - row.dayLow) / (row.dayHigh - row.dayLow)) * 100
+          : 50;
+        return (
+          <div key={row.symbol} className="bg-[#0d0e13] rounded-xl border border-[#1a1d1a] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl leading-none">{row.emoji}</span>
+                <div>
+                  <p className="text-white font-bold text-[15px]">{row.name}</p>
+                  <p className="text-[#4b5563] text-[11px]">{row.short}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-white font-bold font-mono text-[18px] tabular-nums">{fmtIndexPrice(row.price)}</p>
+                <span className={cn("inline-flex items-center gap-1 font-bold text-[13px]", up ? "text-[#00c853]" : "text-[#f44336]")}>
+                  {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                  {up ? "+" : ""}{row.changePct.toFixed(2)}%
+                  <span className="text-[11px] font-normal ml-0.5">({up ? "+" : ""}{fmtIndexPrice(Math.abs(row.change))})</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Day range bar */}
+            <div className="mt-3">
+              <div className="flex justify-between text-[10px] text-[#4b5563] mb-1">
+                <span>L {fmtIndexPrice(row.dayLow)}</span>
+                <span>Day Range</span>
+                <span>H {fmtIndexPrice(row.dayHigh)}</span>
+              </div>
+              <div className="h-1.5 bg-[#1a1d1a] rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full", up ? "bg-[#00c853]/50" : "bg-[#f44336]/50")}
+                  style={{ width: `${Math.min(100, Math.max(2, rangePct))}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <div className="px-4 py-2 text-[10px] text-[#4b5563] text-center">
+        US market indices · Refreshes every 5 min · Source: Yahoo Finance
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
    Coming Soon
 ───────────────────────────────────────── */
 function ComingSoon({ label }: { label: string }) {
@@ -1523,6 +1762,7 @@ export default function Trading() {
   const [cryptoTab,      setCryptoTab]      = useState<CryptoTab>("bubble");
   const [forexTab,       setForexTab]       = useState<ForexTab>("pairs");
   const [commoditiesTab, setCommoditiesTab] = useState<CommoditiesTab>("pairs");
+  const [stocksTab,      setStocksTab]      = useState<StocksTab>("watchlist");
   const [tf, setTf]                         = useState<Timeframe>("1D");
 
   const { data: overview, isLoading: ovLoading, refetch } = useQuery<OverviewData>({
@@ -1612,6 +1852,27 @@ export default function Trading() {
         </div>
       )}
 
+      {/* ── Stocks sub-tabs ── */}
+      {category === "stocks" && (
+        <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
+          {([
+            { key: "watchlist" as const, label: "Watchlist", icon: "📈" },
+            { key: "indices"   as const, label: "Indices",   icon: "📊" },
+          ] satisfies { key: StocksTab; label: string; icon: string }[]).map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setStocksTab(key)}
+              className={cn(
+                "flex items-center gap-2 px-5 py-2.5 border-b-2 shrink-0 text-[12px] font-semibold transition-all",
+                stocksTab === key ? "border-[#00c853] text-white bg-[#00c853]/5" : "border-transparent text-[#4b5563] hover:text-[#9ca3af]",
+              )}
+            >
+              <span>{icon}</span>{label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Commodities sub-tabs ── */}
       {category === "commodities" && (
         <div className="flex items-center border-b border-[#1a1d1a] bg-[#0d0e13] shrink-0 overflow-x-auto scrollbar-hide">
@@ -1673,7 +1934,8 @@ export default function Trading() {
         {category === "commodities" && commoditiesTab === "pairs"    && <CommoditiesPairsPanel />}
         {category === "commodities" && commoditiesTab === "news"     && <CalendarNewsPanel />}
         {category === "commodities" && commoditiesTab === "upcoming" && <EconomicCalendarPanel />}
-        {category === "stocks" && <ComingSoon label="US & Global Stocks" />}
+        {category === "stocks" && stocksTab === "watchlist" && <StocksWatchlistPanel />}
+        {category === "stocks" && stocksTab === "indices"   && <StocksIndicesPanel />}
       </div>
     </div>
   );
