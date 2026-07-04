@@ -1170,7 +1170,7 @@ export default function CourseDetail() {
         {/* LEFT: player / quiz / task — takes remaining space; hidden on mobile when panel is open */}
         <div className={cn(
           "flex-1 min-w-0 flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10",
-          (showTabPanel && (tab === "overview" || tab === "content")) ? "hidden md:flex" : "flex",
+          showTabPanel ? "hidden md:flex" : "flex",
         )}>
 
           {activeLiveSession !== null ? (
