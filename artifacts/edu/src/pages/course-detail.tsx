@@ -1864,7 +1864,7 @@ export default function CourseDetail() {
                         const showDrip = dripDaysLeft !== null && dripDaysLeft > 0;
                         return (
                           <button key={l.id} disabled={locked}
-                            onClick={() => { setActiveIdx(idx); setTab("overview"); }}
+                            onClick={() => { setActiveIdx(idx); setTab("overview"); setLearningStarted(true); }}
                             className={cn(
                               "w-full flex items-start gap-3 pl-4 pr-4 py-2.5 text-left transition-all",
                               isActive
