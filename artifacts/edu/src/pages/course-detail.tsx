@@ -1313,33 +1313,39 @@ export default function CourseDetail() {
                   )}
                 </button>
               ))}
-              {/* Mobile-only: Course Content shortcut */}
-              <button
-                onClick={() => setTab(tab === "content" ? "overview" : "content")}
-                className={cn(
-                  "md:hidden flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-semibold transition-all whitespace-nowrap",
-                  tab === "content"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100",
-                )}>
-                <ListTodo className="h-3.5 w-3.5" />
-                Content
-              </button>
             </div>
           </div>
 
         </div>
 
-        {/* RIGHT: Overview panel */}
-        {showTabPanel && tab === "overview" && (
+        {/* RIGHT: Overview / Course Content panel */}
+        {showTabPanel && (tab === "overview" || tab === "content") && (
         <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden md:max-h-none">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
-            <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">Overview</span>
+          <div className="flex items-center gap-1 px-3 py-2.5 border-b border-slate-100 shrink-0 bg-slate-50">
+            <button
+              onClick={() => setTab("overview")}
+              className={cn(
+                "flex-1 py-1.5 rounded-lg text-[12px] font-bold tracking-wide uppercase transition-all",
+                tab === "overview" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100",
+              )}>
+              Overview
+            </button>
+            <button
+              onClick={() => setTab("content")}
+              className={cn(
+                "flex-1 py-1.5 rounded-lg text-[12px] font-bold tracking-wide uppercase transition-all",
+                tab === "content" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100",
+              )}>
+              Content
+            </button>
             <button onClick={() => setShowTabPanel(false)}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Overview-only content: thumbnail + course info */}
+          {tab === "overview" && (<>
 
           {/* Course thumbnail — hidden once learning starts */}
           {course.thumbnailUrl && !learningStarted && (
@@ -1443,6 +1449,8 @@ export default function CourseDetail() {
               </div>
             )}
           </div>
+
+          </>)}
 
           {/* Curriculum header */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
@@ -1548,93 +1556,6 @@ export default function CourseDetail() {
             })}
           </div>
         </div>
-        )}
-
-        {/* RIGHT: Course Content panel (mobile shortcut — no thumbnail/price) */}
-        {tab === "content" && (
-          <div className="md:hidden w-full flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden max-h-[60vh]">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
-              <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">Course Content</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium text-slate-400 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{totalL} lessons</span>
-                <button onClick={() => setTab("overview")}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {chapterGroups.length === 0 && (
-                <p className="px-5 py-8 text-[12px] text-slate-400 text-center">Curriculum coming soon…</p>
-              )}
-              {chapterGroups.map((ch, ci) => {
-                const open = expanded === ch.id;
-                const chLessonsDone = ch.lessons.filter((l) => completedSet.has(l.id)).length;
-                const chDone = ch.lessons.length > 0 && chLessonsDone === ch.lessons.length;
-                return (
-                  <div key={ch.id} className="border-b border-slate-100 last:border-0">
-                    <button onClick={() => setExpanded(open ? -1 : ch.id)}
-                      className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left">
-                      <div className={cn(
-                        "w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-extrabold shrink-0",
-                        chDone ? "bg-emerald-100 text-emerald-700" : open ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500",
-                      )}>
-                        {chDone ? <CheckCheck className="h-3.5 w-3.5" /> : ci + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12.5px] font-semibold text-slate-800 truncate leading-snug">{ch.title}</p>
-                        <p className="text-[10.5px] text-slate-400 mt-0.5">
-                          {ch.lessons.length} lessons · {ch.dur}
-                          {chLessonsDone > 0 && ` · ${chLessonsDone}/${ch.lessons.length} done`}
-                        </p>
-                      </div>
-                      {open ? <ChevronUp className="h-3.5 w-3.5 text-blue-400 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-300 shrink-0" />}
-                    </button>
-                    {open && (
-                      <div className="bg-slate-50/60">
-                        {ch.lessons.map((l) => {
-                          const idx = dbLessons.findIndex((dl) => dl.id === l.id);
-                          const isDone = completedSet.has(l.id);
-                          const isActive = cur?.id === l.id;
-                          const locked = lessonLocked(l);
-                          const LessonIcon = l.type === "article" ? FileText : l.type === "quiz" ? FileQuestion : PlayCircle;
-                          return (
-                            <button key={l.id} disabled={locked}
-                              onClick={() => { setActiveIdx(idx); setTab("overview"); }}
-                              className={cn(
-                                "w-full flex items-start gap-3 pl-[52px] pr-4 py-2.5 text-left transition-all",
-                                isActive ? "bg-blue-600 text-white" : "hover:bg-white/80",
-                                locked && "opacity-40 cursor-not-allowed",
-                              )}>
-                              <div className="shrink-0 mt-0.5">
-                                {locked ? <Lock className="h-3 w-3 text-slate-400" />
-                                  : isDone ? <CheckCircle2 className={cn("h-3.5 w-3.5", isActive ? "text-white/80" : "text-emerald-500")} />
-                                  : <LessonIcon className={cn("h-3.5 w-3.5", isActive ? "text-white/80" : "text-slate-400")} />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <span className={cn(
-                                  "block text-[12px] leading-snug truncate",
-                                  isActive ? "text-white font-semibold" : isDone ? "text-slate-400" : "text-slate-700",
-                                )}>{l.title}</span>
-                              </div>
-                              {l.isFree && !isEnrolled && (
-                                <span className="text-[9.5px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0 mt-0.5">FREE</span>
-                              )}
-                              {l.duration && (
-                                <span className={cn("text-[10.5px] shrink-0 tabular-nums mt-0.5", isActive ? "text-white/60" : "text-slate-400")}>
-                                  {l.duration}m
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         )}
 
         {/* RIGHT: Live chat panel when in a live session */}
