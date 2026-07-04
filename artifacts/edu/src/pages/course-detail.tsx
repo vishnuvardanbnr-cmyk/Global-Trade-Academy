@@ -1521,7 +1521,7 @@ export default function CourseDetail() {
                           <button key={l.id} disabled={locked}
                             onClick={() => { setActiveIdx(idx); setTab("overview"); }}
                             className={cn(
-                              "w-full flex items-start gap-3 pl-[52px] pr-4 py-2.5 text-left transition-all",
+                              "w-full flex items-start gap-3 pl-4 pr-4 py-2.5 text-left transition-all",
                               isActive
                                 ? "bg-blue-600 text-white"
                                 : "hover:bg-white/80",
