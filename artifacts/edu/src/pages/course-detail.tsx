@@ -200,16 +200,17 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
 
 /* ─── Custom video controls overlay (locked progress bar) ────────── */
 function VideoControls({
-  videoRef, maxWatched, maxWatchedRef, duration, blocked,
+  videoRef, maxWatched, maxWatchedRef, duration, blocked, playable = true,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   maxWatched: number; maxWatchedRef: React.RefObject<number>;
-  duration: number; blocked: boolean;
+  duration: number; blocked: boolean; playable?: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [showEnrollPrompt, setShowEnrollPrompt] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -230,6 +231,11 @@ function VideoControls({
   }, []);
 
   const togglePlay = () => {
+    if (!playable) {
+      setShowEnrollPrompt(true);
+      setTimeout(() => setShowEnrollPrompt(false), 2000);
+      return;
+    }
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) v.play().catch(() => {}); else v.pause();
@@ -276,8 +282,16 @@ function VideoControls({
       {/* Seek-blocked toast */}
       <SeekBlockedOverlay visible={blocked} />
 
+      {/* Enroll-to-watch prompt */}
+      <div className={`absolute inset-x-0 top-3 flex justify-center pointer-events-none z-10 transition-all duration-300 ${showEnrollPrompt ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"}`}>
+        <div className="flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white text-[12px] font-semibold px-4 py-2 rounded-full border border-white/10 shadow-xl">
+          <Lock className="h-3.5 w-3.5 text-amber-400" />
+          Enroll to watch this lesson
+        </div>
+      </div>
+
       {/* Click-to-play / pause overlay (center area) */}
-      <div className="flex-1 cursor-pointer" onClick={togglePlay} />
+      <div className={`flex-1 ${playable ? "cursor-pointer" : "cursor-not-allowed"}`} onClick={togglePlay} />
 
       {/* Bottom controls bar */}
       <div className={`absolute inset-x-0 bottom-0 px-3 pb-3 pt-10 bg-gradient-to-t from-black/90 to-transparent transition-opacity duration-300 ${showControls || !playing ? "opacity-100" : "opacity-0"}`}>
@@ -337,7 +351,7 @@ function SeekBlockedOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => void; lessonId?: number }) {
+function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId);
 
@@ -400,13 +414,13 @@ function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => vo
   return (
     <div className="w-full aspect-video bg-black relative overflow-hidden">
       <video ref={videoRef} className="w-full h-full" onEnded={onEnded} />
-      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} />
+      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} />
     </div>
   );
 }
 
 /* ─── Direct MP4 / blob player with seek guard ───────────────────── */
-function DirectVideoPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => void; lessonId?: number }) {
+function DirectVideoPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId);
 
@@ -415,7 +429,7 @@ function DirectVideoPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: 
       <video ref={videoRef} src={url} className="w-full h-full" onEnded={onEnded}>
         <source src={url} />
       </video>
-      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} />
+      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} />
     </div>
   );
 }
@@ -805,9 +819,9 @@ function VimeoPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => vo
 
 /* ─── Master smart VideoPlayer ─────────────────────────────────── */
 function VideoPlayer({
-  url, title, lessonType, duration, onEnded, lessonId,
+  url, title, lessonType, duration, onEnded, lessonId, playable = true,
 }: {
-  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void; lessonId?: number;
+  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void; lessonId?: number; playable?: boolean;
 }) {
   if (!url) {
     const isArticle = lessonType === "article";
@@ -855,10 +869,10 @@ function VideoPlayer({
   const vimeoId = extractVimeoId(url);
   if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
 
-  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
+  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
 
   if (isDirectVideo(url)) {
-    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
+    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
   }
 
   const bunnyUrl = extractBunnyEmbedUrl(url);
@@ -1460,6 +1474,7 @@ export default function CourseDetail() {
               duration={cur?.duration}
               onEnded={isEnrolled ? onVideoEnded : undefined}
               lessonId={cur?.id}
+              playable={isEnrolled || !!cur?.isFree}
             />
           </div>
 
