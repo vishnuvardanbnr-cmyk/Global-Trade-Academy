@@ -1167,11 +1167,8 @@ export default function CourseDetail() {
       {/* ── Two-column main area ──────────────────────────── */}
       <div className="flex-1 min-h-0 bg-slate-100 flex flex-col md:flex-row gap-3 p-3 overflow-y-auto md:overflow-hidden pb-20 md:pb-3">
 
-        {/* LEFT: player / quiz / task — takes remaining space; hidden on mobile when panel is open */}
-        <div className={cn(
-          "flex-1 min-w-0 flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10",
-          showTabPanel ? "hidden md:flex" : "flex",
-        )}>
+        {/* LEFT: player / quiz / task — natural height on mobile, flex-1 on desktop */}
+        <div className="w-full md:flex-1 min-w-0 flex flex-col bg-slate-950 rounded-2xl overflow-hidden shadow-sm ring-1 ring-black/10">
 
           {activeLiveSession !== null ? (
             /* ── Jitsi live meeting in video area ── */
@@ -1202,8 +1199,8 @@ export default function CourseDetail() {
             </div>
           ) : (
             <>
-          {/* Video player — hidden on mobile when panel is open */}
-          <div className={cn("w-full", showTabPanel && "hidden md:block")}>
+          {/* Video player */}
+          <div className="w-full">
             <VideoPlayer
               url={cur?.videoUrl}
               title={cur?.title}
@@ -1220,7 +1217,6 @@ export default function CourseDetail() {
               curDone
                 ? "bg-emerald-500 text-white"
                 : "bg-slate-800 text-white/40",
-              showTabPanel && "hidden md:flex",
             )}>
               {curDone
                 ? <><CheckCircle2 className="h-4 w-4 shrink-0" /> Lesson completed — great work!</>
