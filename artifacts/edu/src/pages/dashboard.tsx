@@ -227,9 +227,9 @@ export default function Dashboard() {
       </div>
 
       {/* Learning Progress + Side Panel */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {/* My Courses */}
-        <Card className="lg:col-span-2 shadow-xs border-border">
+        <Card className="md:col-span-2 shadow-xs border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base font-semibold">My Courses</CardTitle>
             <Link href="/courses">
@@ -419,7 +419,7 @@ export default function Dashboard() {
       </div>
 
       {/* Upcoming Events + Activity */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {/* Upcoming Events */}
         <Card className="shadow-xs border-border flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -459,7 +459,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Activity feed — real from DB */}
-        <Card className="lg:col-span-2 shadow-xs border-border">
+        <Card className="md:col-span-2 shadow-xs border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base font-semibold">Platform Activity</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
