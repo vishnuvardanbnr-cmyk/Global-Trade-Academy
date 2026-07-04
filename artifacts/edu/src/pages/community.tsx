@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { cn } from "@/lib/utils";
 import {
   Heart, MessageCircle, Plus, Hash, BookOpen, Users,
-  Trash2, Send, ImageIcon, X,
+  Trash2, Send, ImageIcon, X, ArrowLeft,
 } from "lucide-react";
 
 function formatTime(d: string | Date) {
@@ -38,15 +38,16 @@ function accessIcon(ch: CommunityChannel) {
 
 /* ── Channel Sidebar ──────────────────────────────────────────── */
 function ChannelSidebar({
-  channels, active, onSelect, loading,
+  channels, active, onSelect, loading, className,
 }: {
   channels: CommunityChannel[];
   active: CommunityChannel | null;
   onSelect: (ch: CommunityChannel) => void;
   loading: boolean;
+  className?: string;
 }) {
   return (
-    <div className="w-56 shrink-0 flex flex-col bg-muted/40 border-r border-border rounded-l-xl overflow-hidden">
+    <div className={cn("shrink-0 flex flex-col bg-muted/40 border-r border-border overflow-hidden w-full md:w-56 md:rounded-l-xl", className)}>
       <div className="px-3 py-3 border-b border-border/60">
         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Channels</p>
       </div>
@@ -416,12 +417,14 @@ function ChatBar({ channel, onSent }: { channel: CommunityChannel; onSent: () =>
 
 /* ── Channel Feed ─────────────────────────────────────────────── */
 function ChannelFeed({
-  channel, canPost, userId, userRole,
+  channel, canPost, userId, userRole, onBack, className,
 }: {
   channel: CommunityChannel;
   canPost: boolean;
   userId: string;
   userRole: string;
+  onBack?: () => void;
+  className?: string;
 }) {
   const qc = useQueryClient();
   const [composerOpen, setComposerOpen] = useState(false);
@@ -460,10 +463,15 @@ function ChannelFeed({
   const allPosts = posts ?? [];
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+    <div className={cn("flex-1 flex flex-col min-h-0 overflow-hidden", className)}>
       {/* Channel header */}
-      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-white/80 backdrop-blur shrink-0">
+      <div className="px-4 py-3.5 border-b border-border flex items-center justify-between bg-white/80 backdrop-blur shrink-0">
         <div className="flex items-center gap-2.5">
+          {onBack && (
+            <button onClick={onBack} className="md:hidden mr-1 p-1 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          )}
           <span className="text-xl">{channel.emoji}</span>
           <div>
             <h2 className="font-semibold text-base text-foreground leading-none">{channel.name}</h2>
@@ -540,6 +548,7 @@ function ChannelFeed({
 /* ── Main Community Page ──────────────────────────────────────── */
 export default function Community() {
   const [activeChannel, setActiveChannel] = useState<CommunityChannel | null>(null);
+  const [mobileView, setMobileView] = useState<"channels" | "feed">("channels");
   const { data: me } = useGetMe();
   const { data: channels, isLoading: channelsLoading } = useListChannels({
     query: { queryKey: getListChannelsQueryKey() },
@@ -549,15 +558,24 @@ export default function Community() {
   const displayChannels = channels ?? [];
   const active = activeChannel ?? displayChannels[0] ?? null;
 
+  const handleSelectChannel = (ch: CommunityChannel) => {
+    setActiveChannel(ch);
+    setMobileView("feed");
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex-1 flex rounded-xl border border-border overflow-hidden bg-background min-h-0">
+        {/* Sidebar: full-screen on mobile when mobileView==="channels", hidden on mobile when showing feed */}
         <ChannelSidebar
           channels={displayChannels}
           active={active}
-          onSelect={setActiveChannel}
+          onSelect={handleSelectChannel}
           loading={channelsLoading}
+          className={mobileView === "channels" ? "flex" : "hidden md:flex"}
         />
+
+        {/* Feed: full-screen on mobile when mobileView==="feed", hidden on mobile when showing channels */}
         {active ? (
           <ChannelFeed
             key={active.id}
@@ -565,9 +583,14 @@ export default function Community() {
             canPost={isAdminOrInstructor}
             userId={me?.id ?? ""}
             userRole={me?.role ?? "student"}
+            onBack={() => setMobileView("channels")}
+            className={mobileView === "feed" ? "flex" : "hidden md:flex"}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <div className={cn(
+            "flex-1 items-center justify-center text-muted-foreground",
+            mobileView === "feed" ? "flex" : "hidden md:flex",
+          )}>
             <div className="text-center">
               <Hash className="h-10 w-10 mx-auto mb-2 opacity-20" />
               <p className="text-sm">Select a channel to start</p>
