@@ -2636,6 +2636,353 @@ function LiveKitAccountsTab() {
 }
 
 /* ════════════════════════════════════════════
+   GROUPS TAB
+════════════════════════════════════════════ */
+type Group = { id: number; name: string; description: string | null; createdBy: string; createdAt: string; memberCount: number };
+type GroupMemberRow = { id: number; groupId: number; userId: string; displayName: string | null; email: string | null; role: string | null; addedAt: string };
+type AvailableUser = { id: string; displayName: string | null; email: string | null; role: string | null };
+
+function GroupDetail({ group, onBack, onDelete }: { group: Group; onBack: () => void; onDelete: () => void }) {
+  const { toast } = useToast();
+  const [members, setMembers] = useState<GroupMemberRow[]>([]);
+  const [available, setAvailable] = useState<AvailableUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [addSearch, setAddSearch] = useState("");
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState(group.name);
+  const [editDesc, setEditDesc] = useState(group.description ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const [m, a] = await Promise.all([
+      fetch(`/api/admin/groups/${group.id}/members`).then((r) => r.ok ? r.json() : []),
+      fetch(`/api/admin/groups/${group.id}/available-users`).then((r) => r.ok ? r.json() : []),
+    ]);
+    setMembers(m); setAvailable(a); setLoading(false);
+  }, [group.id]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const removeMember = async (userId: string) => {
+    setRemovingId(userId);
+    try {
+      const r = await fetch(`/api/admin/groups/${group.id}/members/${userId}`, { method: "DELETE" });
+      if (!r.ok) throw new Error();
+      toast({ title: "Member removed" });
+      loadAll();
+    } catch { toast({ title: "Failed to remove", variant: "destructive" }); }
+    finally { setRemovingId(null); }
+  };
+
+  const addMember = async (userId: string) => {
+    setAddingId(userId);
+    try {
+      const r = await fetch(`/api/admin/groups/${group.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Member added" });
+      loadAll();
+    } catch { toast({ title: "Failed to add", variant: "destructive" }); }
+    finally { setAddingId(null); }
+  };
+
+  const saveGroup = async () => {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/admin/groups/${group.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim(), description: editDesc.trim() || null }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Group updated" });
+    } catch { toast({ title: "Failed to update", variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const filteredMembers = members.filter((m) =>
+    !search || (m.displayName ?? m.email ?? "").toLowerCase().includes(search.toLowerCase()) || (m.email ?? "").toLowerCase().includes(search.toLowerCase()),
+  );
+  const filteredAvailable = available.filter((u) =>
+    !addSearch || (u.displayName ?? u.email ?? "").toLowerCase().includes(addSearch.toLowerCase()) || (u.email ?? "").toLowerCase().includes(addSearch.toLowerCase()),
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5 -ml-1">
+          <X className="h-4 w-4" /> Back to Groups
+        </Button>
+        <div className="flex-1" />
+        <Button variant="destructive" size="sm" onClick={onDelete} className="gap-1.5">
+          <Trash2 className="h-3.5 w-3.5" /> Delete Group
+        </Button>
+      </div>
+
+      {/* Edit group name / description */}
+      <Card>
+        <CardContent className="pt-4 space-y-3">
+          <p className="text-sm font-semibold text-foreground">Group Details</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Group Name *</label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Group name" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+            <Textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} rows={2} placeholder="Optional description…" />
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={saveGroup} disabled={saving || !editName.trim()}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+              Save Changes
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Current members */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              Members ({members.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search members…" className="pl-8 h-8 text-xs" />
+            </div>
+            {loading ? (
+              <div className="space-y-2">{[1,2,3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            ) : filteredMembers.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">{search ? "No matching members" : "No members yet"}</p>
+            ) : (
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {filteredMembers.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2 rounded-lg p-2 hover:bg-secondary/40 group">
+                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <span className="text-[10px] font-semibold text-primary">{(m.displayName ?? m.email ?? "?")[0].toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{m.displayName ?? "—"}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{m.email}</p>
+                    </div>
+                    {m.role && <span className="text-[10px] text-muted-foreground capitalize shrink-0">{m.role}</span>}
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-6 w-6 p-0 text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      disabled={removingId === m.userId}
+                      onClick={() => removeMember(m.userId)}
+                    >
+                      {removingId === m.userId ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Available users to add */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-emerald-500" />
+              Add Members ({available.length} available)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input value={addSearch} onChange={(e) => setAddSearch(e.target.value)} placeholder="Search users…" className="pl-8 h-8 text-xs" />
+            </div>
+            {loading ? (
+              <div className="space-y-2">{[1,2,3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            ) : filteredAvailable.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">{addSearch ? "No matching users" : "All users are already in this group"}</p>
+            ) : (
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {filteredAvailable.slice(0, 50).map((u) => (
+                  <div key={u.id} className="flex items-center gap-2 rounded-lg p-2 hover:bg-secondary/40">
+                    <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                      <span className="text-[10px] font-semibold text-muted-foreground">{(u.displayName ?? u.email ?? "?")[0].toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{u.displayName ?? "—"}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
+                    </div>
+                    {u.role && <span className="text-[10px] text-muted-foreground capitalize shrink-0">{u.role}</span>}
+                    <Button
+                      size="sm" variant="outline"
+                      className="h-6 px-2 text-[10px] shrink-0"
+                      disabled={addingId === u.id}
+                      onClick={() => addMember(u.id)}
+                    >
+                      {addingId === u.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                ))}
+                {filteredAvailable.length > 50 && <p className="text-[10px] text-muted-foreground text-center py-1">Showing 50 of {filteredAvailable.length} — use search to narrow down</p>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function GroupsTab() {
+  const { toast } = useToast();
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openGroup, setOpenGroup] = useState<Group | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const loadGroups = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/admin/groups");
+      if (r.ok) setGroups(await r.json());
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadGroups(); }, [loadGroups]);
+
+  const createGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createName.trim()) return;
+    setCreating(true);
+    try {
+      const r = await fetch("/api/admin/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: createName.trim(), description: createDesc.trim() || undefined }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Group created!" });
+      setShowCreate(false); setCreateName(""); setCreateDesc("");
+      loadGroups();
+    } catch { toast({ title: "Failed to create group", variant: "destructive" }); }
+    finally { setCreating(false); }
+  };
+
+  const deleteGroup = async (id: number) => {
+    if (!confirm("Delete this group? All members will be removed.")) return;
+    try {
+      await fetch(`/api/admin/groups/${id}`, { method: "DELETE" });
+      toast({ title: "Group deleted" });
+      if (openGroup?.id === id) setOpenGroup(null);
+      loadGroups();
+    } catch { toast({ title: "Failed to delete", variant: "destructive" }); }
+  };
+
+  if (openGroup) {
+    return (
+      <GroupDetail
+        group={openGroup}
+        onBack={() => { setOpenGroup(null); loadGroups(); }}
+        onDelete={() => { deleteGroup(openGroup.id); setOpenGroup(null); }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Groups</h2>
+          <p className="text-xs text-muted-foreground">Platform-wide groups — add any user to a group to label them on their dashboard.</p>
+        </div>
+        <Button size="sm" onClick={() => setShowCreate(!showCreate)} className="gap-1.5 ml-auto">
+          <Plus className="h-3.5 w-3.5" /> New Group
+        </Button>
+      </div>
+
+      {showCreate && (
+        <Card className="border-primary/30 bg-primary/3">
+          <CardContent className="pt-4">
+            <form onSubmit={createGroup} className="space-y-3">
+              <p className="text-sm font-semibold mb-2">Create New Group</p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Group Name *</label>
+                <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="e.g. VIP Students, Mentorship Cohort A" required />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+                <Textarea value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} rows={2} placeholder="Optional description…" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+                <Button type="submit" size="sm" disabled={creating || !createName.trim()}>{creating ? "Creating…" : "Create Group"}</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {loading ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[1,2,3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}
+        </div>
+      ) : groups.length === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="py-12 text-center">
+            <Users className="h-10 w-10 mx-auto mb-3 opacity-25" />
+            <p className="font-medium text-foreground">No groups yet</p>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">Create groups to organise and label platform users.</p>
+            <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5"><Plus className="h-3.5 w-3.5" /> New Group</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {groups.map((g) => (
+            <Card key={g.id} className="cursor-pointer hover:border-primary/40 transition-colors group" onClick={() => setOpenGroup(g)}>
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <CardTitle className="text-sm font-semibold truncate">{g.name}</CardTitle>
+                    {g.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{g.description}</p>}
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    onClick={(e) => { e.stopPropagation(); deleteGroup(g.id); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <span>{g.memberCount} member{g.memberCount !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  <span>Created {new Date(g.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
 export default function AdminPanel() {
@@ -2664,6 +3011,9 @@ export default function AdminPanel() {
           <TabsTrigger value="broadcast">Broadcast</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="landing">Landing</TabsTrigger>
+          <TabsTrigger value="groups" className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" />Groups
+          </TabsTrigger>
           <TabsTrigger value="livekit" className="flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" />LiveKit
           </TabsTrigger>
@@ -2680,6 +3030,7 @@ export default function AdminPanel() {
         <TabsContent value="broadcast" className="mt-6"><BroadcastTab /></TabsContent>
         <TabsContent value="activity" className="mt-6"><ActivityTab /></TabsContent>
         <TabsContent value="landing" className="mt-6"><LandingPageTab /></TabsContent>
+        <TabsContent value="groups" className="mt-6"><GroupsTab /></TabsContent>
         <TabsContent value="livekit" className="mt-6"><LiveKitAccountsTab /></TabsContent>
       </Tabs>
     </div>

@@ -111,9 +111,21 @@ function ExpiryBadge({ expiresAt }: { expiresAt: string | null | undefined }) {
   );
 }
 
+function useMyGroups() {
+  const [groups, setGroups] = useState<{ id: number; name: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/me/groups")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setGroups(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+  return groups;
+}
+
 export default function Dashboard() {
   const { toast } = useToast();
   const { data: user, isLoading: userLoading } = useGetMe();
+  const myGroups = useMyGroups();
   const { items: announcements, loading: announcementsLoading } = useAnnouncements();
   const { events: upcomingEvents, loading: eventsLoading } = useUpcomingEvents();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
@@ -179,6 +191,16 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold text-foreground">
               Hello, {user?.displayName ?? "Trader"} 👋
             </h1>
+          )}
+          {myGroups.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1 mb-1">
+              {myGroups.map((g) => (
+                <span key={g.id} className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-0.5">
+                  <Users className="h-2.5 w-2.5" />
+                  {g.name}
+                </span>
+              ))}
+            </div>
           )}
           <p className="text-sm text-muted-foreground">Here's what's happening with your portfolio and learning today.</p>
         </div>
