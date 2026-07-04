@@ -155,3 +155,20 @@ export function liveClassReminderEmail(opts: {
   `;
   return baseLayout(content, `Live session "${opts.classTitle}" is starting soon`);
 }
+
+export function otpEmail(opts: { name?: string; code: string }): string {
+  const content = `
+    <div class="body">
+      <h2>Verify your email address</h2>
+      <p class="highlight">Hi ${opts.name ?? "there"}, welcome to Bright Insight!</p>
+      <p>Use the verification code below to complete your registration. It expires in <strong style="color:#e2e8f0;">10 minutes</strong>.</p>
+      <div style="text-align:center;margin:32px 0;">
+        <div style="display:inline-block;font-size:38px;font-weight:800;letter-spacing:12px;color:#f1f5f9;background:#0f172a;padding:18px 28px;border-radius:12px;border:1px solid #334155;font-family:monospace;">${opts.code}</div>
+      </div>
+      <p>Enter this code in the verification screen to continue creating your account.</p>
+      <hr class="divider" />
+      <p class="meta">If you didn't request this, you can safely ignore this email. This code will expire automatically.</p>
+    </div>
+  `;
+  return baseLayout(content, `Your Bright Insight verification code: ${opts.code}`);
+}

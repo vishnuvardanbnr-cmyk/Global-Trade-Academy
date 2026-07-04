@@ -35,6 +35,30 @@ export async function apiRegister(
   return res.json();
 }
 
+export async function apiSendOtp(email: string, firstName?: string): Promise<void> {
+  const res = await fetch("/api/auth/send-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, firstName }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to send verification code");
+  }
+}
+
+export async function apiVerifyOtp(email: string, code: string): Promise<void> {
+  const res = await fetch("/api/auth/verify-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Invalid verification code");
+  }
+}
+
 export async function apiLogout(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST" });
 }

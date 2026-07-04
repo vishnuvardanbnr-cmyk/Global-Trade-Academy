@@ -5,6 +5,9 @@ import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, getAuth } from "../lib/auth";
 import { randomUUID } from "crypto";
+import { generateOtp, verifyOtp, isOtpVerified, clearOtp } from "../lib/otp-store";
+import { sendEmailLocal } from "../lib/mailer";
+import { otpEmail } from "../lib/email-templates";
 
 const router = Router();
 
@@ -24,6 +27,37 @@ function clearAuthCookie(res: import("express").Response) {
   res.setHeader("Set-Cookie", "auth_token=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
 }
 
+/* ── POST /api/auth/send-otp ────────────────────────────────── */
+router.post("/auth/send-otp", async (req, res): Promise<void> => {
+  try {
+    const { email, firstName } = req.body as { email: string; firstName?: string };
+    if (!email) { res.status(400).json({ error: "Email is required" }); return; }
+
+    const existing = await db.select({ id: usersTable.id }).from(usersTable)
+      .where(eq(usersTable.email, email.toLowerCase())).limit(1).then(r => r[0]);
+    if (existing) { res.status(409).json({ error: "An account with this email already exists" }); return; }
+
+    const code = generateOtp(email);
+    await sendEmailLocal(email, "Your Bright Insight verification code", otpEmail({ name: firstName, code }));
+    res.json({ sent: true });
+  } catch (err) {
+    req.log.error({ err }, "Send OTP error");
+    res.status(500).json({ error: "Failed to send verification code" });
+  }
+});
+
+/* ── POST /api/auth/verify-otp ──────────────────────────────── */
+router.post("/auth/verify-otp", async (req, res): Promise<void> => {
+  const { email, code } = req.body as { email: string; code: string };
+  if (!email || !code) { res.status(400).json({ error: "Email and code are required" }); return; }
+  const result = verifyOtp(email, code);
+  if (result === "ok") { res.json({ verified: true }); return; }
+  if (result === "expired") { res.status(410).json({ error: "Code has expired. Please request a new one." }); return; }
+  if (result === "too_many") { res.status(429).json({ error: "Too many attempts. Please request a new code." }); return; }
+  res.status(400).json({ error: "Invalid code. Please try again." });
+});
+
+/* ── POST /api/auth/register ────────────────────────────────── */
 router.post("/auth/register", async (req, res): Promise<void> => {
   try {
     const { email, password, firstName, lastName } = req.body as {
@@ -35,6 +69,9 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     }
     if (password.length < 8) {
       res.status(400).json({ error: "Password must be at least 8 characters" }); return;
+    }
+    if (!isOtpVerified(email)) {
+      res.status(403).json({ error: "Email not verified. Please complete OTP verification first." }); return;
     }
 
     const existing = await db.select({ id: usersTable.id }).from(usersTable)
@@ -60,6 +97,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     }).returning();
 
     const token = signToken({ userId: user.id, email: user.email });
+    clearOtp(email);
     setAuthCookie(res, token);
     res.status(201).json({
       token,

@@ -2,6 +2,22 @@ import nodemailer from "nodemailer";
 
 let transporter: nodemailer.Transporter | null = null;
 
+export async function sendEmailLocal(to: string, subject: string, html: string): Promise<boolean> {
+  try {
+    const t = nodemailer.createTransport({
+      host: "127.0.0.1",
+      port: 25,
+      secure: false,
+      tls: { rejectUnauthorized: false },
+    });
+    const from = process.env.SMTP_FROM ?? "noreply@bicacademy.com";
+    await t.sendMail({ from, to, subject, html });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getTransporter() {
   if (transporter) return transporter;
   const host = process.env.SMTP_HOST;
