@@ -251,8 +251,8 @@ export default function Dashboard() {
                   return (
                     <div key={enrollment.id} className={cn("rounded-xl border p-3 transition-colors", isExpired ? "border-red-200 bg-red-50/50" : "border-border hover:bg-secondary/30")}>
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <Link href={`/courses/${course!.id}`}>
-                          <span className={cn("text-sm font-medium leading-tight truncate block max-w-[220px]", isExpired ? "text-muted-foreground" : "text-foreground hover:text-primary transition-colors cursor-pointer")}>{course!.title}</span>
+                        <Link href={`/courses/${course!.id}`} className="flex-1 min-w-0 overflow-hidden">
+                          <span className={cn("text-sm font-medium leading-tight truncate block w-full", isExpired ? "text-muted-foreground" : "text-foreground hover:text-primary transition-colors cursor-pointer")}>{course!.title}</span>
                         </Link>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <ExpiryBadge expiresAt={enrollment.expiresAt} />
