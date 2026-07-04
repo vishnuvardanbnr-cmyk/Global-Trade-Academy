@@ -435,9 +435,22 @@ function DirectVideoPlayer({ url, onEnded, lessonId, playable }: { url: string; 
 }
 
 /* ─── Bunny CDN iframe player ────────────────────────────────────── */
-function BunnyPlayer({ embedUrl }: { embedUrl: string }) {
+function LockedOverlay() {
   return (
-    <div className="w-full aspect-video bg-black">
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 cursor-not-allowed select-none">
+      <div className="flex flex-col items-center gap-2 bg-black/60 backdrop-blur-sm border border-white/10 rounded-2xl px-6 py-5 shadow-2xl">
+        <Lock className="h-8 w-8 text-amber-400" />
+        <p className="text-white font-semibold text-sm">Enroll to watch this lesson</p>
+        <p className="text-white/50 text-xs">Click "Start Learning" to get access</p>
+      </div>
+    </div>
+  );
+}
+
+function BunnyPlayer({ embedUrl, playable = true }: { embedUrl: string; playable?: boolean }) {
+  return (
+    <div className="w-full aspect-video bg-black relative overflow-hidden">
+      {!playable && <LockedOverlay />}
       <iframe
         src={embedUrl}
         className="w-full h-full"
@@ -661,7 +674,7 @@ function LiveChatPanel({ classId, userId, sessionTitle, onClose }: {
 }
 
 /* ─── YouTube sub-player (IFrame API + anti-skip + progress bar) ── */
-function YtPlayer({ videoId, onEnded, lessonId }: { videoId: string; onEnded?: () => void; lessonId?: number }) {
+function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
@@ -761,6 +774,7 @@ function YtPlayer({ videoId, onEnded, lessonId }: { videoId: string; onEnded?: (
 
   return (
     <div className="w-full aspect-video bg-black relative">
+      {!playable && <LockedOverlay />}
       <SeekBlockedOverlay visible={blocked} />
       <div ref={divRef} className="w-full h-full" />
       {duration > 0 && (
@@ -780,7 +794,7 @@ function YtPlayer({ videoId, onEnded, lessonId }: { videoId: string; onEnded?: (
 }
 
 /* ─── Vimeo sub-player (postMessage → finish event) ────────────── */
-function VimeoPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void }) {
+function VimeoPlayer({ videoId, onEnded, playable = true }: { videoId: string; onEnded?: () => void; playable?: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
@@ -805,7 +819,8 @@ function VimeoPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => vo
   };
 
   return (
-    <div className="w-full aspect-video bg-black">
+    <div className="w-full aspect-video bg-black relative overflow-hidden">
+      {!playable && <LockedOverlay />}
       <iframe
         ref={iframeRef}
         src={`https://player.vimeo.com/video/${videoId}?api=1&responsive=1&color=3b82f6&title=0&byline=0&portrait=0`}
@@ -864,10 +879,10 @@ function VideoPlayer({
   }
 
   const ytId = extractYtId(url);
-  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} />;
+  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
 
   const vimeoId = extractVimeoId(url);
-  if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
+  if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} playable={playable} />;
 
   if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
 
@@ -876,7 +891,7 @@ function VideoPlayer({
   }
 
   const bunnyUrl = extractBunnyEmbedUrl(url);
-  if (bunnyUrl) return <BunnyPlayer embedUrl={bunnyUrl} />;
+  if (bunnyUrl) return <BunnyPlayer embedUrl={bunnyUrl} playable={playable} />;
 
   // Generic embed — no end-detection possible, show inside the same frame
   return (
