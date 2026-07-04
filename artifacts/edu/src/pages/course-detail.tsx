@@ -286,7 +286,7 @@ function VideoControls({
       <div className={`absolute inset-x-0 top-3 flex justify-center pointer-events-none z-10 transition-all duration-300 ${showEnrollPrompt ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"}`}>
         <div className="flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white text-[12px] font-semibold px-4 py-2 rounded-full border border-white/10 shadow-xl">
           <Lock className="h-3.5 w-3.5 text-amber-400" />
-          Enroll to watch this lesson
+          Click "Start Learning" to begin
         </div>
       </div>
 
@@ -435,13 +435,12 @@ function DirectVideoPlayer({ url, onEnded, lessonId, playable }: { url: string; 
 }
 
 /* ─── Bunny CDN iframe player ────────────────────────────────────── */
-function LockedOverlay() {
+function LockedOverlay({ message = "Click 'Start Learning' to begin" }: { message?: string }) {
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 cursor-not-allowed select-none">
       <div className="flex flex-col items-center gap-2 bg-black/60 backdrop-blur-sm border border-white/10 rounded-2xl px-6 py-5 shadow-2xl">
         <Lock className="h-8 w-8 text-amber-400" />
-        <p className="text-white font-semibold text-sm">Enroll to watch this lesson</p>
-        <p className="text-white/50 text-xs">Click "Start Learning" to get access</p>
+        <p className="text-white font-semibold text-sm">{message}</p>
       </div>
     </div>
   );
@@ -1489,7 +1488,7 @@ export default function CourseDetail() {
               duration={cur?.duration}
               onEnded={isEnrolled ? onVideoEnded : undefined}
               lessonId={cur?.id}
-              playable={isEnrolled || !!cur?.isFree}
+              playable={learningStarted}
             />
           </div>
 
