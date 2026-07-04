@@ -41,6 +41,7 @@ import {
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
   Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
   XCircle, UploadCloud, Paperclip, Megaphone, Link2, Plus, MessageCircle,
+  Volume2, VolumeX, Maximize,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -126,32 +127,41 @@ function saveWatchedPos(lessonId: number | undefined, secs: number) {
   localStorage.setItem(watchedKey(lessonId), String(Math.floor(secs)));
 }
 
-/* ─── HLS player (hls.js for Chrome/Firefox, native for Safari) ── */
-/* ─── Seek guard: track max-watched position, block skipping ahead ─ */
+/* ─── Seek guard: track max-watched, expose duration for custom controls ─ */
 function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string, lessonId?: number) {
   const maxWatchedRef = useRef(loadWatchedPos(lessonId));
+  const [maxWatched, setMaxWatched] = useState(loadWatchedPos(lessonId));
+  const [duration, setDuration] = useState(0);
   const [blocked, setBlocked] = useState(false);
   const blockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaveRef = useRef(0);
 
   // Reset to saved position when switching lessons
-  useEffect(() => { maxWatchedRef.current = loadWatchedPos(lessonId); }, [url, lessonId]);
+  useEffect(() => {
+    const saved = loadWatchedPos(lessonId);
+    maxWatchedRef.current = saved;
+    setMaxWatched(saved);
+    setDuration(0);
+  }, [url, lessonId]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    // Seek to saved position once metadata is ready
     const onMeta = () => {
+      if (video.duration) setDuration(video.duration);
       const saved = loadWatchedPos(lessonId);
       if (saved > 1 && video.duration && saved < video.duration - 2) {
         video.currentTime = saved;
       }
     };
 
+    const onDuration = () => { if (video.duration) setDuration(video.duration); };
+
     const onTimeUpdate = () => {
       if (video.currentTime > maxWatchedRef.current) {
         maxWatchedRef.current = video.currentTime;
+        setMaxWatched(video.currentTime);
         const now = Date.now();
         if (now - lastSaveRef.current > 5000) {
           saveWatchedPos(lessonId, maxWatchedRef.current);
@@ -160,37 +170,159 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
       }
     };
 
-    // Use `seeked` (not `seeking`) — fires once after the seek commits,
-    // so our currentTime override is honoured by both the browser and hls.js.
-    let isProgrammaticSeek = false;
-    const onSeeked = () => {
-      if (isProgrammaticSeek) {
-        isProgrammaticSeek = false; // our own correction landed — done
-        return;
-      }
-      if (video.currentTime > maxWatchedRef.current + 0.5) {
-        isProgrammaticSeek = true;
+    // `seeking` fires mid-seek. After correction currentTime === maxWatched,
+    // so the +1 check fails and there is no re-entry loop (matches reference repo).
+    const onSeeking = () => {
+      if (video.currentTime > maxWatchedRef.current + 1) {
         video.currentTime = maxWatchedRef.current;
         setBlocked(true);
         if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
-        blockTimerRef.current = setTimeout(() => setBlocked(false), 2200);
+        blockTimerRef.current = setTimeout(() => setBlocked(false), 1500);
       }
     };
 
     video.addEventListener("loadedmetadata", onMeta);
+    video.addEventListener("durationchange", onDuration);
     video.addEventListener("timeupdate", onTimeUpdate);
-    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("seeking", onSeeking);
     return () => {
       video.removeEventListener("loadedmetadata", onMeta);
+      video.removeEventListener("durationchange", onDuration);
       video.removeEventListener("timeupdate", onTimeUpdate);
-      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("seeking", onSeeking);
       if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
     };
-  // videoRef is stable; url/lessonId trigger the outer effect
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, lessonId]);
 
-  return blocked;
+  return { blocked, maxWatched, maxWatchedRef, duration };
+}
+
+/* ─── Custom video controls overlay (locked progress bar) ────────── */
+function VideoControls({
+  videoRef, maxWatched, maxWatchedRef, duration, blocked,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  maxWatched: number; maxWatchedRef: React.RefObject<number>;
+  duration: number; blocked: boolean;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onTime = () => setCurrentTime(v.currentTime);
+    const onPlay  = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    return () => {
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {}); else v.pause();
+  };
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+  };
+  const handleFullscreen = () => { videoRef.current?.requestFullscreen?.(); };
+
+  const revealControls = () => {
+    setShowControls(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
+  };
+
+  const handleBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (!v || duration === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = pct * duration;
+    if (target <= (maxWatchedRef.current ?? maxWatched) + 1) {
+      v.currentTime = target;
+    } else {
+      // show blocked overlay (useSeekGuard will also snap back if user somehow forces it)
+      const v2 = videoRef.current;
+      if (v2) { v2.currentTime = v2.currentTime; } // trigger seeking guard display
+    }
+  };
+
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const watchedPct  = duration > 0 ? Math.min(100, (maxWatched   / duration) * 100) : 0;
+  const currentPct  = duration > 0 ? Math.min(100, (currentTime  / duration) * 100) : 0;
+
+  return (
+    <div
+      className="absolute inset-0 flex flex-col"
+      onMouseMove={revealControls}
+      onClick={revealControls}
+    >
+      {/* Seek-blocked toast */}
+      <SeekBlockedOverlay visible={blocked} />
+
+      {/* Click-to-play / pause overlay (center area) */}
+      <div className="flex-1 cursor-pointer" onClick={togglePlay} />
+
+      {/* Bottom controls bar */}
+      <div className={`absolute inset-x-0 bottom-0 px-3 pb-3 pt-10 bg-gradient-to-t from-black/90 to-transparent transition-opacity duration-300 ${showControls || !playing ? "opacity-100" : "opacity-0"}`}>
+
+        {/* Locked progress bar */}
+        <div
+          className="w-full h-2 bg-white/20 rounded-full mb-3 cursor-pointer relative overflow-hidden group"
+          onClick={handleBarClick}
+        >
+          {/* Watched (max) — lighter blue */}
+          <div
+            className="absolute left-0 top-0 h-full bg-blue-500/50 rounded-full"
+            style={{ width: `${watchedPct}%` }}
+          />
+          {/* Current playhead — solid blue */}
+          <div
+            className="absolute left-0 top-0 h-full bg-blue-400 rounded-full"
+            style={{ width: `${currentPct}%` }}
+          />
+          {/* Thumb dot */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ left: `calc(${currentPct}% - 6px)` }}
+          />
+        </div>
+
+        {/* Controls row */}
+        <div className="flex items-center gap-3 text-white select-none">
+          <button onClick={togglePlay} className="hover:text-blue-300 transition-colors">
+            {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+          </button>
+          <button onClick={toggleMute} className="text-white/70 hover:text-white transition-colors">
+            {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </button>
+          <span className="text-[11px] text-white/60 font-mono flex-1">
+            {fmt(currentTime)} / {fmt(duration)}
+          </span>
+          <span className="text-[10px] text-amber-400 font-semibold">Can't skip ahead</span>
+          <button onClick={handleFullscreen} className="text-white/70 hover:text-white transition-colors">
+            <Maximize className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ─── Seek-blocked overlay ──────────────────────────────────────── */
@@ -207,7 +339,7 @@ function SeekBlockedOverlay({ visible }: { visible: boolean }) {
 
 function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => void; lessonId?: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const blocked = useSeekGuard(videoRef, url, lessonId);
+  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -266,9 +398,9 @@ function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => vo
   }, [url]);
 
   return (
-    <div className="w-full aspect-video bg-black relative">
-      <SeekBlockedOverlay visible={blocked} />
-      <video ref={videoRef} controls className="w-full h-full" onEnded={onEnded} />
+    <div className="w-full aspect-video bg-black relative overflow-hidden">
+      <video ref={videoRef} className="w-full h-full" onEnded={onEnded} />
+      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} />
     </div>
   );
 }
@@ -276,14 +408,14 @@ function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => vo
 /* ─── Direct MP4 / blob player with seek guard ───────────────────── */
 function DirectVideoPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => void; lessonId?: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const blocked = useSeekGuard(videoRef, url, lessonId);
+  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId);
 
   return (
-    <div className="w-full aspect-video bg-black relative">
-      <SeekBlockedOverlay visible={blocked} />
-      <video ref={videoRef} src={url} controls className="w-full h-full" onEnded={onEnded}>
+    <div className="w-full aspect-video bg-black relative overflow-hidden">
+      <video ref={videoRef} src={url} className="w-full h-full" onEnded={onEnded}>
         <source src={url} />
       </video>
+      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} />
     </div>
   );
 }
