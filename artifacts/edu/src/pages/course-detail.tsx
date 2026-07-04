@@ -1344,10 +1344,7 @@ export default function CourseDetail() {
             </button>
           </div>
 
-          {/* Overview-only content: thumbnail + course info */}
-          {tab === "overview" && (<>
-
-          {/* Course thumbnail — hidden once learning starts */}
+          {/* Course thumbnail — always visible in both tabs */}
           {course.thumbnailUrl && !learningStarted && (
             <div className="relative shrink-0 overflow-hidden h-44">
               <img
@@ -1366,6 +1363,9 @@ export default function CourseDetail() {
               </div>
             </div>
           )}
+
+          {/* Overview-only: course info card */}
+          {tab === "overview" && (<>
 
           {/* Course info card */}
           <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shrink-0">
