@@ -10,44 +10,53 @@ function baseLayout(content: string, previewText = ""): string {
   <title>${BRAND_NAME}</title>
   <!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
   <style>
-    body { margin: 0; padding: 0; background-color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    .wrapper { max-width: 600px; margin: 0 auto; padding: 32px 16px; }
-    .card { background: #1e293b; border-radius: 12px; overflow: hidden; }
-    .header { background: ${BRAND_COLOR}; padding: 24px 32px; text-align: center; }
-    .header h1 { margin: 0; color: #fff; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
-    .body { padding: 32px; }
-    .body h2 { margin: 0 0 12px; color: #f1f5f9; font-size: 18px; font-weight: 600; }
-    .body p { margin: 0 0 16px; color: #94a3b8; font-size: 14px; line-height: 1.6; }
-    .body p.highlight { color: #e2e8f0; }
-    .divider { border: none; border-top: 1px solid #334155; margin: 24px 0; }
-    .btn { display: inline-block; padding: 12px 28px; background: ${BRAND_COLOR}; color: #fff !important; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
-    .btn-wrap { text-align: center; margin: 24px 0; }
-    .meta { font-size: 12px; color: #475569; }
-    .footer { text-align: center; padding: 20px 32px; }
-    .footer p { margin: 0; color: #475569; font-size: 12px; }
+    body { margin: 0; padding: 0; background-color: #0a0f1e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .wrapper { max-width: 600px; margin: 0 auto; padding: 40px 16px; }
+    .card { background: #111827; border-radius: 16px; overflow: hidden; border: 1px solid #1f2937; }
+    .header { background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 60%, #3b82f6 100%); padding: 32px 40px; }
+    .header-inner { display: flex; align-items: center; gap: 12px; }
+    .logo-mark { width: 40px; height: 40px; background: rgba(255,255,255,0.15); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; vertical-align: middle; }
+    .brand-name { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; vertical-align: middle; margin-left: 10px; }
+    .body { padding: 40px; }
+    .body h2 { margin: 0 0 8px; color: #f9fafb; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+    .body .subtitle { margin: 0 0 28px; color: #6b7280; font-size: 14px; line-height: 1.6; }
+    .body p { margin: 0 0 16px; color: #9ca3af; font-size: 14px; line-height: 1.6; }
+    .body p.highlight { color: #e5e7eb; }
+    .divider { border: none; border-top: 1px solid #1f2937; margin: 28px 0; }
+    .btn { display: inline-block; padding: 13px 32px; background: ${BRAND_COLOR}; color: #fff !important; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 600; letter-spacing: 0.1px; }
+    .btn-wrap { text-align: center; margin: 28px 0; }
+    .meta { font-size: 12px; color: #4b5563; }
+    .footer { text-align: center; padding: 24px 40px 28px; border-top: 1px solid #1f2937; }
+    .footer p { margin: 0; color: #374151; font-size: 12px; }
     .tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .tag-blue { background: rgba(37,99,235,0.2); color: #60a5fa; }
     .tag-green { background: rgba(16,185,129,0.2); color: #34d399; }
     .tag-amber { background: rgba(245,158,11,0.2); color: #fbbf24; }
     .tag-red { background: rgba(239,68,68,0.2); color: #f87171; }
-    .content-box { background: #0f172a; border-radius: 8px; padding: 16px 20px; margin: 16px 0; }
-    .content-box p { margin: 0; color: #cbd5e1; }
+    .content-box { background: #0d1117; border: 1px solid #1f2937; border-radius: 10px; padding: 16px 20px; margin: 16px 0; }
+    .content-box p { margin: 0; color: #d1d5db; }
+    .otp-block { text-align: center; margin: 32px 0; }
+    .otp-code { display: inline-block; font-size: 44px; font-weight: 800; letter-spacing: 14px; color: #f9fafb; background: #0d1117; padding: 20px 32px; border-radius: 14px; border: 1px solid #1f2937; font-family: 'Courier New', Courier, monospace; text-indent: 14px; }
+    .otp-timer { display: inline-block; margin-top: 12px; font-size: 12px; color: #6b7280; background: #1f2937; padding: 4px 12px; border-radius: 999px; }
+    .security-notice { background: #0d1117; border: 1px solid #1f2937; border-left: 3px solid #374151; border-radius: 8px; padding: 14px 16px; margin-top: 24px; }
+    .security-notice p { margin: 0; font-size: 12px; color: #4b5563; line-height: 1.5; }
+    .security-notice p strong { color: #6b7280; }
   </style>
 </head>
 <body>
-  ${previewText ? `<div style="display:none;max-height:0;overflow:hidden;">${previewText}</div>` : ""}
+  ${previewText ? `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#0a0f1e;">${previewText}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>` : ""}
   <div class="wrapper">
     <div class="card">
       <div class="header">
-        <h1>📈 ${BRAND_NAME}</h1>
+        <span class="logo-mark">📈</span><span class="brand-name">${BRAND_NAME}</span>
       </div>
       <div class="body">
         ${content}
       </div>
     </div>
     <div class="footer">
-      <p>© ${new Date().getFullYear()} ${BRAND_NAME}. All rights reserved.</p>
-      <p style="margin-top:6px;">You're receiving this because you're enrolled on the platform.</p>
+      <p>© ${new Date().getFullYear()} ${BRAND_NAME} · bicacademy.com</p>
+      <p style="margin-top:6px;">You're receiving this because you requested it on the platform.</p>
     </div>
   </div>
 </body>
@@ -158,17 +167,34 @@ export function liveClassReminderEmail(opts: {
 
 export function otpEmail(opts: { name?: string; code: string }): string {
   const content = `
-    <div class="body">
-      <h2>Verify your email address</h2>
-      <p class="highlight">Hi ${opts.name ?? "there"}, welcome to Bright Insight!</p>
-      <p>Use the verification code below to complete your registration. It expires in <strong style="color:#e2e8f0;">10 minutes</strong>.</p>
-      <div style="text-align:center;margin:32px 0;">
-        <div style="display:inline-block;font-size:38px;font-weight:800;letter-spacing:12px;color:#f1f5f9;background:#0f172a;padding:18px 28px;border-radius:12px;border:1px solid #334155;font-family:monospace;">${opts.code}</div>
-      </div>
-      <p>Enter this code in the verification screen to continue creating your account.</p>
-      <hr class="divider" />
-      <p class="meta">If you didn't request this, you can safely ignore this email. This code will expire automatically.</p>
+    <h2>Verify your email</h2>
+    <p class="subtitle">Hi ${opts.name ? `<strong style="color:#e5e7eb">${opts.name}</strong>` : "there"} 👋 — Welcome to Bright Insight! Use the code below to verify your email address and complete registration.</p>
+    <div class="otp-block">
+      <div class="otp-code">${opts.code}</div>
+      <div><span class="otp-timer">⏱ Expires in 10 minutes</span></div>
+    </div>
+    <p style="text-align:center;color:#6b7280;font-size:13px;">Enter this code in the sign-up screen to continue.</p>
+    <hr class="divider" />
+    <div class="security-notice">
+      <p><strong>Didn't request this?</strong> Someone may have entered your email by mistake. You can safely ignore this email — no account will be created without the code.</p>
     </div>
   `;
-  return baseLayout(content, `Your Bright Insight verification code: ${opts.code}`);
+  return baseLayout(content, `${opts.code} is your Bright Insight verification code`);
+}
+
+export function passwordResetEmail(opts: { name?: string; code: string }): string {
+  const content = `
+    <h2>Reset your password</h2>
+    <p class="subtitle">Hi ${opts.name ? `<strong style="color:#e5e7eb">${opts.name}</strong>` : "there"} — we received a request to reset your Bright Insight password. Use the code below to proceed.</p>
+    <div class="otp-block">
+      <div class="otp-code">${opts.code}</div>
+      <div><span class="otp-timer">⏱ Expires in 10 minutes</span></div>
+    </div>
+    <p style="text-align:center;color:#6b7280;font-size:13px;">Enter this code to set a new password.</p>
+    <hr class="divider" />
+    <div class="security-notice">
+      <p><strong>Didn't request a password reset?</strong> Your account is safe. Ignore this email — your password will remain unchanged and this code will expire automatically.</p>
+    </div>
+  `;
+  return baseLayout(content, `${opts.code} is your Bright Insight password reset code`);
 }

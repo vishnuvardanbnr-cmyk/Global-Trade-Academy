@@ -12,6 +12,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import Home from "@/pages/home";
 import SignInPage from "@/pages/sign-in";
 import SignUpPage from "@/pages/sign-up";
+import ForgotPasswordPage from "@/pages/forgot-password";
 import DemoLoginPage from "@/pages/demo-login";
 import LiveGuestPage from "@/pages/live-guest";
 
@@ -94,6 +95,7 @@ function AppRoutes() {
       <Route path="/" component={HomeRedirect} />
       <Route path="/sign-in" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/demo-login" component={DemoLoginPage} />
       <Route path="/live-guest" component={LiveGuestPage} />
       <Route path="/verify/:serial"><S><VerifyCertificate /></S></Route>

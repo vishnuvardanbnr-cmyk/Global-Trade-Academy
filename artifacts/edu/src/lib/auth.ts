@@ -59,6 +59,30 @@ export async function apiVerifyOtp(email: string, code: string): Promise<void> {
   }
 }
 
+export async function apiForgotPassword(email: string): Promise<void> {
+  const res = await fetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to send reset code");
+  }
+}
+
+export async function apiResetPassword(email: string, code: string, newPassword: string): Promise<void> {
+  const res = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code, newPassword }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to reset password");
+  }
+}
+
 export async function apiLogout(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST" });
 }

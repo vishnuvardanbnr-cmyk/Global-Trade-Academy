@@ -5,9 +5,9 @@ import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, getAuth } from "../lib/auth";
 import { randomUUID } from "crypto";
-import { generateOtp, verifyOtp, isOtpVerified, clearOtp } from "../lib/otp-store";
+import { generateOtp, verifyOtp, isOtpVerified, clearOtp, generateResetOtp, verifyResetOtp, isResetOtpVerified, clearResetOtp } from "../lib/otp-store";
 import { sendEmailLocal } from "../lib/mailer";
-import { otpEmail } from "../lib/email-templates";
+import { otpEmail, passwordResetEmail } from "../lib/email-templates";
 
 const router = Router();
 
@@ -151,6 +151,56 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 router.post("/auth/logout", (_req, res): void => {
   clearAuthCookie(res);
   res.json({ success: true });
+});
+
+/* ── POST /api/auth/forgot-password ────────────────────────── */
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  try {
+    const { email } = req.body as { email: string };
+    if (!email) { res.status(400).json({ error: "Email is required" }); return; }
+
+    const user = await db.select({ id: usersTable.id, displayName: usersTable.displayName })
+      .from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1).then(r => r[0]);
+
+    if (!user) {
+      res.json({ sent: true }); return;
+    }
+
+    const code = generateResetOtp(email);
+    await sendEmailLocal(email, "Reset your Bright Insight password", passwordResetEmail({ name: user.displayName ?? undefined, code }));
+    res.json({ sent: true });
+  } catch (err) {
+    req.log.error({ err }, "Forgot password error");
+    res.status(500).json({ error: "Failed to send reset code" });
+  }
+});
+
+/* ── POST /api/auth/reset-password ─────────────────────────── */
+router.post("/auth/reset-password", async (req, res): Promise<void> => {
+  try {
+    const { email, code, newPassword } = req.body as { email: string; code: string; newPassword: string };
+    if (!email || !code || !newPassword) { res.status(400).json({ error: "All fields are required" }); return; }
+    if (newPassword.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters" }); return; }
+
+    const result = verifyResetOtp(email, code);
+    if (result === "expired") { res.status(410).json({ error: "Code has expired. Please request a new one." }); return; }
+    if (result === "too_many") { res.status(429).json({ error: "Too many attempts. Please request a new code." }); return; }
+    if (result !== "ok") { res.status(400).json({ error: "Invalid code. Please try again." }); return; }
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    const updated = await db.update(usersTable)
+      .set({ passwordHash: hashed })
+      .where(eq(usersTable.email, email.toLowerCase()))
+      .returning({ id: usersTable.id });
+
+    if (!updated.length) { res.status(404).json({ error: "Account not found" }); return; }
+
+    clearResetOtp(email);
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Reset password error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/auth/me", async (req, res): Promise<void> => {
