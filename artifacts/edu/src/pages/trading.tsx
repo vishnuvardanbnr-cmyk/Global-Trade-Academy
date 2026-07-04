@@ -177,6 +177,65 @@ function useBinanceTicker(symbols: string[]) {
 }
 
 /* ─────────────────────────────────────────
+   Deriv WebSocket live tick hook (forex + metals)
+───────────────────────────────────────── */
+/* Deriv symbol → display key (pair name or commodity symbol) */
+const DERIV_PAIR_MAP: Record<string, string> = {
+  frxEURUSD: "EUR/USD", frxGBPUSD: "GBP/USD", frxUSDJPY: "USD/JPY",
+  frxUSDCHF: "USD/CHF", frxAUDUSD: "AUD/USD", frxNZDUSD: "NZD/USD",
+  frxUSDCAD: "USD/CAD", frxEURGBP: "EUR/GBP", frxEURJPY: "EUR/JPY",
+  frxGBPJPY: "GBP/JPY", frxXAUUSD: "gold",    frxXAGUSD: "silver",
+};
+
+function useDerivTicker(derivSymbols: string[]) {
+  const [ticks, setTicks]     = useState<Map<string, number>>(new Map());
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!derivSymbols.length) return;
+    let ws: WebSocket;
+    let dead = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    function connect() {
+      if (dead) return;
+      ws = new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");
+      wsRef.current = ws;
+      ws.onopen = () => {
+        if (dead) return;
+        setConnected(true);
+        derivSymbols.forEach(sym =>
+          ws.send(JSON.stringify({ ticks: sym, subscribe: 1 }))
+        );
+      };
+      ws.onmessage = (ev) => {
+        if (dead) return;
+        try {
+          const msg = JSON.parse(ev.data as string) as {
+            tick?: { symbol: string; ask?: number; bid?: number; quote?: number };
+          };
+          const t = msg.tick;
+          if (!t) return;
+          const price = t.ask && t.bid ? (t.ask + t.bid) / 2 : (t.quote ?? null);
+          if (price) {
+            const key = DERIV_PAIR_MAP[t.symbol];
+            if (key) setTicks(prev => new Map(prev).set(key, price));
+          }
+        } catch { /* ignore */ }
+      };
+      ws.onclose = () => { if (!dead) { setConnected(false); timer = setTimeout(connect, 4000); } };
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+    return () => { dead = true; clearTimeout(timer); wsRef.current?.close(); setConnected(false); };
+  }, [derivSymbols.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { ticks, connected };
+}
+
+/* ─────────────────────────────────────────
    Image cache
 ───────────────────────────────────────── */
 const imgCache = new Map<string, HTMLImageElement | null>();
@@ -756,6 +815,11 @@ function fmtFxPrice(n: number): string {
   return n.toFixed(5);
 }
 
+const FOREX_DERIV_SYMS = [
+  "frxEURUSD","frxGBPUSD","frxUSDJPY","frxUSDCHF",
+  "frxAUDUSD","frxNZDUSD","frxUSDCAD","frxEURGBP","frxEURJPY","frxGBPJPY",
+];
+
 function ForexPairsPanel() {
   const { data, isLoading, error } = useQuery<ForexPairRow[]>({
     queryKey: ["forex-pairs"],
@@ -767,6 +831,8 @@ function ForexPairsPanel() {
     staleTime: 10 * 60_000,
     refetchInterval: 10 * 60_000,
   });
+
+  const { ticks: liveTicks, connected } = useDerivTicker(FOREX_DERIV_SYMS);
 
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center">
@@ -781,7 +847,12 @@ function ForexPairsPanel() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto flex flex-col">
+      {/* Live status bar */}
+      <div className="flex items-center justify-end gap-1.5 px-4 py-1.5 border-b border-[#1a1d1a] shrink-0">
+        <span className={cn("w-1.5 h-1.5 rounded-full", connected ? "bg-[#00c853] animate-pulse" : "bg-[#4b5563]")} />
+        <span className="text-[10px] text-[#4b5563]">{connected ? "Live" : "Connecting…"}</span>
+      </div>
       <table className="w-full text-[13px] border-collapse">
         <thead>
           <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#4b5563] border-b border-[#1a1d1a]">
@@ -792,6 +863,8 @@ function ForexPairsPanel() {
         </thead>
         <tbody>
           {data.map((row) => {
+            const livePrice = liveTicks.get(row.pair) ?? null;
+            const displayPrice = livePrice ?? row.price;
             const up = (row.change ?? 0) >= 0;
             return (
               <tr key={row.pair} className="border-b border-[#1a1d1a]/60 hover:bg-[#ffffff05] transition-colors">
@@ -801,8 +874,8 @@ function ForexPairsPanel() {
                     <span className="text-white font-bold tracking-wide">{row.pair}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-white font-semibold">
-                  {row.price !== null ? fmtFxPrice(row.price) : "—"}
+                <td className="px-4 py-3 text-right font-mono text-white font-semibold tabular-nums">
+                  {displayPrice !== null ? fmtFxPrice(displayPrice) : "—"}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {row.change !== null ? (
@@ -820,6 +893,9 @@ function ForexPairsPanel() {
           })}
         </tbody>
       </table>
+      <div className="px-4 py-2 text-[10px] text-[#4b5563] text-center mt-auto">
+        Live prices via Deriv · 24h change from ECB close
+      </div>
     </div>
   );
 }
@@ -838,6 +914,8 @@ function fmtCommodityPrice(n: number): string {
   return "$" + n.toFixed(4);
 }
 
+const COMMODITY_DERIV_SYMS = ["frxXAUUSD", "frxXAGUSD"];
+
 function CommoditiesPairsPanel() {
   const { data, isLoading, error } = useQuery<CommodityRow[]>({
     queryKey: ["commodities-pairs"],
@@ -846,9 +924,11 @@ function CommoditiesPairsPanel() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    staleTime: 10 * 60_000,
-    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
   });
+
+  const { ticks: liveTicks, connected } = useDerivTicker(COMMODITY_DERIV_SYMS);
 
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center">
@@ -863,7 +943,12 @@ function CommoditiesPairsPanel() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto flex flex-col">
+      {/* Live status bar */}
+      <div className="flex items-center justify-end gap-1.5 px-4 py-1.5 border-b border-[#1a1d1a] shrink-0">
+        <span className={cn("w-1.5 h-1.5 rounded-full", connected ? "bg-[#00c853] animate-pulse" : "bg-[#4b5563]")} />
+        <span className="text-[10px] text-[#4b5563]">{connected ? "Live (Gold · Silver)" : "Connecting…"}</span>
+      </div>
       <table className="w-full text-[13px] border-collapse">
         <thead>
           <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#4b5563] border-b border-[#1a1d1a]">
@@ -874,6 +959,10 @@ function CommoditiesPairsPanel() {
         </thead>
         <tbody>
           {data.map((row) => {
+            const livePrice =
+              row.symbol === "gold"   ? (liveTicks.get("gold")   ?? null) :
+              row.symbol === "silver" ? (liveTicks.get("silver") ?? null) : null;
+            const displayPrice = livePrice ?? row.price;
             const up = (row.change ?? 0) >= 0;
             return (
               <tr key={row.symbol} className="border-b border-[#1a1d1a]/60 hover:bg-[#ffffff05] transition-colors">
@@ -881,13 +970,18 @@ function CommoditiesPairsPanel() {
                   <div className="flex items-center gap-2.5">
                     <span className="text-xl leading-none">{row.emoji}</span>
                     <div>
-                      <p className="text-white font-bold">{row.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-white font-bold">{row.name}</p>
+                        {livePrice && (
+                          <span className="w-1 h-1 rounded-full bg-[#00c853]" title="Live price" />
+                        )}
+                      </div>
                       <p className="text-[#4b5563] text-[11px]">per {row.unit}</p>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-white font-semibold">
-                  {row.price !== null ? fmtCommodityPrice(row.price) : "—"}
+                <td className="px-4 py-3 text-right font-mono text-white font-semibold tabular-nums">
+                  {displayPrice !== null ? fmtCommodityPrice(displayPrice) : "—"}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {row.change !== null ? (
@@ -905,6 +999,9 @@ function CommoditiesPairsPanel() {
           })}
         </tbody>
       </table>
+      <div className="px-4 py-2 text-[10px] text-[#4b5563] text-center mt-auto">
+        Gold & Silver live via Deriv · Other commodities via Yahoo Finance
+      </div>
     </div>
   );
 }
