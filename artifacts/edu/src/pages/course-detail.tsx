@@ -41,7 +41,7 @@ import {
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
   Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
   XCircle, UploadCloud, Paperclip, Megaphone, Link2, Plus, MessageCircle,
-  Volume2, VolumeX, Maximize,
+  Volume2, VolumeX, Maximize, Rewind,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -200,11 +200,11 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
 
 /* ─── Custom video controls overlay (locked progress bar) ────────── */
 function VideoControls({
-  videoRef, maxWatched, maxWatchedRef, duration, blocked, playable = true,
+  videoRef, maxWatched, maxWatchedRef, duration, blocked, playable = true, lessonId,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   maxWatched: number; maxWatchedRef: React.RefObject<number>;
-  duration: number; blocked: boolean; playable?: boolean;
+  duration: number; blocked: boolean; playable?: boolean; lessonId?: number;
 }) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -212,6 +212,8 @@ function VideoControls({
   const [showControls, setShowControls] = useState(true);
   const [showEnrollPrompt, setShowEnrollPrompt] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialSavedPos = useRef(loadWatchedPos(lessonId));
+  const [showResume, setShowResume] = useState(initialSavedPos.current > 5);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -236,9 +238,16 @@ function VideoControls({
       setTimeout(() => setShowEnrollPrompt(false), 2000);
       return;
     }
+    setShowResume(false);
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) v.play().catch(() => {}); else v.pause();
+  };
+
+  const handleRewind = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, v.currentTime - 10);
   };
   const toggleMute = () => {
     const v = videoRef.current;
@@ -246,7 +255,15 @@ function VideoControls({
     v.muted = !v.muted;
     setMuted(v.muted);
   };
-  const handleFullscreen = () => { videoRef.current?.requestFullscreen?.(); };
+  const handleFullscreen = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if ((v as unknown as { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen) {
+      (v as unknown as { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
+    } else {
+      v.requestFullscreen?.();
+    }
+  };
 
   const revealControls = () => {
     setShowControls(true);
@@ -281,6 +298,37 @@ function VideoControls({
     >
       {/* Seek-blocked toast */}
       <SeekBlockedOverlay visible={blocked} />
+
+      {/* Resume prompt — "Continue from X:XX" / "Start from beginning" */}
+      {!playing && showResume && initialSavedPos.current > 5 && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 pointer-events-auto">
+          <button
+            onClick={() => {
+              const v = videoRef.current;
+              if (!v) return;
+              v.currentTime = initialSavedPos.current;
+              v.play().catch(() => {});
+              setShowResume(false);
+            }}
+            className="flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-black font-bold px-5 py-3 rounded-xl shadow-xl text-sm transition-colors"
+          >
+            <Play className="h-4 w-4 fill-black" />
+            Continue from {fmt(initialSavedPos.current)}
+          </button>
+          <button
+            onClick={() => {
+              const v = videoRef.current;
+              if (!v) return;
+              v.currentTime = 0;
+              v.play().catch(() => {});
+              setShowResume(false);
+            }}
+            className="text-white/60 hover:text-white text-xs underline transition-colors"
+          >
+            Start from beginning
+          </button>
+        </div>
+      )}
 
       {/* Enroll-to-watch prompt */}
       <div className={`absolute inset-x-0 top-3 flex justify-center pointer-events-none z-10 transition-all duration-300 ${showEnrollPrompt ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"}`}>
@@ -323,6 +371,9 @@ function VideoControls({
           <button onClick={togglePlay} className="hover:text-blue-300 transition-colors">
             {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
           </button>
+          <button onClick={handleRewind} className="text-white/70 hover:text-white transition-colors" title="Rewind 10s">
+            <Rewind className="h-4 w-4" />
+          </button>
           <button onClick={toggleMute} className="text-white/70 hover:text-white transition-colors">
             {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </button>
@@ -330,7 +381,7 @@ function VideoControls({
             {fmt(currentTime)} / {fmt(duration)}
           </span>
           <span className="text-[10px] text-amber-400 font-semibold">Can't skip ahead</span>
-          <button onClick={handleFullscreen} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={handleFullscreen} className="text-white/70 hover:text-white transition-colors" title="Fullscreen">
             <Maximize className="h-4 w-4" />
           </button>
         </div>
@@ -414,7 +465,7 @@ function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?
   return (
     <div className="w-full aspect-video bg-black relative overflow-hidden">
       <video ref={videoRef} className="w-full h-full" onEnded={onEnded} />
-      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} />
+      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} lessonId={lessonId} />
     </div>
   );
 }
@@ -429,7 +480,7 @@ function DirectVideoPlayer({ url, onEnded, lessonId, playable }: { url: string; 
       <video ref={videoRef} src={url} className="w-full h-full" onEnded={onEnded}>
         <source src={url} />
       </video>
-      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} />
+      <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} lessonId={lessonId} />
     </div>
   );
 }
