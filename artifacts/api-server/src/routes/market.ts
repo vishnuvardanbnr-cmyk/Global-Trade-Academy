@@ -643,49 +643,97 @@ router.get("/market/news", async (req, res): Promise<void> => {
   }
 });
 
-/* ── Economic Calendar — ForexFactory XML ────────────────────────── */
+/* ── Economic Calendar — TradingView API (includes actual values) ── */
 interface CalendarEvent {
   id: string; title: string; country: string; date: string;
   time: string; impact: string; forecast: string; previous: string; actual: string;
 }
 
-function parseForexFactoryXml(xml: string): CalendarEvent[] {
-  const events: CalendarEvent[] = [];
-  const eventRe = /<event>([\s\S]*?)<\/event>/gi;
-  let m: RegExpExecArray | null;
-  let id = 0;
-  while ((m = eventRe.exec(xml)) !== null) {
-    const block = m[1];
-    const get = (tag: string) => {
-      const r = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
-      const mt = r.exec(block);
-      if (!mt) return '';
-      return mt[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-    };
-    const impact = get('impact');
-    if (!['High', 'Medium', 'Low'].includes(impact)) continue;
-    events.push({
-      id: String(id++), title: get('title'), country: get('country'),
-      date: get('date'), time: get('time'), impact,
-      forecast: get('forecast'), previous: get('previous'), actual: get('actual'),
-    });
-  }
-  return events;
+interface TvEvent {
+  id: string; title: string; country: string; importance: number; date: string;
+  actual: number | null; previous: number | null; forecast: number | null;
+  actualRaw: number | null; previousRaw: number | null; forecastRaw: number | null;
+  unit?: string;
+}
+
+/* Country code → forex currency label */
+const TV_COUNTRY_TO_CURRENCY: Record<string, string> = {
+  US: "USD", GB: "GBP", JP: "JPY", AU: "AUD", CA: "CAD",
+  CH: "CHF", NZ: "NZD", CN: "CNY", SG: "SGD", KR: "KRW",
+  IN: "INR", NO: "NOK", SE: "SEK", MX: "MXN", TR: "TRY",
+  DE: "EUR", FR: "EUR", IT: "EUR", ES: "EUR", NL: "EUR",
+  BE: "EUR", AT: "EUR", PT: "EUR", FI: "EUR", IE: "EUR",
+  GR: "EUR", LU: "EUR", SK: "EUR", SI: "EUR", EE: "EUR",
+  LV: "EUR", LT: "EUR", MT: "EUR", CY: "EUR",
+};
+const TV_COUNTRIES = Object.keys(TV_COUNTRY_TO_CURRENCY).join(",");
+
+function tvImpact(importance: number): string {
+  if (importance >= 3) return "High";
+  if (importance >= 2) return "Medium";
+  return "Low";
+}
+
+function tvFmtValue(raw: number | null | undefined, unit?: string): string {
+  if (raw === null || raw === undefined) return "";
+  const abs = Math.abs(raw);
+  let str: string;
+  if (abs >= 1_000_000) str = (raw / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
+  else if (abs >= 1_000)  str = (raw / 1_000).toFixed(2).replace(/\.?0+$/, "") + "K";
+  else if (Number.isInteger(raw)) str = String(raw);
+  else str = raw.toFixed(2).replace(/\.?0+$/, "");
+  return unit === "%" ? `${str}%` : unit ? `${str} ${unit}` : str;
+}
+
+function tvDateToFF(isoDate: string): { date: string; time: string } {
+  const dt = new Date(isoDate);
+  const etDate = dt.toLocaleDateString("en-US", {
+    timeZone: "America/New_York", month: "2-digit", day: "2-digit", year: "numeric",
+  });
+  const [m, d, y] = etDate.split("/");
+  const date = `${m}-${d}-${y}`;
+  const etTime = dt.toLocaleTimeString("en-US", {
+    timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  const time = etTime.toLowerCase().replace(" ", "");
+  return { date, time };
 }
 
 async function fetchEconomicCalendar(): Promise<CalendarEvent[]> {
-  const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0" };
-  const [tw, nw] = await Promise.allSettled([
-    fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.xml", { headers: UA }),
-    fetch("https://nfs.faireconomy.media/ff_calendar_nextweek.xml", { headers: UA }),
-  ]);
-  const all: CalendarEvent[] = [];
-  for (const r of [tw, nw]) {
-    if (r.status === "fulfilled" && r.value.ok)
-      all.push(...parseForexFactoryXml(await r.value.text()));
+  const now = new Date();
+  const from = new Date(now.getTime() - 7 * 86_400_000).toISOString();
+  const to   = new Date(now.getTime() + 8 * 86_400_000).toISOString();
+  const url  = `https://economic-calendar.tradingview.com/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&countries=${TV_COUNTRIES}`;
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0",
+    "Origin": "https://www.tradingview.com",
+    "Referer": "https://www.tradingview.com/",
+  };
+  const r = await fetch(url, { headers });
+  if (!r.ok) throw new Error(`TradingView calendar HTTP ${r.status}`);
+  const json = await r.json() as { status: string; result: TvEvent[] };
+  if (json.status !== "ok" || !Array.isArray(json.result))
+    throw new Error("TradingView calendar: bad response");
+
+  const events: CalendarEvent[] = [];
+  for (const ev of json.result) {
+    const currency = TV_COUNTRY_TO_CURRENCY[ev.country?.toUpperCase() ?? ""];
+    if (!currency) continue;
+    if ((ev.importance ?? 0) < 0) continue;
+    const { date, time } = tvDateToFF(ev.date);
+    events.push({
+      id:       ev.id,
+      title:    ev.title,
+      country:  currency,
+      date, time,
+      impact:   tvImpact(ev.importance),
+      forecast: tvFmtValue(ev.forecastRaw ?? ev.forecast, ev.unit),
+      previous: tvFmtValue(ev.previousRaw ?? ev.previous, ev.unit),
+      actual:   tvFmtValue(ev.actualRaw   ?? ev.actual,   ev.unit),
+    });
   }
-  if (!all.length) throw new Error("Economic calendar unavailable");
-  return all;
+  if (!events.length) throw new Error("TradingView calendar: no events");
+  return events;
 }
 
 router.get("/market/economic-calendar", async (_req, res): Promise<void> => {

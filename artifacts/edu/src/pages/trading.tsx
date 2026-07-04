@@ -1378,7 +1378,7 @@ function CalendarNewsPanel() {
                   })}
                 </div>
                 <p className="text-[10px] text-[#4b5563] text-center -mt-1">
-                  Actual values are published by official sources after release
+                  Source: TradingView · Actuals update within 15 min of release
                 </p>
               </div>
             </div>
