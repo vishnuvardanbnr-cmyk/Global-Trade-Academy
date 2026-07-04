@@ -101,6 +101,19 @@ function isDirectVideo(url: string): boolean {
 function isHlsUrl(url: string): boolean {
   return /\.m3u8(\?|$)/i.test(url);
 }
+function extractBunnyEmbedUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("iframe.mediadelivery.net")) return url;
+    if (u.hostname.includes("bunnycdn.com") || u.hostname.includes("b-cdn.net")) {
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (parts.length >= 2) {
+        return `https://iframe.mediadelivery.net/embed/${parts[parts.length - 2]}/${parts[parts.length - 1]}?autoplay=false&preload=true`;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 /* ─── HLS player (hls.js for Chrome/Firefox, native for Safari) ── */
 /* ─── Seek guard: track max-watched position, block skipping ahead ─ */
@@ -237,6 +250,21 @@ function DirectVideoPlayer({ url, onEnded }: { url: string; onEnded?: () => void
       <video ref={videoRef} src={url} controls autoPlay className="w-full h-full" onEnded={onEnded}>
         <source src={url} />
       </video>
+    </div>
+  );
+}
+
+/* ─── Bunny CDN iframe player ────────────────────────────────────── */
+function BunnyPlayer({ embedUrl }: { embedUrl: string }) {
+  return (
+    <div className="w-full aspect-video bg-black">
+      <iframe
+        src={embedUrl}
+        className="w-full h-full"
+        allowFullScreen
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+        title="Video lesson"
+      />
     </div>
   );
 }
@@ -452,9 +480,7 @@ function LiveChatPanel({ classId, userId, sessionTitle, onClose }: {
   );
 }
 
-/* ─── YouTube sub-player (IFrame API → accurate ended event) ───── */
-const WATCH_THRESHOLD = 0.90; // must watch 90% to count as complete
-
+/* ─── YouTube sub-player (IFrame API + anti-skip + progress bar) ── */
 function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -462,22 +488,27 @@ function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void 
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
 
-  // Accumulated genuine watch time (seconds) — only increments while PLAYING
-  const watchedSecsRef = useRef(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const maxWatchedRef = useRef(0);
+  const durationRef = useRef(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [maxWatched, setMaxWatched] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [blocked, setBlocked] = useState(false);
 
-  const stopTick = () => {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-  };
-  const startTick = () => {
-    stopTick();
-    intervalRef.current = setInterval(() => { watchedSecsRef.current += 1; }, 1000);
-  };
+  // Reset on lesson change
+  useEffect(() => {
+    maxWatchedRef.current = 0;
+    durationRef.current = 0;
+    setMaxWatched(0);
+    setDuration(0);
+    setBlocked(false);
+  }, [videoId]);
 
   useEffect(() => {
     if (!divRef.current) return;
     const container = divRef.current;
     let destroyed = false;
+
     loadYTApi(() => {
       if (destroyed || !container) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -485,35 +516,74 @@ function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void 
         videoId,
         playerVars: { rel: 0, modestbranding: 1, autoplay: 0 },
         events: {
+          onReady: (e: { target: { getDuration(): number } }) => {
+            const dur = e.target.getDuration() ?? 0;
+            if (dur > 0) { durationRef.current = dur; setDuration(dur); }
+          },
           onStateChange: (e: { data: number }) => {
             if (e.data === 1) {
-              // PLAYING — start accumulating
-              startTick();
+              // PLAYING — grab duration if not yet set
+              const dur = playerRef.current?.getDuration?.() ?? 0;
+              if (dur > 0 && durationRef.current === 0) { durationRef.current = dur; setDuration(dur); }
             } else if (e.data === 0) {
-              // ENDED — check if enough was watched
-              stopTick();
-              const duration = playerRef.current?.getDuration?.() ?? 0;
-              if (duration > 0 && watchedSecsRef.current / duration >= WATCH_THRESHOLD) {
-                onEndedRef.current?.();
-              }
-            } else {
-              // PAUSED / BUFFERING / etc.
-              stopTick();
+              // ENDED
+              onEndedRef.current?.();
             }
           },
         },
       });
+
+      // Anti-skip poll every 500 ms
+      pollRef.current = setInterval(() => {
+        const player = playerRef.current;
+        if (!player?.getCurrentTime || destroyed) return;
+        try {
+          const cur = player.getCurrentTime() as number;
+          const dur = player.getDuration?.() as number;
+          if (dur > 0 && durationRef.current !== dur) { durationRef.current = dur; setDuration(dur); }
+          if (cur > maxWatchedRef.current + 4) {
+            // jumped ahead — seek back
+            player.seekTo(maxWatchedRef.current, true);
+            setBlocked(true);
+            setTimeout(() => setBlocked(false), 2200);
+          } else if (cur > maxWatchedRef.current) {
+            maxWatchedRef.current = cur;
+            setMaxWatched(cur);
+          }
+        } catch { /* ignore */ }
+      }, 500);
     });
+
     return () => {
       destroyed = true;
-      stopTick();
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       playerRef.current?.destroy();
       playerRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
 
-  return <div className="w-full aspect-video bg-black"><div ref={divRef} className="w-full h-full" /></div>;
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const watchedPct = duration > 0 ? Math.min(100, (maxWatched / duration) * 100) : 0;
+
+  return (
+    <div className="w-full aspect-video bg-black relative">
+      <SeekBlockedOverlay visible={blocked} />
+      <div ref={divRef} className="w-full h-full" />
+      {duration > 0 && (
+        <div className="absolute bottom-0 inset-x-0 px-3 py-2 bg-gradient-to-t from-black/70 to-transparent pointer-events-none">
+          <div className="w-full bg-white/20 rounded-full h-1 mb-1.5 overflow-hidden">
+            <div className="bg-blue-400 h-1 rounded-full transition-all duration-500" style={{ width: `${watchedPct}%` }} />
+          </div>
+          <div className="flex justify-between text-white/50 text-[10px] font-medium">
+            <span>{fmt(maxWatched)} watched</span>
+            <span className="text-amber-400">Can't skip ahead</span>
+            <span>{fmt(duration)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ─── Vimeo sub-player (postMessage → finish event) ────────────── */
@@ -611,6 +681,9 @@ function VideoPlayer({
   if (isDirectVideo(url)) {
     return <DirectVideoPlayer url={url} onEnded={onEnded} />;
   }
+
+  const bunnyUrl = extractBunnyEmbedUrl(url);
+  if (bunnyUrl) return <BunnyPlayer embedUrl={bunnyUrl} />;
 
   // Generic embed — no end-detection possible, show inside the same frame
   return (
