@@ -1433,7 +1433,7 @@ export default function CourseDetail() {
                     {course.price ? `$${course.price}` : "Free"}
                   </p>
                   {!course.price && (
-                    <span className="text-[11px] text-slate-400">1 year access to all courses</span>
+                    <span className="text-[11px] text-slate-400">1 year access</span>
                   )}
                 </div>
                 {isPendingEnrollment ? (
@@ -1447,7 +1447,7 @@ export default function CourseDetail() {
                   </button>
                 )}
                 <ul className="space-y-2">
-                  {[`${totalL} lessons`, "Quizzes & tasks", "Certificate on completion", "1 year access to all courses"].map((f) => (
+                  {[`${totalL} lessons`, "Quizzes & tasks", "Certificate on completion", "1 year access"].map((f) => (
                     <li key={f} className="flex items-center gap-2 text-[12px] text-slate-600">
                       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />{f}
                     </li>
