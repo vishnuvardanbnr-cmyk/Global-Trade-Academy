@@ -1459,14 +1459,17 @@ export default function CourseDetail() {
 
           </>)}
 
-          {/* Curriculum header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
+          {/* Curriculum header — hidden on mobile in Overview tab */}
+          <div className={cn(
+            "items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0 bg-slate-50",
+            tab === "overview" ? "hidden md:flex" : "flex",
+          )}>
             <span className="text-[12.5px] font-bold text-slate-800">Course Content</span>
             <span className="text-[11px] font-medium text-slate-400 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{totalL} lessons</span>
           </div>
 
-          {/* Curriculum list */}
-          <div className="flex-1 overflow-y-auto">
+          {/* Curriculum list — hidden on mobile in Overview tab */}
+          <div className={cn("flex-1 overflow-y-auto", tab === "overview" && "hidden md:block")}>
             {chapterGroups.length === 0 && (
               <p className="px-5 py-8 text-[12px] text-slate-400 text-center">Curriculum coming soon…</p>
             )}
