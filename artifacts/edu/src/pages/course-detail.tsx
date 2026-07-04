@@ -41,6 +41,7 @@ import {
   Video, FileText, GraduationCap, SkipForward, MonitorPlay,
   Radio, Calendar, ExternalLink, X, Pause, Send, MessageSquare,
   XCircle, UploadCloud, Paperclip, Megaphone, Link2, Plus, MessageCircle,
+  LayoutList,
 } from "lucide-react";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
@@ -976,7 +977,7 @@ function LessonQATab({ lessonId, lessonTitle, isOwner, userId }: {
   );
 }
 
-type Tab = "overview" | "quiz" | "tasks" | "notes" | "reviews" | "live" | "resources" | "announcements" | "qa";
+type Tab = "overview" | "content" | "quiz" | "tasks" | "notes" | "reviews" | "live" | "resources" | "announcements" | "qa";
 
 export default function CourseDetail() {
   const [, params] = useRoute<{ id: string }>("/courses/:id");
@@ -1293,6 +1294,7 @@ export default function CourseDetail() {
             <div className="flex items-center gap-1 px-4 pb-3 overflow-x-auto">
               {[
                 { k: "overview", label: "Overview", Icon: BookOpen },
+                { k: "content", label: "Content", Icon: LayoutList },
                 { k: "quiz", label: "Quizzes", Icon: FileQuestion },
                 { k: "tasks", label: "Tasks", Icon: ListTodo },
                 { k: "notes", label: "Notes", Icon: StickyNote },
@@ -1318,19 +1320,21 @@ export default function CourseDetail() {
 
         </div>
 
-        {/* RIGHT: Overview panel */}
-        {showTabPanel && tab === "overview" && (
+        {/* RIGHT: Overview + Course Content panel */}
+        {showTabPanel && (tab === "overview" || tab === "content") && (
         <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden md:max-h-none">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
-            <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">Overview</span>
+            <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
+              {tab === "content" ? "Course Content" : "Overview"}
+            </span>
             <button onClick={() => setShowTabPanel(false)}
               className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
 
-          {/* Course thumbnail — hidden once learning starts */}
-          {course.thumbnailUrl && !learningStarted && (
+          {/* Course thumbnail + info — only in Overview tab */}
+          {tab === "overview" && course.thumbnailUrl && !learningStarted && (
             <div className="relative shrink-0 overflow-hidden h-44">
               <img
                 src={course.thumbnailUrl}
@@ -1349,8 +1353,8 @@ export default function CourseDetail() {
             </div>
           )}
 
-          {/* Course info card */}
-          <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shrink-0">
+          {/* Course info card — only in Overview tab */}
+          {tab === "overview" && <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shrink-0">
             <h2 className="text-[14px] font-bold text-slate-900 leading-snug mb-3">{course.title}</h2>
 
             {isEnrolled ? (
@@ -1430,13 +1434,15 @@ export default function CourseDetail() {
                 </ul>
               </div>
             )}
-          </div>
+          </div>}
 
-          {/* Curriculum header */}
+          {/* Curriculum header — only shown in Overview tab (Content tab uses panel header) */}
+          {tab === "overview" && (
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
             <span className="text-[12.5px] font-bold text-slate-800">Course Content</span>
             <span className="text-[11px] font-medium text-slate-400 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{totalL} lessons</span>
           </div>
+          )}
 
           {/* Curriculum list */}
           <div className="flex-1 overflow-y-auto">
@@ -1548,8 +1554,8 @@ export default function CourseDetail() {
           />
         )}
 
-        {/* RIGHT: Tab content panel (non-overview, non-live-active tabs) */}
-        {showTabPanel && tab !== "overview" && !(activeLiveSession !== null && tab === "live") && (
+        {/* RIGHT: Tab content panel (non-overview/content, non-live-active tabs) */}
+        {showTabPanel && tab !== "overview" && tab !== "content" && !(activeLiveSession !== null && tab === "live") && (
           <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden max-h-[55vh] md:max-h-none">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 bg-slate-50">
               <span className="text-[12.5px] font-bold text-slate-800 tracking-wide uppercase">
@@ -1603,6 +1609,7 @@ export default function CourseDetail() {
       <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-md px-1.5 py-1.5 rounded-2xl shadow-xl shadow-slate-300/60 ring-1 ring-slate-200 pointer-events-auto overflow-x-auto max-w-full scrollbar-hide">
         {[
           { k: "overview"      as Tab, label: "Overview",      Icon: BookOpen },
+          { k: "content"      as Tab, label: "Content",       Icon: LayoutList },
           { k: "quiz"          as Tab, label: "Quizzes",       Icon: FileQuestion },
           { k: "tasks"         as Tab, label: "Tasks",         Icon: ListTodo },
           { k: "notes"         as Tab, label: "Notes",         Icon: StickyNote },
