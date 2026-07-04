@@ -1199,8 +1199,8 @@ export default function CourseDetail() {
             </div>
           ) : (
             <>
-          {/* Video player */}
-          <div className="w-full">
+          {/* Video player — hidden on mobile when panel is open */}
+          <div className={cn("w-full", showTabPanel && "hidden md:block")}>
             <VideoPlayer
               url={cur?.videoUrl}
               title={cur?.title}
@@ -1217,6 +1217,7 @@ export default function CourseDetail() {
               curDone
                 ? "bg-emerald-500 text-white"
                 : "bg-slate-800 text-white/40",
+              showTabPanel && "hidden md:flex",
             )}>
               {curDone
                 ? <><CheckCircle2 className="h-4 w-4 shrink-0" /> Lesson completed — great work!</>
