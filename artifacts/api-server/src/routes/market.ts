@@ -669,8 +669,8 @@ const TV_COUNTRY_TO_CURRENCY: Record<string, string> = {
 const TV_COUNTRIES = Object.keys(TV_COUNTRY_TO_CURRENCY).join(",");
 
 function tvImpact(importance: number): string {
-  if (importance >= 3) return "High";
-  if (importance >= 2) return "Medium";
+  if (importance >= 1) return "High";
+  if (importance >= 0) return "Medium";
   return "Low";
 }
 
