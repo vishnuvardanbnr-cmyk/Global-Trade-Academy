@@ -115,23 +115,48 @@ function extractBunnyEmbedUrl(url: string): string | null {
   return null;
 }
 
+/* ─── localStorage resume helpers ─────────────────────────────── */
+function watchedKey(lessonId: number) { return `bi_watched_${lessonId}`; }
+function loadWatchedPos(lessonId?: number): number {
+  if (!lessonId) return 0;
+  return parseFloat(localStorage.getItem(watchedKey(lessonId)) ?? "0") || 0;
+}
+function saveWatchedPos(lessonId: number | undefined, secs: number) {
+  if (!lessonId) return;
+  localStorage.setItem(watchedKey(lessonId), String(Math.floor(secs)));
+}
+
 /* ─── HLS player (hls.js for Chrome/Firefox, native for Safari) ── */
 /* ─── Seek guard: track max-watched position, block skipping ahead ─ */
-function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string) {
-  const maxWatchedRef = useRef(0);
+function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string, lessonId?: number) {
+  const maxWatchedRef = useRef(loadWatchedPos(lessonId));
   const [blocked, setBlocked] = useState(false);
   const blockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSaveRef = useRef(0);
 
-  // Reset when switching to a new lesson
-  useEffect(() => { maxWatchedRef.current = 0; }, [url]);
+  // Reset to saved position when switching lessons
+  useEffect(() => { maxWatchedRef.current = loadWatchedPos(lessonId); }, [url, lessonId]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
+    // Seek to saved position once metadata is ready
+    const onMeta = () => {
+      const saved = loadWatchedPos(lessonId);
+      if (saved > 1 && video.duration && saved < video.duration - 2) {
+        video.currentTime = saved;
+      }
+    };
+
     const onTimeUpdate = () => {
       if (video.currentTime > maxWatchedRef.current) {
         maxWatchedRef.current = video.currentTime;
+        const now = Date.now();
+        if (now - lastSaveRef.current > 5000) {
+          saveWatchedPos(lessonId, maxWatchedRef.current);
+          lastSaveRef.current = now;
+        }
       }
     };
 
@@ -144,16 +169,18 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
       }
     };
 
+    video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("seeking", onSeeking);
     return () => {
+      video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("seeking", onSeeking);
       if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
     };
-  // videoRef is stable; url triggers the outer effect
+  // videoRef is stable; url/lessonId trigger the outer effect
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+  }, [url, lessonId]);
 
   return blocked;
 }
@@ -170,9 +197,9 @@ function SeekBlockedOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
+function HlsPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => void; lessonId?: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const blocked = useSeekGuard(videoRef, url);
+  const blocked = useSeekGuard(videoRef, url, lessonId);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -240,9 +267,9 @@ function HlsPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
 }
 
 /* ─── Direct MP4 / blob player with seek guard ───────────────────── */
-function DirectVideoPlayer({ url, onEnded }: { url: string; onEnded?: () => void }) {
+function DirectVideoPlayer({ url, onEnded, lessonId }: { url: string; onEnded?: () => void; lessonId?: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const blocked = useSeekGuard(videoRef, url);
+  const blocked = useSeekGuard(videoRef, url, lessonId);
 
   return (
     <div className="w-full aspect-video bg-black relative">
@@ -481,14 +508,14 @@ function LiveChatPanel({ classId, userId, sessionTitle, onClose }: {
 }
 
 /* ─── YouTube sub-player (IFrame API + anti-skip + progress bar) ── */
-function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void }) {
+function YtPlayer({ videoId, onEnded, lessonId }: { videoId: string; onEnded?: () => void; lessonId?: number }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
 
-  const maxWatchedRef = useRef(0);
+  const maxWatchedRef = useRef(loadWatchedPos(lessonId));
   const durationRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [maxWatched, setMaxWatched] = useState(0);
@@ -497,12 +524,15 @@ function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void 
 
   // Reset on lesson change
   useEffect(() => {
-    maxWatchedRef.current = 0;
+    const saved = loadWatchedPos(lessonId);
+    maxWatchedRef.current = saved;
     durationRef.current = 0;
-    setMaxWatched(0);
+    setMaxWatched(saved);
     setDuration(0);
     setBlocked(false);
-  }, [videoId]);
+  }, [videoId, lessonId]);
+
+  const lastYtSaveRef = useRef(0);
 
   useEffect(() => {
     if (!divRef.current) return;
@@ -516,9 +546,14 @@ function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void 
         videoId,
         playerVars: { rel: 0, modestbranding: 1, autoplay: 0 },
         events: {
-          onReady: (e: { target: { getDuration(): number } }) => {
+          onReady: (e: { target: { getDuration(): number; seekTo(s: number, a: boolean): void } }) => {
             const dur = e.target.getDuration() ?? 0;
             if (dur > 0) { durationRef.current = dur; setDuration(dur); }
+            // Resume from saved position
+            const saved = loadWatchedPos(lessonId);
+            if (saved > 1 && dur > 0 && saved < dur - 2) {
+              e.target.seekTo(saved, true);
+            }
           },
           onStateChange: (e: { data: number }) => {
             if (e.data === 1) {
@@ -549,6 +584,11 @@ function YtPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => void 
           } else if (cur > maxWatchedRef.current) {
             maxWatchedRef.current = cur;
             setMaxWatched(cur);
+            const now = Date.now();
+            if (now - lastYtSaveRef.current > 5000) {
+              saveWatchedPos(lessonId, maxWatchedRef.current);
+              lastYtSaveRef.current = now;
+            }
           }
         } catch { /* ignore */ }
       }, 500);
@@ -626,9 +666,9 @@ function VimeoPlayer({ videoId, onEnded }: { videoId: string; onEnded?: () => vo
 
 /* ─── Master smart VideoPlayer ─────────────────────────────────── */
 function VideoPlayer({
-  url, title, lessonType, duration, onEnded,
+  url, title, lessonType, duration, onEnded, lessonId,
 }: {
-  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void;
+  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void; lessonId?: number;
 }) {
   if (!url) {
     const isArticle = lessonType === "article";
@@ -671,15 +711,15 @@ function VideoPlayer({
   }
 
   const ytId = extractYtId(url);
-  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} />;
+  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} />;
 
   const vimeoId = extractVimeoId(url);
   if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
 
-  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} />;
+  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
 
   if (isDirectVideo(url)) {
-    return <DirectVideoPlayer url={url} onEnded={onEnded} />;
+    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
   }
 
   const bunnyUrl = extractBunnyEmbedUrl(url);
@@ -1280,6 +1320,7 @@ export default function CourseDetail() {
               lessonType={cur?.type}
               duration={cur?.duration}
               onEnded={isEnrolled ? onVideoEnded : undefined}
+              lessonId={cur?.id}
             />
           </div>
 
