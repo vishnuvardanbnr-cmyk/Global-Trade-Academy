@@ -563,7 +563,7 @@ function VideoPlayer({
   if (!url) {
     const isArticle = lessonType === "article";
     return (
-      <div className="w-full aspect-video relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 flex flex-col items-center justify-center">
+      <div className="hidden md:flex w-full aspect-video relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 flex-col items-center justify-center">
         {/* decorative blobs */}
         <div className="absolute -top-16 -right-16 w-72 h-72 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-16 -left-10 w-56 h-56 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
@@ -1322,10 +1322,11 @@ export default function CourseDetail() {
         {showTabPanel && (tab === "overview" || tab === "content") && (
         <div className="w-full md:w-[380px] md:shrink-0 flex flex-col bg-white rounded-2xl shadow-sm ring-1 ring-black/10 overflow-hidden md:max-h-none">
           <div className="flex items-center gap-1 px-3 py-2.5 border-b border-slate-100 shrink-0 bg-slate-50">
+            {/* Mobile-only: two-tab switcher */}
             <button
               onClick={() => setTab("overview")}
               className={cn(
-                "flex-1 py-1.5 rounded-lg text-[12px] font-bold tracking-wide uppercase transition-all",
+                "md:hidden flex-1 py-1.5 rounded-lg text-[12px] font-bold tracking-wide uppercase transition-all",
                 tab === "overview" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100",
               )}>
               Overview
@@ -1333,11 +1334,13 @@ export default function CourseDetail() {
             <button
               onClick={() => setTab("content")}
               className={cn(
-                "flex-1 py-1.5 rounded-lg text-[12px] font-bold tracking-wide uppercase transition-all",
+                "md:hidden flex-1 py-1.5 rounded-lg text-[12px] font-bold tracking-wide uppercase transition-all",
                 tab === "content" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100",
               )}>
               Content
             </button>
+            {/* Desktop-only: plain label */}
+            <span className="hidden md:block flex-1 text-[12.5px] font-bold text-slate-800 tracking-wide uppercase px-1">Overview</span>
             <button onClick={() => setShowTabPanel(false)}
               className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
               <X className="h-3.5 w-3.5" />
