@@ -877,20 +877,36 @@ function VideoPlayer({
     );
   }
 
+  // Gate: no player is mounted at all until playable — overlays can't stop the YouTube API from autoplaying
+  if (!playable) {
+    return (
+      <div className="w-full aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-950/40 to-slate-900" />
+        <div className="relative z-10 flex flex-col items-center gap-3 text-center px-6">
+          <div className="w-14 h-14 rounded-full bg-white/8 border border-white/12 flex items-center justify-center shadow-xl">
+            <Lock className="h-6 w-6 text-amber-400" />
+          </div>
+          <p className="text-white font-semibold text-[14px]">Click &ldquo;Start Learning&rdquo; to begin</p>
+          <p className="text-white/40 text-[12px]">Your progress will be saved automatically</p>
+        </div>
+      </div>
+    );
+  }
+
   const ytId = extractYtId(url);
-  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
+  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} />;
 
   const vimeoId = extractVimeoId(url);
-  if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} playable={playable} />;
+  if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
 
-  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
+  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
 
   if (isDirectVideo(url)) {
-    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} playable={playable} />;
+    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
   }
 
   const bunnyUrl = extractBunnyEmbedUrl(url);
-  if (bunnyUrl) return <BunnyPlayer embedUrl={bunnyUrl} playable={playable} />;
+  if (bunnyUrl) return <BunnyPlayer embedUrl={bunnyUrl} />;
 
   // Generic embed — no end-detection possible, show inside the same frame
   return (
