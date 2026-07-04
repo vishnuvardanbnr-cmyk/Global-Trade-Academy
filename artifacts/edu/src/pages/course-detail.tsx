@@ -1696,8 +1696,8 @@ export default function CourseDetail() {
             </button>
           </div>
 
-          {/* Course thumbnail — always visible in both tabs */}
-          {course.thumbnailUrl && !learningStarted && (
+          {/* Course thumbnail — only for non-enrolled visitors */}
+          {course.thumbnailUrl && !learningStarted && !isEnrolled && (
             <div className="relative shrink-0 overflow-hidden h-44">
               <img
                 src={course.thumbnailUrl}
