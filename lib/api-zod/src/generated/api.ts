@@ -465,6 +465,34 @@ export const DeleteEnrollmentParams = zod.object({
 
 
 /**
+ * @summary List live classes relevant to the current student (enrolled courses + batches)
+ */
+export const ListMyLiveClassesResponseItem = zod.object({
+  "id": zod.number(),
+  "courseId": zod.number().nullish(),
+  "courseName": zod.string().nullish(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "instructorId": zod.string(),
+  "instructorName": zod.string().nullish(),
+  "scheduledAt": zod.string(),
+  "duration": zod.number().nullish(),
+  "status": zod.string(),
+  "roomName": zod.string().nullish(),
+  "meetingType": zod.string().optional(),
+  "meetingUrl": zod.string().nullish(),
+  "replayUrl": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "maxAttendees": zod.number().nullish(),
+  "agenda": zod.string().nullish(),
+  "registrationCount": zod.number().optional(),
+  "thumbnailUrl": zod.string().nullish(),
+  "createdAt": zod.string().optional()
+})
+export const ListMyLiveClassesResponse = zod.array(ListMyLiveClassesResponseItem)
+
+
+/**
  * @summary List live classes
  */
 export const ListLiveClassesQueryParams = zod.object({

@@ -56,6 +56,50 @@ async function buildClassResponse(cls: typeof liveClassesTable.$inferSelect) {
   };
 }
 
+// GET /api/live-classes/mine — all live classes relevant to the current student
+router.get("/live-classes/mine", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    // enrolled course IDs
+    const enrolledRows = await db
+      .select({ courseId: enrollmentsTable.courseId })
+      .from(enrollmentsTable)
+      .where(eq(enrollmentsTable.userId, clerkId));
+    const courseIds = enrolledRows.map((r) => r.courseId);
+
+    // batch IDs the student belongs to
+    const batchRows = await db
+      .select({ batchId: batchStudentsTable.batchId })
+      .from(batchStudentsTable)
+      .where(eq(batchStudentsTable.userId, clerkId));
+    const batchIds = batchRows.map((r) => r.batchId);
+
+    if (courseIds.length === 0 && batchIds.length === 0) {
+      res.json([]); return;
+    }
+
+    const { inArray, or } = await import("drizzle-orm");
+    const conditions = [];
+    if (courseIds.length > 0) conditions.push(inArray(liveClassesTable.courseId, courseIds));
+    if (batchIds.length > 0) conditions.push(inArray(liveClassesTable.batchId, batchIds));
+
+    const classes = await db
+      .select()
+      .from(liveClassesTable)
+      .where(or(...conditions))
+      .orderBy(desc(liveClassesTable.scheduledAt))
+      .limit(100);
+
+    const results = await Promise.all(classes.map(buildClassResponse));
+    res.json(results);
+  } catch (err) {
+    req.log.error({ err }, "Error listing my live classes");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/live-classes
 router.get("/live-classes", async (req, res): Promise<void> => {
   try {

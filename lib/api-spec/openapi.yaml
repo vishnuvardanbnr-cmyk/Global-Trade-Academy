@@ -429,6 +429,21 @@ paths:
           description: Deleted
 
   # ── LIVE CLASSES ───────────────────────────────────────────────────────────
+  /live-classes/mine:
+    get:
+      operationId: listMyLiveClasses
+      tags: [liveClasses]
+      summary: List live classes relevant to the current student (enrolled courses + batches)
+      responses:
+        "200":
+          description: Live classes for the student
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LiveClass"
+
   /live-classes:
     get:
       operationId: listLiveClasses

@@ -1622,6 +1622,83 @@ export const useDeleteEnrollment = <TError = ErrorType<unknown>,
       return useMutation(getDeleteEnrollmentMutationOptions(options));
     }
 
+export const getListMyLiveClassesUrl = () => {
+
+
+
+
+  return `/api/live-classes/mine`
+}
+
+/**
+ * @summary List live classes relevant to the current student (enrolled courses + batches)
+ */
+export const listMyLiveClasses = async ( options?: RequestInit): Promise<LiveClass[]> => {
+
+  return customFetch<LiveClass[]>(getListMyLiveClassesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMyLiveClassesQueryKey = () => {
+    return [
+    `/api/live-classes/mine`
+    ] as const;
+    }
+
+
+export const getListMyLiveClassesQueryOptions = <TData = Awaited<ReturnType<typeof listMyLiveClasses>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyLiveClasses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMyLiveClassesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyLiveClasses>>> = ({ signal }) => listMyLiveClasses({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMyLiveClasses>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMyLiveClassesQueryResult = NonNullable<Awaited<ReturnType<typeof listMyLiveClasses>>>
+export type ListMyLiveClassesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List live classes relevant to the current student (enrolled courses + batches)
+ */
+
+export function useListMyLiveClasses<TData = Awaited<ReturnType<typeof listMyLiveClasses>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyLiveClasses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMyLiveClassesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getListLiveClassesUrl = (params?: ListLiveClassesParams,) => {
   const normalizedParams = new URLSearchParams();
 
