@@ -7,7 +7,7 @@ import {
   useListInstructorReviews, useApproveGate, useRejectGate,
   getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
   useGetGateAnalytics, getGetGateAnalyticsQueryKey,
-  useListPrerequisites, useSetPrerequisites,
+  useListPrerequisites, useSetPrerequisites, getListPrerequisitesQueryKey,
   useGetMe,
   type GateReviewItem,
   type LiveClass,
@@ -238,7 +238,7 @@ function EditCourseDialog({ course, allCourses, onSuccess }: {
   const thumbnailUrl = form.watch("thumbnailUrl");
 
   const { data: existingPrereqs } = useListPrerequisites(course.id, {
-    query: { enabled: open },
+    query: { enabled: open, queryKey: getListPrerequisitesQueryKey(course.id) },
   });
 
   useEffect(() => {

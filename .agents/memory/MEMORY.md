@@ -13,3 +13,4 @@
 - [LiveKit on Replit networking](livekit-replit-networking.md) — signaling works via Vite /livekit proxy; media requires direct TCP/UDP to ports 7881/7882 which GCP blocks; use LiveKit Cloud for reliable media. Also: useStartAudio v2 returns mergedProps not startAudio.
 - [LiveKit multi-account failover](livekit-multi-account.md) — livekit_accounts table + livekitAccountId FK on live_classes; ?switchFrom=<id> compare-and-swap prevents race conditions when all participants refresh simultaneously.
 - [VPS production DB migrations](vps-prod-db-migrations.md) — `db push` only hits Replit dev DB; after every schema change, manually ALTER TABLE on VPS via SSH or all VPS API calls crash with "column does not exist".
+- [VPS data safety rule](vps-safety.md) — never touch VPS data, nginx config, PM2 processes, DB, or any server files unless the user explicitly asks. Deploy code only; do not run migrations, alter tables, or restart services without a direct request.

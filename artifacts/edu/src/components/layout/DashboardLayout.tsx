@@ -152,6 +152,139 @@ function CompleteProfileDialog({ onDone }: { onDone: () => void }) {
   );
 }
 
+/* ─── Mobile bottom nav (students only) ─── */
+const BOTTOM_NAV = [
+  { href: "/dashboard",    label: "Home",    icon: LayoutDashboard },
+  { href: "/courses",      label: "Academy", icon: BookOpen },
+  { href: "/live-classes", label: "Live",    icon: Video },
+  { href: "/trading",      label: "Markets", icon: LineChart },
+];
+
+function MobileBottomNav({
+  location, role, xp, level, xpIntoLevel, xpToNext,
+  displayName, initials, signOut,
+}: {
+  location: string; role?: string; xp: number; level: number;
+  xpIntoLevel: number; xpToNext: number;
+  displayName: string; initials: string; signOut: (o: { redirectUrl: string }) => void;
+}) {
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  if (role === "instructor" || role === "admin") return null;
+  if (location.startsWith("/courses/")) return null;
+
+  const moreLinks = [
+    { href: "/copy-trading", label: "Copy Trading",  icon: TrendingUp },
+    { href: "/community",    label: "Community",     icon: MessageSquare },
+    { href: "/certificates", label: "Certificates",  icon: Award },
+    { href: "/settings",     label: "Settings",      icon: Settings },
+  ];
+
+  const isActive = (href: string) =>
+    location === href || location.startsWith(href + "/");
+
+  return (
+    <>
+      {/* More sheet backdrop */}
+      {moreOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setMoreOpen(false)}
+        />
+      )}
+
+      {/* More sheet */}
+      <div className={cn(
+        "fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background border-t border-border rounded-t-2xl shadow-2xl transition-transform duration-300 ease-out",
+        moreOpen ? "translate-y-0" : "translate-y-full",
+      )}>
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-border" />
+        </div>
+
+        {/* XP bar */}
+        <div className="mx-4 mt-1 mb-3 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Zap className="h-3.5 w-3.5 text-amber-500" />
+            <span className="text-xs font-bold text-amber-800">{displayName} · Level {level} Trader</span>
+          </div>
+          <div className="w-full bg-amber-100 rounded-full h-1.5 mb-1">
+            <div className="bg-amber-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.round((xpIntoLevel / xpToNext) * 100)}%` }} />
+          </div>
+          <p className="text-[10px] text-amber-600">{xpIntoLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP to Level {level + 1}</p>
+        </div>
+
+        {/* Links */}
+        <div className="px-3 pb-2 grid grid-cols-2 gap-1.5">
+          {moreLinks.map((item) => (
+            <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}>
+              <div className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
+                isActive(item.href)
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}>
+                <item.icon className="h-4 w-4 shrink-0" />
+                {item.label}
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        {/* Sign out */}
+        <div className="border-t border-border mx-3 mt-1 mb-3 pt-2">
+          <button
+            onClick={() => { setMoreOpen(false); signOut({ redirectUrl: "/" }); }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Sign Out
+          </button>
+        </div>
+
+        {/* iOS safe-area spacer */}
+        <div className="h-safe-bottom" />
+      </div>
+
+      {/* Bottom tab bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 md:hidden bg-background/95 backdrop-blur-md border-t border-border">
+        <div className="flex items-stretch h-16">
+          {BOTTOM_NAV.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link key={item.href} href={item.href} className="flex-1">
+                <div className={cn(
+                  "flex flex-col items-center justify-center h-full gap-0.5 transition-colors",
+                  active ? "text-primary" : "text-muted-foreground",
+                )}>
+                  <item.icon className={cn("h-5 w-5 transition-transform", active && "scale-110")} strokeWidth={active ? 2.5 : 2} />
+                  <span className={cn("text-[10px] font-semibold tracking-tight", active ? "text-primary" : "text-muted-foreground/80")}>
+                    {item.label}
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+
+          {/* More */}
+          <button className="flex-1 flex flex-col items-center justify-center h-full gap-0.5 transition-colors text-muted-foreground" onClick={() => setMoreOpen(true)}>
+            <div className={cn(
+              "w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold transition-colors",
+              moreOpen ? "bg-primary text-white" : "bg-secondary text-foreground",
+            )}>
+              {initials || "U"}
+            </div>
+            <span className="text-[10px] font-semibold tracking-tight text-muted-foreground/80">More</span>
+          </button>
+        </div>
+        {/* iOS home indicator spacer */}
+        <div className="h-[env(safe-area-inset-bottom)]" />
+      </nav>
+    </>
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { signOut } = useAuthContext();
@@ -327,6 +460,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 
+  const isStudent = role === "student" || !role;
+  const showBottomNav = isStudent && !isFullBleed;
+
   return (
     <>
       {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
@@ -473,21 +609,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {isFullBleed ? (
               children
             ) : isChartPage ? (
-              <div className="h-full p-4 md:p-5">
+              <div className={cn("h-full p-4 md:p-5", showBottomNav && "pb-20 md:pb-5")}>
                 {children}
               </div>
             ) : isWidePage ? (
-              <div className="p-4 md:p-5">
+              <div className={cn("p-4 md:p-5", showBottomNav && "pb-20 md:pb-5")}>
                 {children}
               </div>
             ) : (
-              <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto">
+              <div className={cn("p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto", showBottomNav && "pb-20 md:pb-8")}>
                 {children}
               </div>
             )}
           </main>
         </div>
       </div>
+      <MobileBottomNav
+        location={location}
+        role={role}
+        xp={xp}
+        level={level}
+        xpIntoLevel={xpIntoLevel}
+        xpToNext={xpToNext}
+        displayName={displayName}
+        initials={initials}
+        signOut={signOut}
+      />
     </>
   );
 }

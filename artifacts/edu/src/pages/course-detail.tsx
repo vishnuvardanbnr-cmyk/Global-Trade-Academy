@@ -20,7 +20,7 @@ import {
   useListLiveClasses, useRegisterLiveClass, getListLiveClassesQueryKey,
   useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,
   useGetMe,
-  useListPrerequisites,
+  useListPrerequisites, getListPrerequisitesQueryKey,
   useListLessonResources, useAddLessonResource, useDeleteLessonResource, getListLessonResourcesQueryKey,
   useListCourseAnnouncements, useCreateCourseAnnouncement, useDeleteCourseAnnouncement, getListCourseAnnouncementsQueryKey,
   type QuizAttemptResult,
@@ -1350,7 +1350,7 @@ export default function CourseDetail() {
   });
 
   const { data: prerequisites } = useListPrerequisites(validId, {
-    query: { enabled: courseId > 0 && !isEnrolled },
+    query: { enabled: courseId > 0 && !isEnrolled, queryKey: getListPrerequisitesQueryKey(validId) },
   });
   const prereqsUnmet = (prerequisites?.length ?? 0) > 0 && prerequisites!.some((p) => !p.met);
 
