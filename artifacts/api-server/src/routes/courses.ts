@@ -229,6 +229,34 @@ router.get("/courses/:courseId/prerequisites", async (req, res): Promise<void> =
   }
 });
 
+// PUT /api/courses/:courseId/prerequisites — instructor only; replaces all prereqs
+router.put("/courses/:courseId/prerequisites", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const courseId = parseInt(req.params.courseId);
+    if (isNaN(courseId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    if (!(await ownsCourse(clerkId, courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { requiredCourseIds } = req.body as { requiredCourseIds: number[] };
+    if (!Array.isArray(requiredCourseIds)) { res.status(400).json({ error: "requiredCourseIds must be an array" }); return; }
+
+    // Cannot set a course as its own prerequisite
+    const ids = requiredCourseIds.filter((id) => id !== courseId);
+
+    await db.delete(coursePrerequisitesTable).where(eq(coursePrerequisitesTable.courseId, courseId));
+    if (ids.length > 0) {
+      await db.insert(coursePrerequisitesTable).values(ids.map((rid) => ({ courseId, requiredCourseId: rid })));
+    }
+
+    res.json({ courseId, requiredCourseIds: ids });
+  } catch (err) {
+    req.log.error({ err }, "Error setting prerequisites");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/courses/:courseId/analytics — instructor only
 router.get("/courses/:courseId/analytics", async (req, res): Promise<void> => {
   try {

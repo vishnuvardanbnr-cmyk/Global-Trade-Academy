@@ -832,6 +832,15 @@ export interface PrerequisiteCourse {
   met: boolean;
 }
 
+export interface PrerequisitesInput {
+  requiredCourseIds: number[];
+}
+
+export interface PrerequisitesUpdateResult {
+  courseId: number;
+  requiredCourseIds: number[];
+}
+
 export interface LessonDropoff {
   lessonId: number;
   title: string;

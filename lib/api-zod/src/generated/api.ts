@@ -1947,6 +1947,23 @@ export const ListPrerequisitesResponse = zod.array(ListPrerequisitesResponseItem
 
 
 /**
+ * @summary Replace all prerequisites for a course (instructor only)
+ */
+export const SetPrerequisitesParams = zod.object({
+  "courseId": zod.coerce.number()
+})
+
+export const SetPrerequisitesBody = zod.object({
+  "requiredCourseIds": zod.array(zod.number())
+})
+
+export const SetPrerequisitesResponse = zod.object({
+  "courseId": zod.number(),
+  "requiredCourseIds": zod.array(zod.number())
+})
+
+
+/**
  * @summary Get analytics for a course (instructor)
  */
 export const GetCourseAnalyticsParams = zod.object({

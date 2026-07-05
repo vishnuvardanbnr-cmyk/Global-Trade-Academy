@@ -7,6 +7,7 @@ import {
   useListInstructorReviews, useApproveGate, useRejectGate,
   getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
   useGetGateAnalytics, getGetGateAnalyticsQueryKey,
+  useListPrerequisites, useSetPrerequisites,
   useGetMe,
   type GateReviewItem,
   type LiveClass,
@@ -222,22 +223,52 @@ function CreateCourseDialog({ onSuccess }: { onSuccess: () => void }) {
 }
 
 /* ─── Edit Course Dialog ─── */
-function EditCourseDialog({ course, onSuccess }: {
+function EditCourseDialog({ course, allCourses, onSuccess }: {
   course: { id: number; title: string; description?: string | null; category?: string | null; subCategory?: string | null; level?: string | null; price?: string | null; thumbnailUrl?: string | null };
+  allCourses: { id: number; title: string }[];
   onSuccess: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [selectedPrereqIds, setSelectedPrereqIds] = useState<number[]>([]);
   const { toast } = useToast();
   const form = useForm({
     defaultValues: { title: course.title, description: course.description ?? "", category: course.category ?? "forex", subCategory: course.subCategory ?? "", level: course.level ?? "beginner", price: course.price ? parseFloat(course.price) : undefined as number | undefined, thumbnailUrl: course.thumbnailUrl ?? "" },
   });
   const thumbnailUrl = form.watch("thumbnailUrl");
-  const update = useUpdateCourse({
-    mutation: {
-      onSuccess: () => { setOpen(false); onSuccess(); toast({ title: "Course updated" }); },
-      onError: () => toast({ title: "Failed to update course", variant: "destructive" }),
-    },
+
+  const { data: existingPrereqs } = useListPrerequisites(course.id, {
+    query: { enabled: open },
   });
+
+  useEffect(() => {
+    if (open && existingPrereqs) {
+      setSelectedPrereqIds(existingPrereqs.map((p) => p.requiredCourseId));
+    }
+  }, [open, existingPrereqs]);
+
+  const { mutateAsync: updateCourse } = useUpdateCourse();
+  const { mutateAsync: setPrereqs } = useSetPrerequisites();
+
+  const handleSave = form.handleSubmit(async (d) => {
+    setSaving(true);
+    try {
+      await updateCourse({ courseId: course.id, data: { title: d.title, description: d.description || undefined, category: d.category, subCategory: d.subCategory || undefined, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } });
+      await setPrereqs({ courseId: course.id, data: { requiredCourseIds: selectedPrereqIds } });
+      setOpen(false);
+      onSuccess();
+      toast({ title: "Course updated" });
+    } catch {
+      toast({ title: "Failed to update course", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  });
+
+  const togglePrereq = (id: number) => {
+    setSelectedPrereqIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => {
       setOpen(v);
@@ -249,7 +280,7 @@ function EditCourseDialog({ course, onSuccess }: {
       <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>Edit Course</DialogTitle></DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((d) => update.mutate({ courseId: course.id, data: { title: d.title, description: d.description || undefined, category: d.category, subCategory: d.subCategory || undefined, level: d.level, price: d.price, thumbnailUrl: d.thumbnailUrl || undefined } }))} className="space-y-4">
+          <form onSubmit={handleSave} className="space-y-4">
             <FormField control={form.control} name="title" rules={{ required: true }} render={({ field }) => (
               <FormItem><FormLabel>Title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
             )} />
@@ -291,7 +322,30 @@ function EditCourseDialog({ course, onSuccess }: {
             <FormField control={form.control} name="price" render={({ field }) => (
               <FormItem><FormLabel>Price (USD, blank = free)</FormLabel><FormControl><Input type="number" min="0" step="0.01" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} /></FormControl></FormItem>
             )} />
-            <Button type="submit" className="w-full" disabled={update.isPending}>{update.isPending ? "Saving..." : "Save Changes"}</Button>
+
+            {allCourses.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Prerequisite Courses <span className="text-muted-foreground font-normal text-xs">(optional — students must complete these before enrolling)</span></p>
+                <div className="border border-border rounded-lg divide-y divide-border max-h-48 overflow-y-auto">
+                  {allCourses.map((c) => (
+                    <label key={c.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedPrereqIds.includes(c.id)}
+                        onChange={() => togglePrereq(c.id)}
+                        className="h-4 w-4 rounded border-border accent-primary"
+                      />
+                      <span className="text-sm">{c.title}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedPrereqIds.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">{selectedPrereqIds.length} prerequisite{selectedPrereqIds.length > 1 ? "s" : ""} selected</p>
+                )}
+              </div>
+            )}
+
+            <Button type="submit" className="w-full" disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button>
           </form>
         </Form>
       </DialogContent>
@@ -1913,7 +1967,7 @@ export default function InstructorPanel() {
                             <CourseContentManager courseId={course.id} />
                           </DialogContent>
                         </Dialog>
-                        <EditCourseDialog course={{ ...course, price: course.price != null ? String(course.price) : null }} onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })} />
+                        <EditCourseDialog course={{ ...course, price: course.price != null ? String(course.price) : null }} allCourses={courses?.filter((c) => c.id !== course.id).map((c) => ({ id: c.id, title: c.title })) ?? []} onSuccess={() => qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) })} />
                         <Button size="sm" variant="outline" data-testid={`button-toggle-status-${course.id}`} onClick={() => updateCourse.mutate({ courseId: course.id, data: { status: course.status === "published" ? "draft" : "published" } })}>
                           {course.status === "published" ? "Unpublish" : "Publish"}
                         </Button>

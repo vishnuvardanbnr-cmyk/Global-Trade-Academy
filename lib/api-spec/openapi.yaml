@@ -1800,6 +1800,23 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/PrerequisiteCourse" }
+    put:
+      operationId: setPrerequisites
+      tags: [courses]
+      summary: Replace all prerequisites for a course (instructor only)
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrerequisitesInput" }
+      responses:
+        "200":
+          description: Updated prerequisites
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrerequisitesUpdateResult" }
 
   # ── LMS: INSTRUCTOR ANALYTICS ────────────────────────────────────
   /courses/{courseId}/analytics:
@@ -2915,6 +2932,23 @@ components:
         requiredCourseId: { type: integer }
         title: { type: string }
         met: { type: boolean }
+
+    PrerequisitesInput:
+      type: object
+      required: [requiredCourseIds]
+      properties:
+        requiredCourseIds:
+          type: array
+          items: { type: integer }
+
+    PrerequisitesUpdateResult:
+      type: object
+      required: [courseId, requiredCourseIds]
+      properties:
+        courseId: { type: integer }
+        requiredCourseIds:
+          type: array
+          items: { type: integer }
 
     # ── LMS: INSTRUCTOR ANALYTICS ──────────────────────────────────
     LessonDropoff:

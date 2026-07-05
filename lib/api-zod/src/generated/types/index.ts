@@ -83,6 +83,8 @@ export * from './post';
 export * from './postInput';
 export * from './postUpdate';
 export * from './prerequisiteCourse';
+export * from './prerequisitesInput';
+export * from './prerequisitesUpdateResult';
 export * from './quiz';
 export * from './quizAttempt';
 export * from './quizAttemptInput';

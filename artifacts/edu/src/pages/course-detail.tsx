@@ -20,6 +20,7 @@ import {
   useListLiveClasses, useRegisterLiveClass, getListLiveClassesQueryKey,
   useListLiveClassMessages, useCreateLiveClassMessage, getListLiveClassMessagesQueryKey,
   useGetMe,
+  useListPrerequisites,
   useListLessonResources, useAddLessonResource, useDeleteLessonResource, getListLessonResourcesQueryKey,
   useListCourseAnnouncements, useCreateCourseAnnouncement, useDeleteCourseAnnouncement, getListCourseAnnouncementsQueryKey,
   type QuizAttemptResult,
@@ -1348,6 +1349,11 @@ export default function CourseDetail() {
     query: { enabled: courseId > 0 && isEnrolled, queryKey: getGetCourseProgressQueryKey(validId) },
   });
 
+  const { data: prerequisites } = useListPrerequisites(validId, {
+    query: { enabled: courseId > 0 && !isEnrolled },
+  });
+  const prereqsUnmet = (prerequisites?.length ?? 0) > 0 && prerequisites!.some((p) => !p.met);
+
   const [tab, setTab] = useState<Tab>("overview");
   const [showTabPanel, setShowTabPanel] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -1781,14 +1787,36 @@ export default function CourseDetail() {
                     <span className="text-[11px] text-slate-400">1 year access</span>
                   )}
                 </div>
+                {prerequisites && prerequisites.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <p className="text-[11.5px] font-semibold text-slate-600 uppercase tracking-wide">Prerequisites</p>
+                    <ul className="space-y-1.5">
+                      {prerequisites.map((p) => (
+                        <li key={p.requiredCourseId} className="flex items-center gap-2 text-[12.5px]">
+                          {p.met
+                            ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                            : <div className="h-4 w-4 rounded-full border-2 border-slate-300 shrink-0" />}
+                          <Link href={`/courses/${p.requiredCourseId}`} className={cn("hover:underline truncate", p.met ? "text-slate-500 line-through" : "text-blue-600 font-medium")}>
+                            {p.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                    {prereqsUnmet && (
+                      <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                        Complete the courses above to unlock enrollment.
+                      </p>
+                    )}
+                  </div>
+                )}
                 {isPendingEnrollment ? (
                   <div className="w-full py-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl font-semibold text-[13px] text-center flex items-center justify-center gap-2">
                     <Clock className="h-4 w-4 shrink-0" /> Pending Approval
                   </div>
                 ) : (
-                  <button onClick={doEnroll} disabled={enrolling}
-                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-500/30 disabled:opacity-60 active:scale-[0.98]">
-                    {enrolling ? "Sending request…" : course.price ? "Request Access" : "Request to Enroll"}
+                  <button onClick={doEnroll} disabled={enrolling || prereqsUnmet}
+                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-bold text-[14px] transition-all shadow-md shadow-blue-600/20 hover:shadow-blue-500/30 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]">
+                    {enrolling ? "Sending request…" : prereqsUnmet ? "Prerequisites Required" : course.price ? "Request Access" : "Request to Enroll"}
                   </button>
                 )}
                 <ul className="space-y-2">
@@ -2095,11 +2123,11 @@ function LessonGateBanner({ gate, onGoToQuiz }: { gate: LessonGate; onGoToQuiz: 
 
 /* ════════════════════ Overview Tab ════════════════════ */
 function OverviewTab({
-  cur, chIdx, totalL, isEnrolled, isPendingEnrollment, curDone, doEnroll, enrolling, gate, onGoToQuiz,
+  cur, chIdx, totalL, isEnrolled, isPendingEnrollment, curDone, doEnroll, enrolling, prereqsUnmet, gate, onGoToQuiz,
 }: {
   cur: DbLesson | undefined; chIdx: number; totalL: number;
   isEnrolled: boolean; isPendingEnrollment: boolean; curDone: boolean;
-  doEnroll: () => void; enrolling: boolean;
+  doEnroll: () => void; enrolling: boolean; prereqsUnmet: boolean;
   gate?: LessonGate; onGoToQuiz: () => void;
 }) {
   if (!cur) return (
@@ -2146,9 +2174,9 @@ function OverviewTab({
             )}
           </div>
           {!isPendingEnrollment && (
-            <button onClick={doEnroll} disabled={enrolling}
-              className="shrink-0 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[13px] font-bold transition-colors disabled:opacity-60 shadow-sm whitespace-nowrap">
-              {enrolling ? "Sending…" : "Request Access"}
+            <button onClick={doEnroll} disabled={enrolling || prereqsUnmet}
+              className="shrink-0 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[13px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm whitespace-nowrap">
+              {enrolling ? "Sending…" : prereqsUnmet ? "Prerequisites Required" : "Request Access"}
             </button>
           )}
         </div>

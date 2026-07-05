@@ -91,6 +91,8 @@ import type {
   PostInput,
   PostUpdate,
   PrerequisiteCourse,
+  PrerequisitesInput,
+  PrerequisitesUpdateResult,
   Quiz,
   QuizAttempt,
   QuizAttemptInput,
@@ -7102,6 +7104,78 @@ export function useListPrerequisites<TData = Awaited<ReturnType<typeof listPrere
 
 
 
+
+export const getSetPrerequisitesUrl = (courseId: number,) => {
+
+
+
+
+  return `/api/courses/${courseId}/prerequisites`
+}
+
+/**
+ * @summary Replace all prerequisites for a course (instructor only)
+ */
+export const setPrerequisites = async (courseId: number,
+    prerequisitesInput: PrerequisitesInput, options?: RequestInit): Promise<PrerequisitesUpdateResult> => {
+
+  return customFetch<PrerequisitesUpdateResult>(getSetPrerequisitesUrl(courseId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      prerequisitesInput,)
+  }
+);}
+
+
+
+
+export const getSetPrerequisitesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setPrerequisites>>, TError,{courseId: number;data: BodyType<PrerequisitesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setPrerequisites>>, TError,{courseId: number;data: BodyType<PrerequisitesInput>}, TContext> => {
+
+const mutationKey = ['setPrerequisites'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setPrerequisites>>, {courseId: number;data: BodyType<PrerequisitesInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  setPrerequisites(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetPrerequisitesMutationResult = NonNullable<Awaited<ReturnType<typeof setPrerequisites>>>
+    export type SetPrerequisitesMutationBody = BodyType<PrerequisitesInput>
+    export type SetPrerequisitesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Replace all prerequisites for a course (instructor only)
+ */
+export const useSetPrerequisites = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setPrerequisites>>, TError,{courseId: number;data: BodyType<PrerequisitesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setPrerequisites>>,
+        TError,
+        {courseId: number;data: BodyType<PrerequisitesInput>},
+        TContext
+      > => {
+      return useMutation(getSetPrerequisitesMutationOptions(options));
+    }
 
 export const getGetCourseAnalyticsUrl = (courseId: number,) => {
 
