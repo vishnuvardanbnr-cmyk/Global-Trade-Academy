@@ -176,7 +176,6 @@ function MobileBottomNav({
   const moreLinks = [
     { href: "/copy-trading", label: "Copy Trading",  icon: TrendingUp },
     { href: "/community",    label: "Community",     icon: MessageSquare },
-    { href: "/certificates", label: "Certificates",  icon: Award },
     { href: "/settings",     label: "Settings",      icon: Settings },
   ];
 
