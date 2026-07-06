@@ -308,7 +308,7 @@ export default function Dashboard() {
           <Card className="shadow-xs border-border flex flex-col flex-1">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-base font-semibold">Live Sessions</CardTitle>
-              <Link href="/live">
+              <Link href="/live-classes">
                 <button className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5">
                   See all <ArrowUpRight className="h-3 w-3" />
                 </button>
