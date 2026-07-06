@@ -1,4 +1,4 @@
-import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses, useListLiveClasses } from "@workspace/api-client-react";
+import { useGetMe, useGetDashboardSummary, useGetLeaderboard, useGetRecentActivity, useListEnrollments, useListCourses, useListMyLiveClasses } from "@workspace/api-client-react";
 import type { LiveClass } from "@workspace/api-client-react";
 import { useUser } from "@/lib/authContext";
 import { useEffect, useState } from "react";
@@ -133,7 +133,7 @@ export default function Dashboard() {
   const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
   const { data: enrollments, refetch: refetchEnrollments } = useListEnrollments();
   const { data: allCourses } = useListCourses({});
-  const { data: liveClasses, isLoading: liveLoading } = useListLiveClasses({});
+  const { data: liveClasses, isLoading: liveLoading } = useListMyLiveClasses({});
 
   const reEnroll = useCreateEnrollment({
     mutation: {
