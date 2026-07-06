@@ -785,7 +785,7 @@ function CoursesTab() {
   );
 }
 
-type AdminEnrollmentRequest = { id: number; userId: string; courseId: number; status: string; enrolledAt: string | null; userName: string; userEmail: string; courseTitle: string };
+type AdminEnrollmentRequest = { id: number; userId: string; courseId: number; status: string; enrolledAt: string | null; userName: string; userEmail: string; courseTitle: string; groupName: string | null; };
 
 /* ─── Enrollments Tab ─── */
 function EnrollmentsTab() {
@@ -883,6 +883,11 @@ function EnrollmentsTab() {
                       <td className="px-4 py-3">
                         <p className="font-medium truncate max-w-[160px]">{r.userName}</p>
                         <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{r.userEmail}</p>
+                        {r.groupName && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                            <Users className="h-2.5 w-2.5" />{r.groupName}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground truncate max-w-[200px]">{r.courseTitle}</td>
                       <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{r.enrolledAt ? new Date(r.enrolledAt).toLocaleDateString() : "—"}</td>
