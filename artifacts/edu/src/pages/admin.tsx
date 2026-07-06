@@ -25,6 +25,7 @@ import {
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
   Hash, Pencil, Plus, Search, AlertTriangle, Loader2, Check, X,
   Layout, ExternalLink, Save, Server, Eye, EyeOff, Wifi, WifiOff,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -365,6 +366,48 @@ function GrantAccessDialog({
   );
 }
 
+/* ─── Paginator ─── */
+const PAGE_SIZE = 25;
+function Paginator({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between px-1 pt-3">
+      <span className="text-xs text-muted-foreground">
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <button onClick={() => onChange(page - 1)} disabled={page === 1}
+          className="h-7 w-7 rounded-md border border-border flex items-center justify-center hover:bg-secondary disabled:opacity-40 transition-colors">
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        {(() => {
+          const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1);
+          const items: (number | string)[] = [];
+          pages.forEach((p, i) => {
+            if (i > 0 && pages[i - 1] < p - 1) items.push("…");
+            items.push(p);
+          });
+          return items.map((p, i) => p === "…" ? (
+            <span key={`e${i}`} className="text-xs text-muted-foreground px-1">…</span>
+          ) : (
+            <button key={p} onClick={() => onChange(p as number)}
+              className={cn("h-7 w-7 rounded-md text-xs font-medium border transition-colors",
+                p === page ? "bg-primary text-white border-primary" : "border-border hover:bg-secondary")}>
+              {p}
+            </button>
+          ));
+        })()}
+        <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
+          className="h-7 w-7 rounded-md border border-border flex items-center justify-center hover:bg-secondary disabled:opacity-40 transition-colors">
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── types ─── */
 type DetailedStats = { totalUsers: number; totalCourses: number; publishedCourses: number; totalEnrollments: number; activeEnrollments: number; completedEnrollments: number; instructors: number; admins: number; newUsersWeek: number; newUsersMonth: number; totalLessons: number; totalQuizAttempts: number; totalCertificates: number; totalXpAwarded: number; };
 type AdminCourse = { id: number; title: string; status: string; level: string | null; category: string | null; subCategory: string | null; price: string | null; instructorName: string; enrollments: number; isFeatured: boolean | null; createdAt: string; };
@@ -463,6 +506,7 @@ function UsersTab() {
   const { toast } = useToast();
   const { data: users, isLoading } = useListUsers({});
   const [search, setSearch] = useState("");
+  const [userPage, setUserPage] = useState(1);
   const [editXpUser, setEditXpUser] = useState<AdminUser | null>(null);
   const [xpValue, setXpValue] = useState("");
   const [acting, setActing] = useState<string | null>(null);
@@ -508,17 +552,19 @@ function UsersTab() {
   const filtered = (users ?? []).filter((u) =>
     !search || (u.displayName ?? "").toLowerCase().includes(search.toLowerCase()) || (u.email ?? "").toLowerCase().includes(search.toLowerCase())
   );
+  const pagedUsers = filtered.slice((userPage - 1) * PAGE_SIZE, userPage * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Input placeholder="Search users…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+        <Input placeholder="Search users…" value={search} onChange={(e) => { setSearch(e.target.value); setUserPage(1); }} className="max-w-xs" />
         <Badge variant="outline" className="ml-auto">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</Badge>
       </div>
 
       {isLoading ? (
         <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
       ) : (
+        <>
         <div className="rounded-xl border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40">
@@ -531,7 +577,7 @@ function UsersTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((user) => (
+              {pagedUsers.map((user) => (
                 <tr key={user.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors" data-testid={`row-user-${user.id}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
@@ -588,6 +634,8 @@ function UsersTab() {
             </tbody>
           </table>
         </div>
+        <Paginator page={userPage} total={filtered.length} onChange={setUserPage} />
+        </>
       )}
 
       {/* Edit XP Dialog */}
@@ -795,6 +843,7 @@ function EnrollmentsTab() {
   const [loading, setLoading] = useState(true);
   const [loadingReqs, setLoadingReqs] = useState(true);
   const [search, setSearch] = useState("");
+  const [enrollPage, setEnrollPage] = useState(1);
   const [acting, setActing] = useState<number | null>(null);
   const [actingReq, setActingReq] = useState<number | null>(null);
   const [grantOpen, setGrantOpen] = useState(false);
@@ -854,6 +903,7 @@ function EnrollmentsTab() {
   const filtered = enrollments.filter((e) =>
     !search || e.userName.toLowerCase().includes(search.toLowerCase()) || e.courseTitle.toLowerCase().includes(search.toLowerCase()) || e.userEmail.toLowerCase().includes(search.toLowerCase())
   );
+  const pagedEnrollments = filtered.slice((enrollPage - 1) * PAGE_SIZE, enrollPage * PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -913,7 +963,7 @@ function EnrollmentsTab() {
       {/* ── All Enrollments ── */}
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <Input placeholder="Search by student or course…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+          <Input placeholder="Search by student or course…" value={search} onChange={(e) => { setSearch(e.target.value); setEnrollPage(1); }} className="max-w-xs" />
           <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh</Button>
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
@@ -928,6 +978,7 @@ function EnrollmentsTab() {
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground"><GraduationCap className="h-10 w-10 mx-auto mb-3 opacity-30" /><p>No enrollments found.</p></div>
         ) : (
+          <>
           <div className="rounded-xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40">
@@ -941,7 +992,7 @@ function EnrollmentsTab() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((e) => (
+                {pagedEnrollments.map((e) => (
                   <tr key={e.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-medium truncate max-w-[160px]">{e.userName}</p>
@@ -966,6 +1017,8 @@ function EnrollmentsTab() {
               </tbody>
             </table>
           </div>
+          <Paginator page={enrollPage} total={filtered.length} onChange={setEnrollPage} />
+          </>
         )}
       </div>
 
