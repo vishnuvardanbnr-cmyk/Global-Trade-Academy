@@ -46,18 +46,30 @@ export default function Courses() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <Input
-          placeholder="Search courses…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 bg-white h-10 text-sm"
-        />
+      {/* Search + level (desktop: side by side) */}
+      <div className="flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1 md:max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search courses…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 bg-white h-10 text-sm"
+          />
+        </div>
+        {/* Level dropdown — desktop only here */}
+        <div className="hidden md:flex items-center gap-2 shrink-0">
+          <select
+            className="h-10 text-sm border border-border rounded-md px-3 bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 min-w-[130px]"
+            value={activeLevel}
+            onChange={(e) => setActiveLevel(e.target.value)}
+          >
+            {LEVELS.map((l) => <option key={l}>{l}</option>)}
+          </select>
+        </div>
       </div>
 
-      {/* Sub-category pills — shown above the main filter row when a category is selected */}
+      {/* Sub-category pills */}
       {subCategories.length > 0 && (
         <div className="flex gap-2 flex-wrap items-center">
           <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Topic:</span>
@@ -78,10 +90,11 @@ export default function Courses() {
         </div>
       )}
 
-      {/* Level dropdown + Category pills — all on one row */}
+      {/* Mobile: level + categories on one row (no filter icon) */}
+      {/* Desktop: categories only (level is next to search above) */}
       <div className="flex gap-2 flex-wrap items-center">
         <select
-          className="h-9 text-sm border border-border rounded-full px-3 bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 shrink-0"
+          className="md:hidden h-9 text-sm border border-border rounded-full px-3 bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 shrink-0"
           value={activeLevel}
           onChange={(e) => setActiveLevel(e.target.value)}
         >
