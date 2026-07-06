@@ -370,40 +370,43 @@ function GrantAccessDialog({
 const PAGE_SIZE = 25;
 function Paginator({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (totalPages <= 1) return null;
+  const start = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(page * PAGE_SIZE, total);
   return (
     <div className="flex items-center justify-between px-1 pt-3">
       <span className="text-xs text-muted-foreground">
-        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+        {total === 0 ? "No records" : `${start}–${end} of ${total}`}
       </span>
-      <div className="flex items-center gap-1">
-        <button onClick={() => onChange(page - 1)} disabled={page === 1}
-          className="h-7 w-7 rounded-md border border-border flex items-center justify-center hover:bg-secondary disabled:opacity-40 transition-colors">
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        {(() => {
-          const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1);
-          const items: (number | string)[] = [];
-          pages.forEach((p, i) => {
-            if (i > 0 && pages[i - 1] < p - 1) items.push("…");
-            items.push(p);
-          });
-          return items.map((p, i) => p === "…" ? (
-            <span key={`e${i}`} className="text-xs text-muted-foreground px-1">…</span>
-          ) : (
-            <button key={p} onClick={() => onChange(p as number)}
-              className={cn("h-7 w-7 rounded-md text-xs font-medium border transition-colors",
-                p === page ? "bg-primary text-white border-primary" : "border-border hover:bg-secondary")}>
-              {p}
-            </button>
-          ));
-        })()}
-        <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
-          className="h-7 w-7 rounded-md border border-border flex items-center justify-center hover:bg-secondary disabled:opacity-40 transition-colors">
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button onClick={() => onChange(page - 1)} disabled={page === 1}
+            className="h-7 w-7 rounded-md border border-border flex items-center justify-center hover:bg-secondary disabled:opacity-40 transition-colors">
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          {(() => {
+            const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1);
+            const items: (number | string)[] = [];
+            pages.forEach((p, i) => {
+              if (i > 0 && pages[i - 1] < p - 1) items.push("…");
+              items.push(p);
+            });
+            return items.map((p, i) => p === "…" ? (
+              <span key={`e${i}`} className="text-xs text-muted-foreground px-1">…</span>
+            ) : (
+              <button key={p} onClick={() => onChange(p as number)}
+                className={cn("h-7 w-7 rounded-md text-xs font-medium border transition-colors",
+                  p === page ? "bg-primary text-white border-primary" : "border-border hover:bg-secondary")}>
+                {p}
+              </button>
+            ));
+          })()}
+          <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
+            className="h-7 w-7 rounded-md border border-border flex items-center justify-center hover:bg-secondary disabled:opacity-40 transition-colors">
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
