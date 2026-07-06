@@ -206,28 +206,30 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                    <BookOpen className="inline h-3 w-3 mr-1" />Skill Level
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {SKILL_OPTIONS.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setSkillLevel(s)}
-                        className={cn(
-                          "px-3 py-2 rounded-lg text-xs font-medium border transition-all",
-                          skillLevel === s
-                            ? "bg-primary text-white border-primary"
-                            : "bg-background border-border text-foreground hover:border-primary/50"
-                        )}
-                      >
-                        {SKILL_LABELS[s]}
-                      </button>
-                    ))}
+                {(me?.role === "instructor" || me?.role === "admin") && (
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                      <BookOpen className="inline h-3 w-3 mr-1" />Skill Level
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {SKILL_OPTIONS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setSkillLevel(s)}
+                          className={cn(
+                            "px-3 py-2 rounded-lg text-xs font-medium border transition-all",
+                            skillLevel === s
+                              ? "bg-primary text-white border-primary"
+                              : "bg-background border-border text-foreground hover:border-primary/50"
+                          )}
+                        >
+                          {SKILL_LABELS[s]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="pt-2">
                   <button

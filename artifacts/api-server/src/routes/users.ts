@@ -56,13 +56,17 @@ router.patch("/users/me", async (req, res): Promise<void> => {
 
     const { displayName, bio, marketFocus, skillLevel, avatarUrl } = req.body;
 
+    // Only instructors/admins may change skillLevel
+    const currentUser = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
+    const canEditSkillLevel = currentUser?.role === "instructor" || currentUser?.role === "admin";
+
     const updated = await db
       .update(usersTable)
       .set({
         ...(displayName !== undefined && { displayName }),
         ...(bio !== undefined && { bio }),
         ...(marketFocus !== undefined && { marketFocus }),
-        ...(skillLevel !== undefined && { skillLevel }),
+        ...(skillLevel !== undefined && canEditSkillLevel && { skillLevel }),
         ...(avatarUrl !== undefined && { avatarUrl }),
       })
       .where(eq(usersTable.id, userId))
