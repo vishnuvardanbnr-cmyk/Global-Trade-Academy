@@ -981,6 +981,8 @@ export const ListChannelsResponseItem = zod.object({
   "batchId": zod.number().nullish(),
   "courseName": zod.string().nullish(),
   "batchName": zod.string().nullish(),
+  "unreadCount": zod.number().optional(),
+  "lastPostAt": zod.string().nullish(),
   "createdBy": zod.string(),
   "createdAt": zod.string()
 })
@@ -1002,6 +1004,14 @@ export const CreateChannelBody = zod.object({
   "accessType": zod.string(),
   "courseId": zod.number().optional(),
   "batchId": zod.number().optional()
+})
+
+
+/**
+ * @summary Mark all messages in a channel as read
+ */
+export const MarkChannelReadParams = zod.object({
+  "channelId": zod.coerce.number()
 })
 
 
@@ -1038,6 +1048,8 @@ export const UpdateChannelResponse = zod.object({
   "batchId": zod.number().nullish(),
   "courseName": zod.string().nullish(),
   "batchName": zod.string().nullish(),
+  "unreadCount": zod.number().optional(),
+  "lastPostAt": zod.string().nullish(),
   "createdBy": zod.string(),
   "createdAt": zod.string()
 })

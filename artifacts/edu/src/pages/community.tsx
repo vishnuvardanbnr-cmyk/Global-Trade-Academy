@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useWS } from "@/hooks/useWS";
 import {
   useListChannels, useListPosts, useCreatePost, useLikePost,
-  useListComments, useCreateComment, useDeletePost,
+  useListComments, useCreateComment, useDeletePost, useMarkChannelRead,
   getListPostsQueryKey, getListCommentsQueryKey, getListChannelsQueryKey,
   type CommunityChannel, type Post,
 } from "@workspace/api-client-react";
@@ -46,30 +46,45 @@ function ChannelSidebar({
   loading: boolean;
   className?: string;
 }) {
+  const totalUnread = channels.reduce((s, ch) => s + ((ch as any).unreadCount ?? 0), 0);
   return (
     <div className={cn("shrink-0 flex flex-col bg-muted/40 border-r border-border overflow-hidden w-full md:w-56 md:rounded-l-xl", className)}>
-      <div className="px-3 py-3 border-b border-border/60">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Channels</p>
+      <div className="px-3 py-3 border-b border-border/60 flex items-center gap-2">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex-1">Channels</p>
+        {totalUnread > 0 && (
+          <span className="text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5 leading-none">
+            {totalUnread > 99 ? "99+" : totalUnread}
+          </span>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto py-1">
         {loading
           ? Array(5).fill(0).map((_, i) => <div key={i} className="mx-2 my-1 h-7 rounded-md bg-muted animate-pulse" />)
-          : channels.map((ch) => (
-            <button
-              key={ch.id}
-              onClick={() => onSelect(ch)}
-              className={cn(
-                "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md mx-1 my-0.5 transition-colors text-left",
-                active?.id === ch.id
-                  ? "bg-primary text-primary-foreground font-medium"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              )}
-            >
-              <span className="text-base leading-none">{ch.emoji}</span>
-              <span className="flex-1 truncate">{ch.name}</span>
-              {accessIcon(ch)}
-            </button>
-          ))
+          : channels.map((ch) => {
+            const unread: number = (ch as any).unreadCount ?? 0;
+            const isActive = active?.id === ch.id;
+            return (
+              <button
+                key={ch.id}
+                onClick={() => onSelect(ch)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md mx-1 my-0.5 transition-colors text-left",
+                  isActive
+                    ? "bg-primary text-primary-foreground font-medium"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                <span className="text-base leading-none">{ch.emoji}</span>
+                <span className={cn("flex-1 truncate", !isActive && unread > 0 && "font-semibold text-foreground")}>{ch.name}</span>
+                {accessIcon(ch)}
+                {!isActive && unread > 0 && (
+                  <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1 leading-none">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </button>
+            );
+          })
         }
         {!loading && channels.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-6 px-3">No channels available.</p>
@@ -417,7 +432,7 @@ function ChatBar({ channel, onSent }: { channel: CommunityChannel; onSent: () =>
 
 /* ── Channel Feed ─────────────────────────────────────────────── */
 function ChannelFeed({
-  channel, canPost, userId, userRole, onBack, className,
+  channel, canPost, userId, userRole, onBack, className, lastReadAt,
 }: {
   channel: CommunityChannel;
   canPost: boolean;
@@ -425,16 +440,34 @@ function ChannelFeed({
   userRole: string;
   onBack?: () => void;
   className?: string;
+  lastReadAt?: string | null;
 }) {
   const qc = useQueryClient();
   const [composerOpen, setComposerOpen] = useState(false);
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const firstUnreadRef = useRef<HTMLDivElement>(null);
+  const didScrollRef = useRef(false);
 
   const { data: posts, isLoading } = useListPosts(
     { channelId: channel.id },
     { query: { queryKey: getListPostsQueryKey({ channelId: channel.id }) } },
   );
+
+  const markRead = useMarkChannelRead({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      },
+    },
+  });
+
+  // Mark read when feed opens, after posts load
+  useEffect(() => {
+    if (!isLoading) {
+      markRead.mutate({ channelId: channel.id });
+    }
+  }, [channel.id, isLoading]);
 
   const deletePost = useDeletePost({
     mutation: {
@@ -456,9 +489,20 @@ function ChannelFeed({
     qc.invalidateQueries({ queryKey: getListPostsQueryKey({ channelId: channel.id }) });
   }, [channel.id, qc]));
 
+  // Scroll: first open → jump to first unread; subsequent new messages → scroll bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [posts?.length]);
+    if (isLoading || !posts) return;
+    if (!didScrollRef.current) {
+      didScrollRef.current = true;
+      if (firstUnreadRef.current) {
+        firstUnreadRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        bottomRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+      }
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [posts?.length, isLoading]);
 
   const allPosts = posts ?? [];
 
@@ -508,24 +552,39 @@ function ChannelFeed({
               <p className="text-xs text-muted-foreground">Be the first to say something!</p>
             </div>
           )
-          : allPosts.map((post) =>
-            post.category === "chat" ? (
-              <ChatBubble
-                key={post.id}
-                post={post}
-                isOwn={post.authorId === userId}
-                canDelete={userRole === "admin" || post.authorId === userId}
-                onDelete={handleDelete}
-              />
-            ) : (
-              <PostCard
-                key={post.id}
-                post={post}
-                canDelete={userRole === "admin" || post.authorId === userId}
-                onDelete={handleDelete}
-              />
-            )
-          )
+          : (() => {
+            const lastRead = lastReadAt ? new Date(lastReadAt) : null;
+            let addedDivider = false;
+            return allPosts.map((post) => {
+              const isFirstUnread = lastRead && post.createdAt && new Date(post.createdAt) > lastRead && !addedDivider && post.authorId !== userId;
+              if (isFirstUnread) addedDivider = true;
+              return (
+                <div key={post.id}>
+                  {isFirstUnread && (
+                    <div ref={firstUnreadRef} className="flex items-center gap-2 my-2">
+                      <div className="flex-1 h-px bg-red-300" />
+                      <span className="text-[10.5px] font-semibold text-red-500 whitespace-nowrap">New messages</span>
+                      <div className="flex-1 h-px bg-red-300" />
+                    </div>
+                  )}
+                  {post.category === "chat" ? (
+                    <ChatBubble
+                      post={post}
+                      isOwn={post.authorId === userId}
+                      canDelete={userRole === "admin" || post.authorId === userId}
+                      onDelete={handleDelete}
+                    />
+                  ) : (
+                    <PostCard
+                      post={post}
+                      canDelete={userRole === "admin" || post.authorId === userId}
+                      onDelete={handleDelete}
+                    />
+                  )}
+                </div>
+              );
+            });
+          })()
         }
         <div ref={bottomRef} />
       </div>
@@ -584,6 +643,7 @@ export default function Community() {
             userId={me?.id ?? ""}
             userRole={me?.role ?? "student"}
             onBack={() => setMobileView("channels")}
+            lastReadAt={(active as any).lastPostAt ?? null}
             className={mobileView === "feed" ? "flex" : "hidden md:flex"}
           />
         ) : (

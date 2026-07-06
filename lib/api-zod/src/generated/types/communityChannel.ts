@@ -23,6 +23,9 @@ export interface CommunityChannel {
   courseName?: string | null;
   /** @nullable */
   batchName?: string | null;
+  unreadCount?: number;
+  /** @nullable */
+  lastPostAt?: string | null;
   createdBy: string;
   createdAt: string;
 }

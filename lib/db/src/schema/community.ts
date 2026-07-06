@@ -1,4 +1,4 @@
-import { pgTable, text, integer, serial, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, serial, boolean, timestamp, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -51,6 +51,16 @@ export const postLikesTable = pgTable("post_likes", {
   userId: text("user_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* ─── Channel Reads (last-read tracker) ──────────────────── */
+export const channelReadsTable = pgTable("channel_reads", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  channelId: integer("channel_id").notNull(),
+  lastReadAt: timestamp("last_read_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique().on(t.userId, t.channelId)]);
+
+export type ChannelRead = typeof channelReadsTable.$inferSelect;
 
 export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true, likes: true, createdAt: true, updatedAt: true });
 export type InsertPost = z.infer<typeof insertPostSchema>;

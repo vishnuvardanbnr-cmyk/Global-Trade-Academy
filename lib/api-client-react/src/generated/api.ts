@@ -3404,6 +3404,76 @@ export const useCreateChannel = <TError = ErrorType<unknown>,
       return useMutation(getCreateChannelMutationOptions(options));
     }
 
+export const getMarkChannelReadUrl = (channelId: number,) => {
+
+
+
+
+  return `/api/channels/${channelId}/mark-read`
+}
+
+/**
+ * @summary Mark all messages in a channel as read
+ */
+export const markChannelRead = async (channelId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getMarkChannelReadUrl(channelId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getMarkChannelReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markChannelRead>>, TError,{channelId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markChannelRead>>, TError,{channelId: number}, TContext> => {
+
+const mutationKey = ['markChannelRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markChannelRead>>, {channelId: number}> = (props) => {
+          const {channelId} = props ?? {};
+
+          return  markChannelRead(channelId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkChannelReadMutationResult = NonNullable<Awaited<ReturnType<typeof markChannelRead>>>
+
+    export type MarkChannelReadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark all messages in a channel as read
+ */
+export const useMarkChannelRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markChannelRead>>, TError,{channelId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markChannelRead>>,
+        TError,
+        {channelId: number},
+        TContext
+      > => {
+      return useMutation(getMarkChannelReadMutationOptions(options));
+    }
+
 export const getUpdateChannelUrl = (channelId: number,) => {
 
 

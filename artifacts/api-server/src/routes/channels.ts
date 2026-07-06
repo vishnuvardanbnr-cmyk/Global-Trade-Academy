@@ -3,9 +3,9 @@ import { getAuth } from "../lib/auth";
 import { db } from "@workspace/db";
 import {
   communityChannelsTable, usersTable, coursesTable, batchesTable,
-  enrollmentsTable, batchStudentsTable,
+  enrollmentsTable, batchStudentsTable, postsTable, channelReadsTable,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gt, count, max, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -14,16 +14,42 @@ async function getUserRole(clerkId: string): Promise<string | null> {
   return user?.role ?? null;
 }
 
-async function enrichChannel(ch: typeof communityChannelsTable.$inferSelect) {
-  const [courseName, batchName] = await Promise.all([
+async function enrichChannel(
+  ch: typeof communityChannelsTable.$inferSelect,
+  clerkId?: string,
+) {
+  const [courseName, batchName, lastPostRow, lastReadRow] = await Promise.all([
     ch.courseId
       ? db.select({ title: coursesTable.title }).from(coursesTable).where(eq(coursesTable.id, ch.courseId)).limit(1).then((r) => r[0]?.title ?? null)
       : null,
     ch.batchId
       ? db.select({ name: batchesTable.name }).from(batchesTable).where(eq(batchesTable.id, ch.batchId)).limit(1).then((r) => r[0]?.name ?? null)
       : null,
+    db.select({ lastAt: max(postsTable.createdAt) }).from(postsTable).where(eq(postsTable.channelId, ch.id)).then((r) => r[0] ?? null),
+    clerkId
+      ? db.select({ lastReadAt: channelReadsTable.lastReadAt }).from(channelReadsTable)
+          .where(and(eq(channelReadsTable.channelId, ch.id), eq(channelReadsTable.userId, clerkId)))
+          .limit(1).then((r) => r[0] ?? null)
+      : null,
   ]);
-  return { ...ch, courseName, batchName };
+
+  const lastReadAt = lastReadRow?.lastReadAt ?? null;
+  const unreadCount = clerkId
+    ? await db.select({ cnt: count() }).from(postsTable)
+        .where(and(
+          eq(postsTable.channelId, ch.id),
+          lastReadAt ? gt(postsTable.createdAt, lastReadAt) : sql`true`,
+        ))
+        .then((r) => r[0]?.cnt ?? 0)
+    : 0;
+
+  return {
+    ...ch,
+    courseName,
+    batchName,
+    unreadCount,
+    lastPostAt: lastPostRow?.lastAt?.toISOString() ?? null,
+  };
 }
 
 export async function canAccessChannel(
@@ -59,11 +85,32 @@ router.get("/channels", async (req, res): Promise<void> => {
     const all = await db.select().from(communityChannelsTable).orderBy(communityChannelsTable.position, communityChannelsTable.createdAt);
     const accessible = await Promise.all(all.map(async (ch) => {
       const ok = await canAccessChannel(clerkId, role, ch);
-      return ok ? enrichChannel(ch) : null;
+      return ok ? enrichChannel(ch, clerkId) : null;
     }));
     res.json(accessible.filter(Boolean));
   } catch (err) {
     req.log.error({ err }, "Error listing channels");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/channels/:channelId/mark-read ────────────────── */
+router.post("/channels/:channelId/mark-read", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const channelId = parseInt(req.params.channelId);
+    if (isNaN(channelId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    await db.insert(channelReadsTable)
+      .values({ userId: clerkId, channelId, lastReadAt: new Date() })
+      .onConflictDoUpdate({
+        target: [channelReadsTable.userId, channelReadsTable.channelId],
+        set: { lastReadAt: new Date() },
+      });
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Error marking channel as read");
     res.status(500).json({ error: "Internal server error" });
   }
 });
