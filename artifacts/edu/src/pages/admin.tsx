@@ -368,7 +368,7 @@ function GrantAccessDialog({
 /* ─── types ─── */
 type DetailedStats = { totalUsers: number; totalCourses: number; publishedCourses: number; totalEnrollments: number; activeEnrollments: number; completedEnrollments: number; instructors: number; admins: number; newUsersWeek: number; newUsersMonth: number; totalLessons: number; totalQuizAttempts: number; totalCertificates: number; totalXpAwarded: number; };
 type AdminCourse = { id: number; title: string; status: string; level: string | null; category: string | null; subCategory: string | null; price: string | null; instructorName: string; enrollments: number; isFeatured: boolean | null; createdAt: string; };
-type AdminEnrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; };
+type AdminEnrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; groupName: string | null; };
 type AdminActivity = { id: number; type: string; userId: string | null; userName: string | null; description: string | null; metadata: unknown; createdAt: string; };
 type AdminUser = { id: string; email: string; displayName: string | null; role: string; xp: number; createdAt: string; };
 
@@ -941,6 +941,11 @@ function EnrollmentsTab() {
                     <td className="px-4 py-3">
                       <p className="font-medium truncate max-w-[160px]">{e.userName}</p>
                       <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{e.userEmail}</p>
+                      {e.groupName && (
+                        <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                          <Users className="h-2.5 w-2.5" />{e.groupName}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground truncate max-w-[200px]">{e.courseTitle}</td>
                     <td className="px-4 py-3 text-center"><EnrollBadge status={e.status} /></td>

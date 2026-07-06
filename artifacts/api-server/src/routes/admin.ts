@@ -6,7 +6,7 @@ import {
   lessonProgressTable, quizAttemptsTable, taskCompletionsTable,
   xpEventsTable, activityTable, liveClassesTable, certificatesTable,
   postsTable, commentsTable, eventsTable, siteSettingsTable,
-  livekitAccountsTable,
+  livekitAccountsTable, groupMembersTable, groupsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not, asc } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
@@ -157,13 +157,18 @@ router.get("/admin/enrollments", async (req, res): Promise<void> => {
     const userIds = [...new Set(enrollments.map((e) => e.userId))];
     const courseIds = [...new Set(enrollments.map((e) => e.courseId))];
 
-    const [users, courses] = await Promise.all([
+    const [users, courses, groupMembers] = await Promise.all([
       userIds.length ? db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email }).from(usersTable).where(inArray(usersTable.id, userIds)) : [],
       courseIds.length ? db.select({ id: coursesTable.id, title: coursesTable.title, instructorId: coursesTable.instructorId }).from(coursesTable).where(inArray(coursesTable.id, courseIds)) : [],
+      userIds.length ? db.select({ userId: groupMembersTable.userId, groupName: groupsTable.name })
+        .from(groupMembersTable)
+        .innerJoin(groupsTable, eq(groupsTable.id, groupMembersTable.groupId))
+        .where(inArray(groupMembersTable.userId, userIds)) : [],
     ]);
 
     const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
     const courseMap = Object.fromEntries(courses.map((c) => [c.id, c]));
+    const groupMap = Object.fromEntries(groupMembers.map((g) => [g.userId, g.groupName]));
 
     res.json(enrollments.map((e) => ({
       ...e,
@@ -171,6 +176,7 @@ router.get("/admin/enrollments", async (req, res): Promise<void> => {
       userEmail: userMap[e.userId]?.email ?? "",
       courseTitle: courseMap[e.courseId]?.title ?? "Unknown",
       instructorId: courseMap[e.courseId]?.instructorId ?? null,
+      groupName: groupMap[e.userId] ?? null,
     })));
   } catch (err) {
     req.log.error({ err }, "Error listing admin enrollments");
