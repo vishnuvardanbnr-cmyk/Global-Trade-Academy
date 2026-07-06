@@ -203,6 +203,40 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   }
 });
 
+/* ── POST /api/auth/change-password ────────────────────────── */
+router.post("/auth/change-password", async (req, res): Promise<void> => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: "Both current and new password are required" }); return;
+    }
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: "New password must be at least 8 characters" }); return;
+    }
+
+    const user = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1).then(r => r[0]);
+    if (!user || !user.passwordHash) {
+      res.status(400).json({ error: "Account not found or uses social login" }); return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      res.status(400).json({ error: "Current password is incorrect" }); return;
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await db.update(usersTable).set({ passwordHash: hashed }).where(eq(usersTable.id, userId));
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Change password error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/auth/me", async (req, res): Promise<void> => {
   try {
     const { userId } = getAuth(req);

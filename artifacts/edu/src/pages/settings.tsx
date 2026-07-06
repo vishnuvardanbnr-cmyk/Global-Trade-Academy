@@ -6,7 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight, ImageIcon, Moon, Sun } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { User, Shield, Zap, Award, Target, BookOpen, Bell, Palette, ChevronRight, ImageIcon, Moon, Sun, Eye, EyeOff, X } from "lucide-react";
 import { useTheme } from "@/lib/useTheme";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,42 @@ export default function Settings() {
   const [marketFocus, setMarketFocus] = useState("");
   const [skillLevel, setSkillLevel] = useState("");
   const [initialized, setInitialized] = useState(false);
+
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+
+  const handleChangePw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPw !== confirmPw) {
+      toast({ title: "Passwords don't match", variant: "destructive" }); return;
+    }
+    if (newPw.length < 8) {
+      toast({ title: "New password must be at least 8 characters", variant: "destructive" }); return;
+    }
+    setPwSaving(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      toast({ title: "Password updated", description: "Your password has been changed successfully." });
+      setShowChangePw(false);
+      setCurrentPw(""); setNewPw(""); setConfirmPw("");
+    } catch (err: any) {
+      toast({ title: err.message ?? "Could not update password", variant: "destructive" });
+    } finally {
+      setPwSaving(false);
+    }
+  };
 
   if (me && !initialized) {
     setDisplayName(me.displayName ?? "");
@@ -289,25 +326,91 @@ export default function Settings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {[
-                { label: "Change password", sub: "Update your login credentials", icon: Shield },
-                { label: "Notification preferences", sub: "Control which alerts you receive", icon: Bell },
-              ].map(({ label, sub, icon: Icon }) => (
+              {/* Change password row */}
+              <div className="border-b border-border">
                 <button
-                  key={label}
-                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-secondary transition-colors text-left border-b border-border last:border-0"
-                  onClick={() => toast({ title: "Coming soon", description: `${label} settings will be available shortly.` })}
+                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-secondary transition-colors text-left"
+                  onClick={() => setShowChangePw(v => !v)}
                 >
                   <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <Shield className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{label}</p>
-                    <p className="text-xs text-muted-foreground">{sub}</p>
+                    <p className="text-sm font-medium text-foreground">Change password</p>
+                    <p className="text-xs text-muted-foreground">Update your login credentials</p>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  {showChangePw
+                    ? <X className="h-4 w-4 text-muted-foreground shrink-0" />
+                    : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                 </button>
-              ))}
+
+                {showChangePw && (
+                  <form onSubmit={handleChangePw} className="px-5 pb-4 pt-1 space-y-3 bg-secondary/30">
+                    <div className="relative">
+                      <Input
+                        type={showCurrentPw ? "text" : "password"}
+                        placeholder="Current password"
+                        value={currentPw}
+                        onChange={e => setCurrentPw(e.target.value)}
+                        className="pr-10 bg-white text-sm h-9"
+                        required
+                      />
+                      <button type="button" tabIndex={-1} onClick={() => setShowCurrentPw(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        type={showNewPw ? "text" : "password"}
+                        placeholder="New password (min 8 chars)"
+                        value={newPw}
+                        onChange={e => setNewPw(e.target.value)}
+                        className="pr-10 bg-white text-sm h-9"
+                        required
+                      />
+                      <button type="button" tabIndex={-1} onClick={() => setShowNewPw(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <Input
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={confirmPw}
+                      onChange={e => setConfirmPw(e.target.value)}
+                      className="bg-white text-sm h-9"
+                      required
+                    />
+                    <div className="flex gap-2 pt-1">
+                      <button type="submit" disabled={pwSaving}
+                        className="h-8 px-4 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50">
+                        {pwSaving ? "Saving…" : "Update password"}
+                      </button>
+                      <button type="button"
+                        onClick={() => { setShowChangePw(false); setCurrentPw(""); setNewPw(""); setConfirmPw(""); }}
+                        className="h-8 px-4 rounded-md text-xs font-medium border border-border hover:bg-secondary transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Notification preferences */}
+              <button
+                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-secondary transition-colors text-left"
+                onClick={() => toast({ title: "Coming soon", description: "Notification preferences will be available shortly." })}
+              >
+                <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                  <Bell className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">Notification preferences</p>
+                  <p className="text-xs text-muted-foreground">Control which alerts you receive</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </button>
             </CardContent>
           </Card>
         </div>
