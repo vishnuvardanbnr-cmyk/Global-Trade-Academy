@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useState } from "react";
-import { Search, Star, Clock, Users, BookOpen, Filter, GraduationCap } from "lucide-react";
+import { Search, Star, Clock, Users, BookOpen, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const LEVELS = ["All Levels", "Beginner", "Intermediate", "Advanced"];
@@ -46,31 +46,47 @@ export default function Courses() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Search courses…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-white h-10 text-sm"
-          />
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
-          <select
-            className="h-10 text-sm border border-border rounded-md px-3 bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 min-w-[130px]"
-            value={activeLevel}
-            onChange={(e) => setActiveLevel(e.target.value)}
-          >
-            {LEVELS.map((l) => <option key={l}>{l}</option>)}
-          </select>
-        </div>
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Input
+          placeholder="Search courses…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9 bg-white h-10 text-sm"
+        />
       </div>
 
-      {/* Category pills */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Sub-category pills — shown above the main filter row when a category is selected */}
+      {subCategories.length > 0 && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Topic:</span>
+          {subCategories.map((sub) => (
+            <button
+              key={sub}
+              onClick={() => setActiveSubCategory(activeSubCategory === sub ? "" : sub)}
+              className={cn(
+                "px-3 py-1 rounded-full text-xs font-medium border transition-all capitalize",
+                activeSubCategory === sub
+                  ? "bg-primary/15 text-primary border-primary/40 shadow-sm"
+                  : "bg-white text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+              )}
+            >
+              {sub}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Level dropdown + Category pills — all on one row */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select
+          className="h-9 text-sm border border-border rounded-full px-3 bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 shrink-0"
+          value={activeLevel}
+          onChange={(e) => setActiveLevel(e.target.value)}
+        >
+          {LEVELS.map((l) => <option key={l}>{l}</option>)}
+        </select>
         {categories.map((cat) => (
           <button
             key={cat}
@@ -94,27 +110,6 @@ export default function Courses() {
           </button>
         ))}
       </div>
-
-      {/* Sub-category pills — only visible when a category is selected and has sub-categories */}
-      {subCategories.length > 0 && (
-        <div className="flex gap-2 flex-wrap items-center">
-          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Topic:</span>
-          {subCategories.map((sub) => (
-            <button
-              key={sub}
-              onClick={() => setActiveSubCategory(activeSubCategory === sub ? "" : sub)}
-              className={cn(
-                "px-3 py-1 rounded-full text-xs font-medium border transition-all capitalize",
-                activeSubCategory === sub
-                  ? "bg-primary/15 text-primary border-primary/40 shadow-sm"
-                  : "bg-white text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
-              )}
-            >
-              {sub}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Stats row */}
       {!isLoading && (
