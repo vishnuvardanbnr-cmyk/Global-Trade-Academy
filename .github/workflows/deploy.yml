@@ -30,7 +30,7 @@ jobs:
         run: pnpm --filter @workspace/api-server run build
 
       - name: Build frontend
-        run: BASE_PATH=/ pnpm --filter @workspace/edu run build
+        run: BASE_PATH=/ PORT=3000 pnpm --filter @workspace/edu run build
 
       - name: Write SSH key
         run: |
