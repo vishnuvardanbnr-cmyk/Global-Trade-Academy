@@ -3074,6 +3074,115 @@ function GroupsTab() {
 }
 
 /* ════════════════════════════════════════════
+   INTEGRATIONS TAB
+════════════════════════════════════════════ */
+function IntegrationsTab() {
+  const { toast } = useToast();
+  const [metaapiToken, setMetaapiToken] = useState("");
+  const [metaapiStrategy, setMetaapiStrategy] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [status, setStatus] = useState<{ metaapiTokenSet: boolean; metaapiStrategySet: boolean; metaapiToken: string; metaapiStrategy: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/integration-settings")
+      .then((r) => r.json())
+      .then((d) => { setStatus(d); if (d.metaapiStrategy) setMetaapiStrategy(d.metaapiStrategy); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body: Record<string, string> = {};
+      if (metaapiToken.trim())    body.metaapiToken    = metaapiToken.trim();
+      if (metaapiStrategy.trim()) body.metaapiStrategy = metaapiStrategy.trim();
+      const r = await fetch("/api/admin/integration-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const d = await r.json() as { error: string }; throw new Error(d.error); }
+      // Re-fetch status
+      const updated = await fetch("/api/admin/integration-settings").then((x) => x.json()) as typeof status;
+      setStatus(updated);
+      if (updated?.metaapiStrategy) setMetaapiStrategy(updated.metaapiStrategy);
+      setMetaapiToken("");
+      toast({ title: "Integration settings saved" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to save", variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>;
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2"><KeyRound className="h-4 w-4" />Integrations</h2>
+        <p className="text-sm text-muted-foreground">Configure third-party service credentials. Values saved here override environment variables.</p>
+      </div>
+
+      {/* MetaAPI */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <span className="text-purple-400 font-bold">MetaAPI</span>
+            <span className="text-muted-foreground font-normal text-sm">— CopyFactory copy trading</span>
+            <div className="ml-auto flex gap-2">
+              <Badge variant={status?.metaapiTokenSet ? "default" : "secondary"} className="text-xs">
+                {status?.metaapiTokenSet ? "Token set" : "Token not set"}
+              </Badge>
+              <Badge variant={status?.metaapiStrategySet ? "default" : "secondary"} className="text-xs">
+                {status?.metaapiStrategySet ? "Strategy set" : "Strategy not set"}
+              </Badge>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">API Token</label>
+            {status?.metaapiTokenSet && (
+              <p className="text-xs text-muted-foreground">Current: <code className="bg-muted px-1 rounded">{status.metaapiToken}</code> — paste a new value to replace</p>
+            )}
+            <div className="flex gap-2">
+              <Input
+                type={showToken ? "text" : "password"}
+                placeholder={status?.metaapiTokenSet ? "Paste new token to replace…" : "Paste your MetaAPI API token"}
+                value={metaapiToken}
+                onChange={(e) => setMetaapiToken(e.target.value)}
+              />
+              <Button variant="outline" size="icon" onClick={() => setShowToken((v) => !v)}>
+                {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Get this from <strong>app.metaapi.cloud</strong> → Account Settings → API Token</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">CopyFactory Strategy ID</label>
+            <Input
+              placeholder="e.g. abc123def456..."
+              value={metaapiStrategy}
+              onChange={(e) => setMetaapiStrategy(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Get this from <strong>app.metaapi.cloud</strong> → CopyFactory → Strategies → your strategy → copy ID</p>
+          </div>
+
+          <div className="flex justify-end">
+            <Button onClick={save} disabled={saving || (!metaapiToken.trim() && !metaapiStrategy.trim())}>
+              <Save className="h-4 w-4 mr-1.5" />{saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    MAIN ADMIN PANEL
 ════════════════════════════════════════════ */
 export default function AdminPanel() {
@@ -3108,6 +3217,9 @@ export default function AdminPanel() {
           <TabsTrigger value="livekit" className="flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" />LiveKit
           </TabsTrigger>
+          <TabsTrigger value="integrations" className="flex items-center gap-1.5">
+            <KeyRound className="h-3.5 w-3.5" />Integrations
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
@@ -3123,6 +3235,7 @@ export default function AdminPanel() {
         <TabsContent value="landing" className="mt-6"><LandingPageTab /></TabsContent>
         <TabsContent value="groups" className="mt-6"><GroupsTab /></TabsContent>
         <TabsContent value="livekit" className="mt-6"><LiveKitAccountsTab /></TabsContent>
+        <TabsContent value="integrations" className="mt-6"><IntegrationsTab /></TabsContent>
       </Tabs>
     </div>
   );

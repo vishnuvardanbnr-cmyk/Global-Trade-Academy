@@ -713,6 +713,70 @@ router.put("/admin/site-settings/:key", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/admin/integration-settings (admin only) ─────────── */
+router.get("/admin/integration-settings", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const row = await db
+      .select()
+      .from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "integration_settings"))
+      .limit(1)
+      .then((r) => r[0]);
+
+    const stored = row ? (JSON.parse(row.value) as Record<string, string>) : {};
+
+    // Merge: env vars take lowest priority; DB values override
+    const metaapiToken    = stored.metaapiToken    ?? process.env.METAAPI_TOKEN    ?? "";
+    const metaapiStrategy = stored.metaapiStrategy ?? process.env.METAAPI_STRATEGY_ID ?? "";
+
+    res.json({
+      metaapiToken:    metaapiToken    ? `****${metaapiToken.slice(-6)}`    : "",
+      metaapiStrategy: metaapiStrategy ? metaapiStrategy : "",
+      metaapiTokenSet:    metaapiToken    !== "",
+      metaapiStrategySet: metaapiStrategy !== "",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── PUT /api/admin/integration-settings (admin only) ─────────── */
+router.put("/admin/integration-settings", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { metaapiToken, metaapiStrategy } = req.body as Record<string, string>;
+
+    // Read existing to merge (so partial updates don't wipe other keys)
+    const existing = await db
+      .select()
+      .from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "integration_settings"))
+      .limit(1)
+      .then((r) => r[0]);
+    const current = existing ? (JSON.parse(existing.value) as Record<string, string>) : {};
+
+    if (metaapiToken    !== undefined) current.metaapiToken    = metaapiToken;
+    if (metaapiStrategy !== undefined) current.metaapiStrategy = metaapiStrategy;
+
+    await db
+      .insert(siteSettingsTable)
+      .values({ key: "integration_settings", value: JSON.stringify(current) })
+      .onConflictDoUpdate({
+        target: siteSettingsTable.key,
+        set: { value: JSON.stringify(current), updatedAt: new Date() },
+      });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── GET /api/admin/pending-users ───────────────────────────────── */
 router.get("/admin/pending-users", async (req, res): Promise<void> => {
   try {

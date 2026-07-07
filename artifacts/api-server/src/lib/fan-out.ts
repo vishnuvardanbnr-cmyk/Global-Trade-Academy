@@ -10,6 +10,7 @@ import {
   copyAccountsTable,
   tradeSignalsTable,
   copyTradesTable,
+  siteSettingsTable,
 } from "@workspace/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { decrypt } from "./encrypt";
@@ -191,6 +192,24 @@ const METAAPI_CONFIG_BASE =
 const METAAPI_PROVISION_BASE =
   "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 
+/** Read MetaAPI token + strategyId from DB (integration_settings) with env-var fallback */
+async function getMetaapiConfig(): Promise<{ token: string; strategyId: string }> {
+  const row = await db
+    .select()
+    .from(siteSettingsTable)
+    .where(eq(siteSettingsTable.key, "integration_settings"))
+    .limit(1)
+    .then((r) => r[0]);
+
+  const stored = row ? (JSON.parse(row.value) as Record<string, string>) : {};
+  const token      = stored.metaapiToken    ?? process.env.METAAPI_TOKEN    ?? "";
+  const strategyId = stored.metaapiStrategy ?? process.env.METAAPI_STRATEGY_ID ?? "";
+
+  if (!token)      throw new Error("METAAPI_TOKEN not configured — set it in Admin → Integrations");
+  if (!strategyId) throw new Error("METAAPI_STRATEGY_ID not configured — set it in Admin → Integrations");
+  return { token, strategyId };
+}
+
 /**
  * Create a MetaAPI broker account from the copier's MT credentials.
  * Fully handled server-side — copier never visits app.metaapi.cloud.
@@ -203,8 +222,7 @@ export async function metaapiCreateAccount(opts: {
   platform: "mt4" | "mt5";
   name: string;
 }): Promise<string> {
-  const token = process.env.METAAPI_TOKEN;
-  if (!token) throw new Error("METAAPI_TOKEN not configured");
+  const { token } = await getMetaapiConfig();
 
   const res = await fetchWithTimeout(
     `${METAAPI_PROVISION_BASE}/users/current/accounts`,
@@ -243,9 +261,7 @@ export async function metaapiSubscribe(
   label: string,
   lotMultiplier: number,
 ): Promise<void> {
-  const token = process.env.METAAPI_TOKEN;
-  const strategyId = process.env.METAAPI_STRATEGY_ID;
-  if (!token || !strategyId) throw new Error("METAAPI_TOKEN or METAAPI_STRATEGY_ID not configured");
+  const { token, strategyId } = await getMetaapiConfig();
 
   const res = await fetchWithTimeout(
     `${METAAPI_CONFIG_BASE}/users/current/configuration/subscribers/${metaapiAccountId}`,
@@ -276,9 +292,8 @@ export async function metaapiSubscribe(
  * Called when the copier removes their account from our platform.
  */
 export async function metaapiUnsubscribe(metaapiAccountId: string): Promise<void> {
-  const token = process.env.METAAPI_TOKEN;
-  const strategyId = process.env.METAAPI_STRATEGY_ID;
-  if (!token || !strategyId) return; // non-fatal if not configured
+  let token: string; let strategyId: string;
+  try { ({ token, strategyId } = await getMetaapiConfig()); } catch { return; } // non-fatal if not configured
 
   await fetchWithTimeout(
     `${METAAPI_CONFIG_BASE}/users/current/configuration/subscribers/${metaapiAccountId}/strategies/${strategyId}`,
@@ -298,9 +313,7 @@ export async function metaapiUnsubscribe(metaapiAccountId: string): Promise<void
 async function executeMetaApi(
   signal: typeof tradeSignalsTable.$inferSelect,
 ): Promise<string> {
-  const token = process.env.METAAPI_TOKEN;
-  const strategyId = process.env.METAAPI_STRATEGY_ID;
-  if (!token || !strategyId) throw new Error("METAAPI_TOKEN or METAAPI_STRATEGY_ID not configured");
+  const { token, strategyId } = await getMetaapiConfig();
 
   if (signal.action === "modify") return "modify-noop";
 
