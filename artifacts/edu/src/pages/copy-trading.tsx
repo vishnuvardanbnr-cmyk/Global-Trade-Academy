@@ -304,6 +304,7 @@ function QuickTradePanel({
   const [takeProfit, setTakeProfit] = useState("");
   const [leverage, setLeverage] = useState("1");
   const [notes, setNotes] = useState("");
+  const [closeSide, setCloseSide] = useState<"long" | "short">("long");
   const [firing, setFiring] = useState(false);
 
   const needsPrice    = orderType === "limit" || orderType === "stop_limit";
@@ -343,7 +344,13 @@ function QuickTradePanel({
       if (needsStopPx && stopPrice) body.stopPrice = parseFloat(stopPrice);
       if (stopLoss)   body.stopLoss  = parseFloat(stopLoss);
       if (takeProfit) body.takeProfit = parseFloat(takeProfit);
-      if (notes.trim()) body.notes = notes.trim();
+      // For CLOSE, always inject "close long" / "close short" so fan-out knows the side.
+      // User-supplied notes are appended after the side tag.
+      if (action === "close") {
+        body.notes = `close ${closeSide}${notes.trim() ? ` — ${notes.trim()}` : ""}`;
+      } else if (notes.trim()) {
+        body.notes = notes.trim();
+      }
 
       const res = await fetch("/api/trade-signals", {
         method: "POST",
@@ -398,6 +405,33 @@ function QuickTradePanel({
             );
           })}
         </div>
+
+        {/* Close side: long or short — required when action = close */}
+        {action === "close" && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-medium">Closing position:</span>
+            <div className="flex gap-2">
+              {(["long", "short"] as const).map((side) => (
+                <button
+                  key={side}
+                  onClick={() => setCloseSide(side)}
+                  className={`rounded-lg border-2 px-4 py-1.5 text-xs font-bold transition-all ${
+                    closeSide === side
+                      ? side === "long"
+                        ? "bg-green-500 text-white border-green-500"
+                        : "bg-red-500 text-white border-red-500"
+                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  {side === "long" ? "▲ LONG" : "▼ SHORT"}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              Will send &quot;{`close ${closeSide}`}&quot; to exchange
+            </span>
+          </div>
+        )}
 
         {/* Row 1: Symbol + Market + Order type */}
         <div className="grid grid-cols-3 gap-3">
