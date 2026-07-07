@@ -41,6 +41,8 @@ export const copySubscriptionsTable = pgTable("copy_subscriptions", {
 export const copyAccountsTable = pgTable("copy_accounts", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),
+  role: text("role").notNull().default("copier"),     // "master" | "copier"
+  traderId: integer("trader_id"),                      // set when role = "master"
   type: text("type").notNull(), // "binance" | "bybit" | "mt5"
   label: text("label").notNull(),
   apiKey: text("api_key"),        // AES-256-GCM encrypted
@@ -51,6 +53,25 @@ export const copyAccountsTable = pgTable("copy_accounts", {
   status: text("status").notNull().default("active"), // active | error | disconnected
   lastError: text("last_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+// Snapshot of each master account's last-known open positions.
+// The poller diffs this against live exchange data to detect changes.
+export const masterPositionsTable = pgTable("master_positions", {
+  id: serial("id").primaryKey(),
+  masterAccountId: integer("master_account_id").notNull(), // FK → copy_accounts.id (role=master)
+  traderId: integer("trader_id").notNull(),
+  symbol: text("symbol").notNull(),
+  side: text("side").notNull(),          // "long" | "short" | "buy" | "sell"
+  entryPrice: numeric("entry_price", { precision: 20, scale: 8 }).notNull(),
+  size: numeric("size", { precision: 20, scale: 8 }).notNull(),  // position size / lots
+  stopLoss: numeric("stop_loss", { precision: 20, scale: 8 }),
+  takeProfit: numeric("take_profit", { precision: 20, scale: 8 }),
+  leverage: integer("leverage").default(1),
+  brokerPositionId: text("broker_position_id"), // exchange-side identifier
+  market: text("market").notNull().default("crypto"), // "crypto" | "forex"
+  openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 

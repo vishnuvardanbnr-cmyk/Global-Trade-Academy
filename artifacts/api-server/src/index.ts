@@ -2,6 +2,7 @@ import { createServer } from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWSS } from "./lib/ws";
+import { startMirrorPoller } from "./lib/mirror-poller";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,5 @@ initWSS(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  startMirrorPoller();
 });

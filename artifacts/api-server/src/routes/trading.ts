@@ -1,13 +1,14 @@
 import { Router } from "express";
-import { createHmac } from "crypto";
 import { getAuth } from "../lib/auth";
 import { db } from "@workspace/db";
 import {
   tradersTable, copySubscriptionsTable, watchlistTable,
   copyAccountsTable, tradeSignalsTable, copyTradesTable,
+  masterPositionsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
+import { fanOutSignal } from "../lib/fan-out";
 
 const router = Router();
 
@@ -30,179 +31,13 @@ function buildTraderResponse(t: typeof tradersTable.$inferSelect) {
 
 function maskAccount(a: typeof copyAccountsTable.$inferSelect) {
   return {
-    id: a.id, userId: a.userId, type: a.type, label: a.label,
+    id: a.id, userId: a.userId, role: a.role, traderId: a.traderId ?? null,
+    type: a.type, label: a.label,
     status: a.status, lastError: a.lastError, createdAt: a.createdAt,
-    // show only last 4 chars of apiKey so user can identify which key
     apiKeyHint: a.apiKey ? `****${decrypt(a.apiKey).slice(-4)}` : null,
     mt5Login: a.mt5Login ?? null,
     mt5Server: a.mt5Server ?? null,
   };
-}
-
-/* ─── Binance order execution ─────────────────────────────────────── */
-async function executeBinance(
-  apiKey: string, apiSecret: string,
-  signal: typeof tradeSignalsTable.$inferSelect,
-  lotMultiplier: number,
-): Promise<string> {
-  const side = signal.action === "buy" ? "BUY" : "SELL";
-  const qty = (parseFloat(signal.quantity as string) * lotMultiplier).toFixed(6);
-  const params = new URLSearchParams({
-    symbol: signal.symbol.toUpperCase(),
-    side,
-    type: "MARKET",
-    quantity: qty,
-    timestamp: Date.now().toString(),
-  });
-  const sig = createHmac("sha256", apiSecret).update(params.toString()).digest("hex");
-  params.append("signature", sig);
-
-  const baseUrl = signal.market === "crypto"
-    ? "https://api.binance.com/api/v3/order"
-    : "https://api.binance.com/api/v3/order"; // spot only for now
-
-  const res = await fetch(`${baseUrl}?${params.toString()}`, {
-    method: "POST",
-    headers: { "X-MBX-APIKEY": apiKey },
-  });
-  const json = await res.json() as { orderId?: number; msg?: string };
-  if (!res.ok) throw new Error(json.msg ?? "Binance error");
-  return String(json.orderId);
-}
-
-/* ─── Bybit order execution ───────────────────────────────────────── */
-async function executeBybit(
-  apiKey: string, apiSecret: string,
-  signal: typeof tradeSignalsTable.$inferSelect,
-  lotMultiplier: number,
-): Promise<string> {
-  const timestamp = Date.now().toString();
-  const qty = (parseFloat(signal.quantity as string) * lotMultiplier).toFixed(6);
-  const body = JSON.stringify({
-    category: signal.market === "crypto" ? "spot" : "linear",
-    symbol: signal.symbol.toUpperCase(),
-    side: signal.action === "buy" ? "Buy" : "Sell",
-    orderType: "Market",
-    qty,
-  });
-  const toSign = `${timestamp}${apiKey}5000${body}`;
-  const signature = createHmac("sha256", apiSecret).update(toSign).digest("hex");
-
-  const res = await fetch("https://api.bybit.com/v5/order/create", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-BAPI-API-KEY": apiKey,
-      "X-BAPI-TIMESTAMP": timestamp,
-      "X-BAPI-SIGN": signature,
-      "X-BAPI-RECV-WINDOW": "5000",
-    },
-    body,
-  });
-  const json = await res.json() as { result?: { orderId?: string }; retMsg?: string; retCode?: number };
-  if (json.retCode !== 0) throw new Error(json.retMsg ?? "Bybit error");
-  return json.result?.orderId ?? "unknown";
-}
-
-/* ─── MT5 bridge execution ────────────────────────────────────────── */
-async function executeMt5(
-  login: string, password: string, server: string,
-  signal: typeof tradeSignalsTable.$inferSelect,
-  lotMultiplier: number,
-): Promise<string> {
-  const bridgeUrl = process.env.MT5_BRIDGE_URL;
-  if (!bridgeUrl) throw new Error("MT5_BRIDGE_URL not configured");
-
-  const res = await fetch(`${bridgeUrl}/signal`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      login, password, server,
-      symbol: signal.symbol,
-      action: signal.action,
-      volume: parseFloat(signal.quantity as string) * lotMultiplier,
-      price: signal.price ? parseFloat(signal.price as string) : 0,
-      sl: signal.stopLoss ? parseFloat(signal.stopLoss as string) : 0,
-      tp: signal.takeProfit ? parseFloat(signal.takeProfit as string) : 0,
-      leverage: signal.leverage ?? 1,
-    }),
-  });
-  const json = await res.json() as { orderId?: string; error?: string };
-  if (!res.ok) throw new Error(json.error ?? "MT5 bridge error");
-  return json.orderId ?? "unknown";
-}
-
-/* ─── Fan-out: execute signal across all active subscribers ────────── */
-async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect) {
-  const subs = await db
-    .select()
-    .from(copySubscriptionsTable)
-    .where(and(
-      eq(copySubscriptionsTable.traderId, signal.traderId),
-      eq(copySubscriptionsTable.status, "active"),
-    ));
-
-  const activeSubs = subs.filter((s) => s.copyAccountId != null);
-  if (activeSubs.length === 0) return;
-
-  const accountIds = activeSubs.map((s) => s.copyAccountId!);
-  const accounts = await db.select().from(copyAccountsTable).where(inArray(copyAccountsTable.id, accountIds));
-  const accountMap = Object.fromEntries(accounts.map((a) => [a.id, a]));
-
-  await Promise.allSettled(activeSubs.map(async (sub) => {
-    const account = accountMap[sub.copyAccountId!];
-    if (!account) return;
-
-    const multiplier = parseFloat((sub.lotMultiplier ?? "1") as string);
-
-    // Insert pending copy trade record
-    const [trade] = await db.insert(copyTradesTable).values({
-      signalId: signal.id,
-      subscriptionId: sub.id,
-      userId: sub.userId,
-      copyAccountId: account.id,
-      status: "pending",
-      quantity: (parseFloat(signal.quantity as string) * multiplier).toFixed(6),
-    }).returning();
-
-    try {
-      let brokerOrderId = "";
-
-      if (account.type === "binance") {
-        brokerOrderId = await executeBinance(
-          decrypt(account.apiKey!), decrypt(account.apiSecret!), signal, multiplier,
-        );
-      } else if (account.type === "bybit") {
-        brokerOrderId = await executeBybit(
-          decrypt(account.apiKey!), decrypt(account.apiSecret!), signal, multiplier,
-        );
-      } else if (account.type === "mt5") {
-        brokerOrderId = await executeMt5(
-          account.mt5Login!, decrypt(account.mt5Password!), account.mt5Server!, signal, multiplier,
-        );
-      }
-
-      await db.update(copyTradesTable).set({
-        status: "executed", brokerOrderId,
-        executedPrice: signal.price ?? null,
-      }).where(eq(copyTradesTable.id, trade.id));
-
-      // Clear any previous error on the account
-      await db.update(copyAccountsTable).set({ status: "active", lastError: null })
-        .where(eq(copyAccountsTable.id, account.id));
-
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      await db.update(copyTradesTable).set({ status: "failed", errorMessage: msg })
-        .where(eq(copyTradesTable.id, trade.id));
-      await db.update(copyAccountsTable).set({ status: "error", lastError: msg })
-        .where(eq(copyAccountsTable.id, account.id));
-    }
-  }));
-
-  // Mark signal as executed
-  await db.update(tradeSignalsTable).set({ status: "executed", executedAt: new Date() })
-    .where(eq(tradeSignalsTable.id, signal.id));
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -236,7 +71,7 @@ router.get("/traders/:traderId", async (req, res): Promise<void> => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════
-   COPY ACCOUNTS  (student's connected broker accounts)
+   COPY ACCOUNTS  (copier broker accounts + master accounts)
 ════════════════════════════════════════════════════════════════════ */
 
 router.get("/copy-accounts", async (req, res): Promise<void> => {
@@ -244,7 +79,7 @@ router.get("/copy-accounts", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const accounts = await db.select().from(copyAccountsTable)
-      .where(eq(copyAccountsTable.userId, clerkId))
+      .where(and(eq(copyAccountsTable.userId, clerkId), eq(copyAccountsTable.role, "copier")))
       .orderBy(desc(copyAccountsTable.createdAt));
     res.json(accounts.map(maskAccount));
   } catch (err) {
@@ -271,7 +106,7 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     }
 
     const [inserted] = await db.insert(copyAccountsTable).values({
-      userId: clerkId, type, label,
+      userId: clerkId, role: "copier", type, label,
       apiKey: apiKey ? encrypt(apiKey) : null,
       apiSecret: apiSecret ? encrypt(apiSecret) : null,
       mt5Login: mt5Login ?? null,
@@ -294,10 +129,137 @@ router.delete("/copy-accounts/:id", async (req, res): Promise<void> => {
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     const account = await db.select().from(copyAccountsTable).where(eq(copyAccountsTable.id, id)).limit(1).then((r) => r[0]);
     if (!account || account.userId !== clerkId) { res.status(404).json({ error: "Not found" }); return; }
+    // Also clean up any stored positions for master accounts
+    if (account.role === "master") {
+      await db.delete(masterPositionsTable).where(eq(masterPositionsTable.masterAccountId, id));
+    }
     await db.delete(copyAccountsTable).where(eq(copyAccountsTable.id, id));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Error deleting copy account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   MASTER ACCOUNTS  (trader's own exchange account — the source)
+════════════════════════════════════════════════════════════════════ */
+
+// GET /master-accounts — list master accounts for the authenticated user
+router.get("/master-accounts", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const accounts = await db.select().from(copyAccountsTable)
+      .where(and(eq(copyAccountsTable.userId, clerkId), eq(copyAccountsTable.role, "master")))
+      .orderBy(desc(copyAccountsTable.createdAt));
+    res.json(accounts.map(maskAccount));
+  } catch (err) {
+    req.log.error({ err }, "Error listing master accounts");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /master-accounts — link a master (exchange) account to a trader profile
+router.post("/master-accounts", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const { traderId, type, label, apiKey, apiSecret, mt5Login, mt5Password, mt5Server } = req.body as Record<string, string>;
+    if (!traderId || !type || !label) {
+      res.status(400).json({ error: "traderId, type, and label required" }); return;
+    }
+    if (!["binance", "bybit", "mt5"].includes(type)) {
+      res.status(400).json({ error: "type must be binance, bybit, or mt5" }); return;
+    }
+    if ((type === "binance" || type === "bybit") && (!apiKey || !apiSecret)) {
+      res.status(400).json({ error: "apiKey and apiSecret required for exchange accounts" }); return;
+    }
+    if (type === "mt5" && (!mt5Login || !mt5Password || !mt5Server)) {
+      res.status(400).json({ error: "mt5Login, mt5Password, and mt5Server required" }); return;
+    }
+
+    // Verify the trader profile exists
+    const trader = await db.select().from(tradersTable)
+      .where(eq(tradersTable.id, parseInt(traderId))).limit(1).then((r) => r[0]);
+    if (!trader) { res.status(404).json({ error: "Trader profile not found" }); return; }
+
+    const [inserted] = await db.insert(copyAccountsTable).values({
+      userId: clerkId,
+      role: "master",
+      traderId: parseInt(traderId),
+      type,
+      label,
+      apiKey: apiKey ? encrypt(apiKey) : null,
+      apiSecret: apiSecret ? encrypt(apiSecret) : null,
+      mt5Login: mt5Login ?? null,
+      mt5Password: mt5Password ? encrypt(mt5Password) : null,
+      mt5Server: mt5Server ?? null,
+    }).returning();
+
+    res.status(201).json(maskAccount(inserted));
+  } catch (err) {
+    req.log.error({ err }, "Error creating master account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// DELETE /master-accounts/:id
+router.delete("/master-accounts/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const account = await db.select().from(copyAccountsTable)
+      .where(and(eq(copyAccountsTable.id, id), eq(copyAccountsTable.role, "master")))
+      .limit(1).then((r) => r[0]);
+    if (!account || account.userId !== clerkId) { res.status(404).json({ error: "Not found" }); return; }
+    // Clean up position snapshot
+    await db.delete(masterPositionsTable).where(eq(masterPositionsTable.masterAccountId, id));
+    await db.delete(copyAccountsTable).where(eq(copyAccountsTable.id, id));
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Error deleting master account");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   MASTER POSITIONS  (live snapshot — read-only, updated by poller)
+════════════════════════════════════════════════════════════════════ */
+
+// GET /master-positions?traderId=123 — current open positions for a trader's master account
+router.get("/master-positions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { traderId } = req.query as Record<string, string>;
+    if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
+
+    const positions = await db.select().from(masterPositionsTable)
+      .where(eq(masterPositionsTable.traderId, parseInt(traderId)))
+      .orderBy(desc(masterPositionsTable.openedAt));
+
+    res.json(positions.map((p) => ({
+      id: p.id,
+      masterAccountId: p.masterAccountId,
+      traderId: p.traderId,
+      symbol: p.symbol,
+      side: p.side,
+      size: parseFloat(p.size as string),
+      entryPrice: parseFloat(p.entryPrice as string),
+      stopLoss: p.stopLoss ? parseFloat(p.stopLoss as string) : null,
+      takeProfit: p.takeProfit ? parseFloat(p.takeProfit as string) : null,
+      leverage: p.leverage,
+      market: p.market,
+      brokerPositionId: p.brokerPositionId,
+      openedAt: p.openedAt,
+      updatedAt: p.updatedAt,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing master positions");
     res.status(500).json({ error: "Internal server error" });
   }
 });

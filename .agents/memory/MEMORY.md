@@ -15,3 +15,4 @@
 - [VPS production DB migrations](vps-prod-db-migrations.md) — `db push` only hits Replit dev DB; after every schema change, manually ALTER TABLE on VPS via SSH or all VPS API calls crash with "column does not exist".
 - [VPS data safety rule](vps-safety.md) — never touch VPS data, nginx config, PM2 processes, DB, or any server files unless the user explicitly asks. Deploy code only; do not run migrations, alter tables, or restart services without a direct request.
 - [VPS frontend deploy path](vps-deploy-path.md) — nginx root is /opt/brightinsight/artifacts/edu/dist/public; extract tarball at /opt/brightinsight/artifacts/edu/ not /opt/brightinsight/ or files land in the wrong place silently.
+- [Mirror trading poller architecture](mirror-trading-arch.md) — poller in mirror-poller.ts, fan-out extracted to fan-out.ts, master_positions table, VPS deploy steps (scp → SQL → build → pm2 restart).
