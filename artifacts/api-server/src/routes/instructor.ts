@@ -72,7 +72,7 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
 
     const [students, progressRows, xpRows, certRows] = await Promise.all([
       db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email, avatarUrl: usersTable.avatarUrl, xp: usersTable.xp, createdAt: usersTable.createdAt })
-        .from(usersTable).where(inArray(usersTable.id, studentIds)),
+        .from(usersTable).where(and(inArray(usersTable.id, studentIds), eq(usersTable.role, "student"))),
       db.select({ userId: lessonProgressTable.userId, completed: sql<number>`count(*) filter (where ${lessonProgressTable.completed})::int` })
         .from(lessonProgressTable)
         .where(and(inArray(lessonProgressTable.userId, studentIds)))
@@ -148,7 +148,7 @@ router.get("/instructor/students/export", async (req, res): Promise<void> => {
 
     const [students, courses, groupMembers] = await Promise.all([
       db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email, phone: usersTable.phone, country: usersTable.country, createdAt: usersTable.createdAt })
-        .from(usersTable).where(inArray(usersTable.id, studentIds)),
+        .from(usersTable).where(and(inArray(usersTable.id, studentIds), eq(usersTable.role, "student"))),
       db.select({ id: coursesTable.id, title: coursesTable.title }).from(coursesTable).where(inArray(coursesTable.id, courseIds)),
       studentIds.length ? db.select({ userId: groupMembersTable.userId, groupName: groupsTable.name })
         .from(groupMembersTable).innerJoin(groupsTable, eq(groupMembersTable.groupId, groupsTable.id))
