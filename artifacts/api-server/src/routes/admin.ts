@@ -8,6 +8,8 @@ import {
   postsTable, commentsTable, eventsTable, siteSettingsTable,
   livekitAccountsTable, groupMembersTable, groupsTable,
   platformSubscriptionsTable, subscriptionPlansTable,
+  tradersTable, copyAccountsTable, tradeSignalsTable,
+  copySubscriptionsTable, masterPositionsTable, copyTradesTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not, asc } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
@@ -1120,6 +1122,181 @@ router.patch("/admin/platform-subscriptions/:id", async (req, res): Promise<void
 
     res.json({ ok: true });
   } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   ADMIN TRADING PANEL
+════════════════════════════════════════════════════════════════════ */
+
+/* GET /admin/trading/traders — all trader profiles */
+router.get("/admin/trading/traders", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const traders = await db.select().from(tradersTable).orderBy(desc(tradersTable.createdAt));
+    const traderIds = traders.map((t) => t.id);
+
+    const accounts = traderIds.length
+      ? await db.select({ traderId: copyAccountsTable.traderId, status: copyAccountsTable.status, type: copyAccountsTable.type })
+          .from(copyAccountsTable).where(and(inArray(copyAccountsTable.traderId, traderIds), eq(copyAccountsTable.role, "master")))
+      : [];
+
+    const copierCounts = traderIds.length
+      ? await db.select({ traderId: copySubscriptionsTable.traderId, count: sql<number>`count(*)` })
+          .from(copySubscriptionsTable).where(and(inArray(copySubscriptionsTable.traderId, traderIds), eq(copySubscriptionsTable.status, "active")))
+          .groupBy(copySubscriptionsTable.traderId)
+      : [];
+
+    const users = traders.length
+      ? await db.select({ id: usersTable.id, email: usersTable.email, displayName: usersTable.displayName })
+          .from(usersTable).where(inArray(usersTable.id, traders.map((t) => t.userId)))
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
+    const accountMap = Object.fromEntries(accounts.map((a) => [a.traderId, a]));
+    const copierMap = Object.fromEntries(copierCounts.map((c) => [c.traderId, c.count]));
+
+    res.json(traders.map((t) => ({
+      id: t.id, userId: t.userId,
+      displayName: t.displayName ?? userMap[t.userId]?.displayName ?? t.userId,
+      email: userMap[t.userId]?.email ?? "",
+      avatarUrl: t.avatarUrl,
+      status: t.status, verified: t.verified,
+      roi: t.roi, winRate: t.winRate, maxDrawdown: t.maxDrawdown,
+      totalTrades: t.totalTrades, followers: t.followers,
+      monthlyReturn: t.monthlyReturn, riskScore: t.riskScore,
+      markets: t.markets, strategy: t.strategy, bio: t.bio,
+      masterAccount: accountMap[t.id] ?? null,
+      activeCopiers: Number(copierMap[t.id] ?? 0),
+      createdAt: t.createdAt,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "admin trading traders");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* PATCH /admin/trading/traders/:id — verify / change status */
+router.patch("/admin/trading/traders/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const { verified, status } = req.body as { verified?: boolean; status?: string };
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+    if (verified !== undefined) update.verified = verified;
+    if (status && ["active","inactive","suspended"].includes(status)) update.status = status;
+
+    await db.update(tradersTable).set(update).where(eq(tradersTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "admin patch trader");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /admin/trading/signals — recent trade signals */
+router.get("/admin/trading/signals", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const limit = Math.min(parseInt((req.query.limit as string) ?? "100"), 200);
+    const signals = await db.select().from(tradeSignalsTable).orderBy(desc(tradeSignalsTable.createdAt)).limit(limit);
+
+    const traderIds = [...new Set(signals.map((s) => s.traderId).filter(Boolean) as number[])];
+    const traders = traderIds.length
+      ? await db.select({ id: tradersTable.id, displayName: tradersTable.displayName }).from(tradersTable).where(inArray(tradersTable.id, traderIds))
+      : [];
+    const traderMap = Object.fromEntries(traders.map((t) => [t.id, t.displayName ?? String(t.id)]));
+
+    const tradeCounts = signals.length
+      ? await db.select({ signalId: copyTradesTable.signalId, count: sql<number>`count(*)`, executed: sql<number>`count(*) filter (where status='executed')` })
+          .from(copyTradesTable).where(inArray(copyTradesTable.signalId, signals.map((s) => s.id))).groupBy(copyTradesTable.signalId)
+      : [];
+    const tradeCountMap = Object.fromEntries(tradeCounts.map((tc) => [tc.signalId, tc]));
+
+    res.json(signals.map((s) => ({
+      id: s.id, traderId: s.traderId,
+      traderName: s.traderId ? (traderMap[s.traderId] ?? String(s.traderId)) : "—",
+      symbol: s.symbol, market: s.market, action: s.action,
+      orderType: s.orderType, price: s.price, quantity: s.quantity,
+      stopLoss: s.stopLoss, takeProfit: s.takeProfit, leverage: s.leverage,
+      notes: s.notes, status: s.status, executedAt: s.executedAt,
+      totalCopies: Number(tradeCountMap[s.id]?.count ?? 0),
+      executedCopies: Number(tradeCountMap[s.id]?.executed ?? 0),
+      createdAt: s.createdAt,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "admin trading signals");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /admin/trading/copy-subscriptions — all copier relationships */
+router.get("/admin/trading/copy-subscriptions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const subs = await db.select().from(copySubscriptionsTable).orderBy(desc(copySubscriptionsTable.createdAt)).limit(200);
+    const userIds = [...new Set(subs.map((s) => s.userId))];
+    const traderIds = [...new Set(subs.map((s) => s.traderId))];
+
+    const users = userIds.length
+      ? await db.select({ id: usersTable.id, email: usersTable.email, displayName: usersTable.displayName })
+          .from(usersTable).where(inArray(usersTable.id, userIds))
+      : [];
+    const traders = traderIds.length
+      ? await db.select({ id: tradersTable.id, displayName: tradersTable.displayName }).from(tradersTable).where(inArray(tradersTable.id, traderIds))
+      : [];
+
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
+    const traderMap = Object.fromEntries(traders.map((t) => [t.id, t]));
+
+    res.json(subs.map((s) => ({
+      id: s.id, userId: s.userId, traderId: s.traderId, status: s.status,
+      userName: userMap[s.userId]?.displayName ?? userMap[s.userId]?.email ?? s.userId,
+      userEmail: userMap[s.userId]?.email ?? "",
+      traderName: traderMap[s.traderId]?.displayName ?? String(s.traderId),
+      allocatedAmount: s.allocatedAmount, maxAmount: s.maxAmount,
+      lotMultiplier: s.lotMultiplier, currentPnl: s.currentPnl,
+      createdAt: s.createdAt,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "admin trading copy-subscriptions");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /admin/trading/positions — live master positions snapshot */
+router.get("/admin/trading/positions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const positions = await db.select().from(masterPositionsTable).orderBy(desc(masterPositionsTable.updatedAt));
+    const traderIds = [...new Set(positions.map((p) => p.traderId))];
+    const traders = traderIds.length
+      ? await db.select({ id: tradersTable.id, displayName: tradersTable.displayName }).from(tradersTable).where(inArray(tradersTable.id, traderIds))
+      : [];
+    const traderMap = Object.fromEntries(traders.map((t) => [t.id, t.displayName ?? String(t.id)]));
+
+    res.json(positions.map((p) => ({
+      id: p.id, traderId: p.traderId,
+      traderName: traderMap[p.traderId] ?? String(p.traderId),
+      symbol: p.symbol, side: p.side, size: p.size,
+      entryPrice: p.entryPrice, stopLoss: p.stopLoss, takeProfit: p.takeProfit,
+      leverage: p.leverage, market: p.market,
+      brokerPositionId: p.brokerPositionId, updatedAt: p.updatedAt,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "admin trading positions");
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -3584,6 +3584,9 @@ export default function AdminPanel() {
           <TabsTrigger value="subscriptions" className="flex items-center gap-1.5">
             <DollarSign className="h-3.5 w-3.5" />Subscriptions
           </TabsTrigger>
+          <TabsTrigger value="trading" className="flex items-center gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />Trading
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
@@ -3601,7 +3604,417 @@ export default function AdminPanel() {
         <TabsContent value="livekit" className="mt-6"><LiveKitAccountsTab /></TabsContent>
         <TabsContent value="integrations" className="mt-6"><IntegrationsTab /></TabsContent>
         <TabsContent value="subscriptions" className="mt-6"><SubscriptionsTab /></TabsContent>
+        <TabsContent value="trading" className="mt-6"><TradingTab /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
+   TRADING TAB
+════════════════════════════════════════════ */
+type AdminTrader = {
+  id: number; userId: string; displayName: string; email: string; avatarUrl: string | null;
+  status: string; verified: boolean; roi: number | null; winRate: number | null;
+  maxDrawdown: number | null; totalTrades: number | null; followers: number | null;
+  monthlyReturn: number | null; riskScore: number | null;
+  markets: string[] | null; strategy: string | null;
+  masterAccount: { status: string; type: string } | null;
+  activeCopiers: number; createdAt: string;
+};
+type AdminSignal = {
+  id: number; traderId: number | null; traderName: string; symbol: string; market: string;
+  action: string; orderType: string; price: number | null; quantity: number | null;
+  stopLoss: number | null; takeProfit: number | null; leverage: number | null;
+  notes: string | null; status: string; executedAt: string | null;
+  totalCopies: number; executedCopies: number; createdAt: string;
+};
+type AdminCopySub = {
+  id: number; userId: string; traderId: number; status: string;
+  userName: string; userEmail: string; traderName: string;
+  allocatedAmount: number | null; maxAmount: number | null;
+  lotMultiplier: number | null; currentPnl: number | null; createdAt: string;
+};
+type AdminPosition = {
+  id: number; traderId: number; traderName: string; symbol: string; side: string;
+  size: number | null; entryPrice: number | null; stopLoss: number | null;
+  takeProfit: number | null; leverage: number | null; market: string | null;
+  brokerPositionId: string | null; updatedAt: string;
+};
+
+function TradingTab() {
+  const { toast } = useToast();
+  const [section, setSection] = useState<"traders" | "signals" | "copiers" | "positions">("traders");
+  const [traders, setTraders] = useState<AdminTrader[]>([]);
+  const [signals, setSignals] = useState<AdminSignal[]>([]);
+  const [copiers, setCopiers] = useState<AdminCopySub[]>([]);
+  const [positions, setPositions] = useState<AdminPosition[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actingId, setActingId] = useState<number | null>(null);
+
+  const loadSection = useCallback(async (s: typeof section) => {
+    setLoading(true);
+    try {
+      const endpoints: Record<typeof section, string> = {
+        traders: "/api/admin/trading/traders",
+        signals: "/api/admin/trading/signals",
+        copiers: "/api/admin/trading/copy-subscriptions",
+        positions: "/api/admin/trading/positions",
+      };
+      const r = await fetch(endpoints[s]);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!Array.isArray(data)) return;
+      if (s === "traders") setTraders(data as AdminTrader[]);
+      else if (s === "signals") setSignals(data as AdminSignal[]);
+      else if (s === "copiers") setCopiers(data as AdminCopySub[]);
+      else if (s === "positions") setPositions(data as AdminPosition[]);
+    } catch { /* ignore */ } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { void loadSection(section); }, [section, loadSection]);
+
+  const patchTrader = async (id: number, patch: { verified?: boolean; status?: string }) => {
+    setActingId(id);
+    try {
+      const r = await fetch(`/api/admin/trading/traders/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+      });
+      if (!r.ok) throw new Error("Failed");
+      toast({ title: "Trader updated" });
+      await loadSection("traders");
+    } catch { toast({ title: "Failed to update", variant: "destructive" }); }
+    finally { setActingId(null); }
+  };
+
+  const SECTIONS = [
+    { key: "traders" as const, label: "Traders" },
+    { key: "signals" as const, label: "Signals" },
+    { key: "copiers" as const, label: "Copiers" },
+    { key: "positions" as const, label: "Live Positions" },
+  ];
+
+  const ACTION_COLORS: Record<string, string> = {
+    buy: "text-green-400 border-green-400/30",
+    sell: "text-red-400 border-red-400/30",
+    close: "text-muted-foreground",
+  };
+  const STATUS_COLORS: Record<string, string> = {
+    active: "text-green-400 border-green-400/30",
+    inactive: "text-muted-foreground",
+    suspended: "text-red-400 border-red-400/30",
+    paused: "text-amber-400 border-amber-400/30",
+    stopped: "text-muted-foreground",
+    executed: "text-green-400 border-green-400/30",
+    pending: "text-amber-400 border-amber-400/30",
+    failed: "text-red-400 border-red-400/30",
+    skipped: "text-muted-foreground",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Section switcher */}
+      <div className="flex gap-1.5 flex-wrap">
+        {SECTIONS.map((s) => (
+          <button key={s.key} onClick={() => setSection(s.key)}
+            className={cn("px-4 py-1.5 rounded-full text-sm font-medium border transition-all",
+              section === s.key
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border text-muted-foreground hover:text-foreground"
+            )}>
+            {s.label}
+          </button>
+        ))}
+        <button onClick={() => loadSection(section)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <RefreshCw className="h-3.5 w-3.5" />Refresh
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />Loading…
+        </div>
+      ) : (
+        <>
+          {/* ── TRADERS ── */}
+          {section === "traders" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />Trader Profiles
+                  <Badge variant="outline" className="ml-auto text-xs">{traders.length} total</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {traders.length === 0 ? (
+                  <p className="text-center py-10 text-sm text-muted-foreground">No traders registered yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                          <th className="text-left px-4 py-3">Trader</th>
+                          <th className="text-left px-4 py-3">Status</th>
+                          <th className="text-left px-4 py-3">Account</th>
+                          <th className="text-right px-4 py-3">ROI</th>
+                          <th className="text-right px-4 py-3">Win%</th>
+                          <th className="text-right px-4 py-3">Copiers</th>
+                          <th className="text-right px-4 py-3">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {traders.map((t) => (
+                          <tr key={t.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2.5">
+                                {t.avatarUrl ? (
+                                  <img src={t.avatarUrl} className="h-8 w-8 rounded-full object-cover" alt="" />
+                                ) : (
+                                  <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                                    {t.displayName?.[0]?.toUpperCase() ?? "?"}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="flex items-center gap-1.5 font-medium">
+                                    {t.displayName}
+                                    {t.verified && <ShieldCheck className="h-3.5 w-3.5 text-primary" />}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">{t.email}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={STATUS_COLORS[t.status] ?? ""}>
+                                {t.status}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {t.masterAccount ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-medium capitalize">{t.masterAccount.type}</span>
+                                  <Badge variant="outline" className={cn("text-[10px] w-fit", STATUS_COLORS[t.masterAccount.status] ?? "")}>
+                                    {t.masterAccount.status}
+                                  </Badge>
+                                </div>
+                              ) : <span className="italic">No account</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-sm">
+                              {t.roi != null ? <span className={t.roi >= 0 ? "text-green-400" : "text-red-400"}>{t.roi >= 0 ? "+" : ""}{Number(t.roi).toFixed(1)}%</span> : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-sm">
+                              {t.winRate != null ? `${Number(t.winRate).toFixed(0)}%` : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold">{t.activeCopiers}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                                <Button size="sm" variant="outline"
+                                  className={cn("h-7 text-xs", t.verified ? "border-primary/50 text-primary" : "")}
+                                  onClick={() => patchTrader(t.id, { verified: !t.verified })}
+                                  disabled={actingId === t.id}>
+                                  {actingId === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : t.verified ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
+                                  {t.verified ? "Verified" : "Verify"}
+                                </Button>
+                                <select
+                                  value={t.status}
+                                  onChange={(e) => patchTrader(t.id, { status: e.target.value })}
+                                  disabled={actingId === t.id}
+                                  className="h-7 px-2 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary">
+                                  <option value="active">Active</option>
+                                  <option value="inactive">Inactive</option>
+                                  <option value="suspended">Suspended</option>
+                                </select>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── SIGNALS ── */}
+          {section === "signals" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Activity className="h-4 w-4" />Trade Signals
+                  <Badge variant="outline" className="ml-auto text-xs">{signals.length} recent</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {signals.length === 0 ? (
+                  <p className="text-center py-10 text-sm text-muted-foreground">No signals yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                          <th className="text-left px-4 py-3">Symbol</th>
+                          <th className="text-left px-4 py-3">Trader</th>
+                          <th className="text-left px-4 py-3">Action</th>
+                          <th className="text-right px-4 py-3">Price</th>
+                          <th className="text-right px-4 py-3">Qty</th>
+                          <th className="text-left px-4 py-3">Status</th>
+                          <th className="text-right px-4 py-3">Copies</th>
+                          <th className="text-left px-4 py-3">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {signals.map((s) => (
+                          <tr key={s.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                            <td className="px-4 py-3 font-mono font-semibold">{s.symbol}</td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{s.traderName}</td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={ACTION_COLORS[s.action] ?? ""}>
+                                {s.action.toUpperCase()}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-xs">
+                              {s.price != null ? Number(s.price).toFixed(4) : "market"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-xs">
+                              {s.quantity != null ? Number(s.quantity).toFixed(4) : "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={STATUS_COLORS[s.status] ?? ""}>{s.status}</Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right text-xs">
+                              <span className="text-green-400">{s.executedCopies}</span>
+                              <span className="text-muted-foreground">/{s.totalCopies}</span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── COPIERS ── */}
+          {section === "copiers" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4" />Copy Subscriptions
+                  <Badge variant="outline" className="ml-auto text-xs">{copiers.length} total</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {copiers.length === 0 ? (
+                  <p className="text-center py-10 text-sm text-muted-foreground">No copy subscriptions yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                          <th className="text-left px-4 py-3">User</th>
+                          <th className="text-left px-4 py-3">Copying</th>
+                          <th className="text-left px-4 py-3">Status</th>
+                          <th className="text-right px-4 py-3">Allocated</th>
+                          <th className="text-right px-4 py-3">PnL</th>
+                          <th className="text-left px-4 py-3">Since</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {copiers.map((c) => (
+                          <tr key={c.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="font-medium">{c.userName}</p>
+                              <p className="text-xs text-muted-foreground">{c.userEmail}</p>
+                            </td>
+                            <td className="px-4 py-3 font-medium">{c.traderName}</td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={STATUS_COLORS[c.status] ?? ""}>{c.status}</Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-sm">
+                              {c.allocatedAmount != null ? `$${Number(c.allocatedAmount).toFixed(2)}` : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-sm">
+                              {c.currentPnl != null ? (
+                                <span className={Number(c.currentPnl) >= 0 ? "text-green-400" : "text-red-400"}>
+                                  {Number(c.currentPnl) >= 0 ? "+" : ""}${Number(c.currentPnl).toFixed(2)}
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {new Date(c.createdAt).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── LIVE POSITIONS ── */}
+          {section === "positions" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" />Live Master Positions
+                  <Badge variant="outline" className={cn("ml-auto text-xs", positions.length > 0 ? "text-green-400 border-green-400/30" : "")}>{positions.length} open</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {positions.length === 0 ? (
+                  <p className="text-center py-10 text-sm text-muted-foreground">No open positions at the moment.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                          <th className="text-left px-4 py-3">Symbol</th>
+                          <th className="text-left px-4 py-3">Trader</th>
+                          <th className="text-left px-4 py-3">Side</th>
+                          <th className="text-right px-4 py-3">Size</th>
+                          <th className="text-right px-4 py-3">Entry</th>
+                          <th className="text-right px-4 py-3">SL</th>
+                          <th className="text-right px-4 py-3">TP</th>
+                          <th className="text-right px-4 py-3">Lev</th>
+                          <th className="text-left px-4 py-3">Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {positions.map((p) => (
+                          <tr key={p.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                            <td className="px-4 py-3 font-mono font-semibold">{p.symbol}</td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{p.traderName}</td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={p.side === "buy" || p.side === "long" ? "text-green-400 border-green-400/30" : "text-red-400 border-red-400/30"}>
+                                {p.side?.toUpperCase()}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-xs">{p.size != null ? Number(p.size).toFixed(4) : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono text-xs">{p.entryPrice != null ? Number(p.entryPrice).toFixed(4) : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{p.stopLoss != null ? Number(p.stopLoss).toFixed(4) : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono text-xs text-green-400">{p.takeProfit != null ? Number(p.takeProfit).toFixed(4) : "—"}</td>
+                            <td className="px-4 py-3 text-right text-xs">{p.leverage != null ? `${p.leverage}x` : "—"}</td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {new Date(p.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }
