@@ -70,6 +70,21 @@ router.get("/traders/:traderId", async (req, res): Promise<void> => {
   }
 });
 
+/* My trader profile — returns the authenticated user's own trader row */
+router.get("/my-trader", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const trader = await db.select().from(tradersTable)
+      .where(eq(tradersTable.userId, clerkId)).limit(1).then((r) => r[0]);
+    if (!trader) { res.status(404).json({ error: "No trader profile found" }); return; }
+    res.json(buildTraderResponse(trader));
+  } catch (err) {
+    req.log.error({ err }, "Error getting my trader");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ═══════════════════════════════════════════════════════════════════
    COPY ACCOUNTS  (copier broker accounts + master accounts)
 ════════════════════════════════════════════════════════════════════ */

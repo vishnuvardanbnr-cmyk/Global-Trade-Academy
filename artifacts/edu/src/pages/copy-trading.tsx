@@ -7,11 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuthContext } from "@/lib/authContext";
 import {
   TrendingUp, TrendingDown, Users, ShieldCheck, Plus, Trash2,
   Zap, Link2, Clock, CheckCircle2, XCircle, AlertCircle,
-  RefreshCw, ChevronDown, ChevronUp,
+  RefreshCw, ChevronDown, ChevronUp, Send, Crosshair, Loader2,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────────────── */
@@ -276,11 +278,245 @@ function StatusIcon({ status }: { status: string }) {
   return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
 }
 
+/* ─── Quick Trade Panel (instructor / admin only) ────────────────── */
+type QuickTradeAction = "buy" | "sell" | "close" | "modify";
+type QuickTradeMarket = "crypto" | "forex" | "commodities" | "stocks";
+
+function QuickTradePanel({
+  traderId,
+  subscriberCount,
+  onSignalCreated,
+}: {
+  traderId: number;
+  subscriberCount: number;
+  onSignalCreated: (sig: Signal) => void;
+}) {
+  const { toast } = useToast();
+  const [action, setAction] = useState<QuickTradeAction>("buy");
+  const [market, setMarket] = useState<QuickTradeMarket>("crypto");
+  const [orderType, setOrderType] = useState<"market" | "limit">("market");
+  const [symbol, setSymbol] = useState("");
+  const [price, setPrice] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [leverage, setLeverage] = useState("1");
+  const [notes, setNotes] = useState("");
+  const [firing, setFiring] = useState(false);
+
+  const actionMeta: Record<QuickTradeAction, { label: string; color: string; bg: string; activeBg: string }> = {
+    buy:    { label: "BUY",    color: "text-green-700",  bg: "border-green-200 hover:bg-green-50",  activeBg: "bg-green-500 text-white border-green-500" },
+    sell:   { label: "SELL",   color: "text-red-700",    bg: "border-red-200 hover:bg-red-50",      activeBg: "bg-red-500 text-white border-red-500" },
+    close:  { label: "CLOSE",  color: "text-gray-600",   bg: "border-gray-200 hover:bg-gray-50",    activeBg: "bg-gray-600 text-white border-gray-600" },
+    modify: { label: "MODIFY", color: "text-blue-700",   bg: "border-blue-200 hover:bg-blue-50",    activeBg: "bg-blue-500 text-white border-blue-500" },
+  };
+
+  const fire = async () => {
+    if (!symbol.trim()) { toast({ title: "Symbol required", variant: "destructive" }); return; }
+    if (!quantity.trim()) { toast({ title: "Quantity required", variant: "destructive" }); return; }
+    setFiring(true);
+    try {
+      const body: Record<string, unknown> = {
+        traderId,
+        symbol: symbol.trim().toUpperCase(),
+        market,
+        action,
+        orderType,
+        quantity: parseFloat(quantity),
+        leverage: parseFloat(leverage) || 1,
+      };
+      if (orderType === "limit" && price) body.price = parseFloat(price);
+      if (stopLoss) body.stopLoss = parseFloat(stopLoss);
+      if (takeProfit) body.takeProfit = parseFloat(takeProfit);
+      if (notes.trim()) body.notes = notes.trim();
+
+      const res = await fetch("/api/trade-signals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json() as { error: string }; throw new Error(e.error); }
+      const sig = await res.json() as Signal;
+      onSignalCreated(sig);
+      setSymbol(""); setPrice(""); setQuantity(""); setStopLoss(""); setTakeProfit(""); setNotes("");
+      toast({
+        title: `${action.toUpperCase()} ${sig.symbol} fired!`,
+        description: `Fanning out to ${subscriberCount} copier${subscriberCount !== 1 ? "s" : ""}…`,
+      });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to fire trade", variant: "destructive" });
+    } finally { setFiring(false); }
+  };
+
+  return (
+    <Card className="border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
+      <CardHeader className="pb-3 pt-4 px-5">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Crosshair className="h-4 w-4 text-primary" />
+            Quick Trade Execution
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground bg-secondary px-2.5 py-1 rounded-full flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              {subscriberCount} copier{subscriberCount !== 1 ? "s" : ""} will receive this
+            </span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-5 pb-5 space-y-4">
+        {/* Action selector */}
+        <div className="grid grid-cols-4 gap-2">
+          {(["buy", "sell", "close", "modify"] as QuickTradeAction[]).map((a) => {
+            const m = actionMeta[a];
+            const isActive = action === a;
+            return (
+              <button
+                key={a}
+                onClick={() => setAction(a)}
+                className={`rounded-lg border-2 py-2.5 text-sm font-bold tracking-wide transition-all ${
+                  isActive ? m.activeBg : `${m.bg} ${m.color} bg-transparent`
+                }`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Row 1: Symbol + Market + Order type */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Symbol</Label>
+            <Input
+              placeholder="e.g. BTCUSDT"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+              className="font-mono uppercase"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Market</Label>
+            <Select value={market} onValueChange={(v) => setMarket(v as QuickTradeMarket)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="crypto">Crypto</SelectItem>
+                <SelectItem value="forex">Forex</SelectItem>
+                <SelectItem value="commodities">Commodities</SelectItem>
+                <SelectItem value="stocks">Stocks</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Order Type</Label>
+            <Select value={orderType} onValueChange={(v) => setOrderType(v as "market" | "limit")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="market">Market</SelectItem>
+                <SelectItem value="limit">Limit</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Row 2: Quantity + Price (if limit) + Leverage */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Quantity / Lots</Label>
+            <Input
+              type="number" min="0" step="any"
+              placeholder="0.01"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Price {orderType === "market" ? "(optional)" : "*"}</Label>
+            <Input
+              type="number" min="0" step="any"
+              placeholder={orderType === "market" ? "auto" : "entry price"}
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              disabled={orderType === "market" && false}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Leverage</Label>
+            <Input
+              type="number" min="1" max="500" step="1"
+              placeholder="1"
+              value={leverage}
+              onChange={(e) => setLeverage(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Row 3: SL + TP */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-red-500">Stop Loss (optional)</Label>
+            <Input
+              type="number" min="0" step="any"
+              placeholder="0.00"
+              value={stopLoss}
+              onChange={(e) => setStopLoss(e.target.value)}
+              className="border-red-200 focus:border-red-400"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-green-600">Take Profit (optional)</Label>
+            <Input
+              type="number" min="0" step="any"
+              placeholder="0.00"
+              value={takeProfit}
+              onChange={(e) => setTakeProfit(e.target.value)}
+              className="border-green-200 focus:border-green-400"
+            />
+          </div>
+        </div>
+
+        {/* Notes + Fire button */}
+        <div className="flex gap-3 items-end">
+          <div className="flex-1 space-y-1">
+            <Label className="text-xs">Notes (optional)</Label>
+            <Textarea
+              placeholder="Analysis or reason for this trade…"
+              rows={1}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="resize-none"
+            />
+          </div>
+          <Button
+            onClick={fire}
+            disabled={firing || !symbol.trim() || !quantity.trim()}
+            className={`h-10 min-w-[140px] font-bold text-sm gap-2 ${
+              action === "buy"   ? "bg-green-500 hover:bg-green-600" :
+              action === "sell"  ? "bg-red-500 hover:bg-red-600" :
+              action === "close" ? "bg-gray-600 hover:bg-gray-700" :
+                                   "bg-blue-500 hover:bg-blue-600"
+            }`}
+          >
+            {firing ? (
+              <><Loader2 className="h-4 w-4 animate-spin" />Firing…</>
+            ) : (
+              <><Send className="h-4 w-4" />Fire {actionMeta[action].label}</>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ─── Main page ──────────────────────────────────────────────────── */
 export default function CopyTrading() {
   const { toast } = useToast();
+  const { user } = useAuthContext();
+  const isInstructor = user?.role === "instructor" || user?.role === "admin";
 
   const [traders, setTraders] = useState<Trader[]>([]);
+  const [myTrader, setMyTrader] = useState<Trader | null>(null);
   const [subscriptions, setSubs] = useState<Subscription[]>([]);
   const [accounts, setAccounts] = useState<CopyAccount[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -290,6 +526,7 @@ export default function CopyTrading() {
   const [subscribeTrader, setSubscribeTrader] = useState<Trader | null>(null);
   const [actingId, setActingId] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [subscriberCount, setSubscriberCount] = useState(0);
 
   const load = async () => {
     setLoading(true);
@@ -310,6 +547,20 @@ export default function CopyTrading() {
   };
 
   useEffect(() => { load(); }, []);
+
+  /* Fetch the instructor's own trader profile for quick-trade */
+  useEffect(() => {
+    if (!isInstructor) return;
+    fetch("/api/my-trader")
+      .then((r) => r.ok ? r.json() : null)
+      .then((t) => { if (t) setMyTrader(t as Trader); })
+      .catch(() => {});
+  }, [isInstructor]);
+
+  /* Derive subscriber count directly from trader.followers */
+  useEffect(() => {
+    if (myTrader) setSubscriberCount(myTrader.followers);
+  }, [myTrader]);
 
   const subscribedTraderIds = new Set(subscriptions.map((s) => s.traderId));
 
@@ -342,6 +593,21 @@ export default function CopyTrading() {
 
   return (
     <div className="space-y-8">
+      {/* ── Quick Trade Panel (instructor / admin only) ── */}
+      {isInstructor && myTrader && (
+        <QuickTradePanel
+          traderId={myTrader.id}
+          subscriberCount={subscriberCount}
+          onSignalCreated={(sig) => setSignals((prev) => [sig, ...prev])}
+        />
+      )}
+      {isInstructor && !myTrader && !loading && (
+        <div className="rounded-xl border border-dashed border-primary/30 p-4 text-center text-sm text-muted-foreground bg-primary/5">
+          <Crosshair className="h-5 w-5 mx-auto mb-1.5 opacity-40" />
+          <p>No trader profile linked to your account. Create one to enable direct trade execution.</p>
+        </div>
+      )}
+
       {/* ── Connected Accounts ── */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
