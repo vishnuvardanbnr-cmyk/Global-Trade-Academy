@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useGetMe, useGetInstructorReviewCount, getGetInstructorReviewCountQueryKey, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 interface AppNotification {
@@ -342,6 +342,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const role = me?.role;
   const isInstructor = role === "instructor";
+
+  const { data: myTraderData } = useQuery({
+    queryKey: ["my-trader-sidebar"],
+    queryFn: () => fetch("/api/trading/my-trader").then((r) => r.ok ? r.json() : null).catch(() => null),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!me,
+  });
+  const isTrader = !!myTraderData;
   const displayName = me?.displayName || user?.fullName || "Trader";
   const email = user?.primaryEmailAddress?.emailAddress ?? "";
   const initials = displayName.split(" ").map((p: string) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -436,6 +444,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <p className="text-[10px] text-amber-600">{xpIntoLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP to Level {level + 1}</p>
           </div>
         ) : null}
+
+        {isTrader && (
+          <div className="mt-3">
+            <div className="mb-1.5 px-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Trader</p>
+            </div>
+            <Link href="/trader-dashboard" onClick={() => setMobileOpen(false)}>
+              <div className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer group",
+                location === "/trader-dashboard"
+                  ? "bg-primary text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+              )}>
+                <TrendingUp className={cn("h-4 w-4 shrink-0",
+                  location === "/trader-dashboard" ? "text-white" : "text-muted-foreground group-hover:text-foreground"
+                )} />
+                <span className="flex-1">Trader Panel</span>
+                {location === "/trader-dashboard" && <ChevronRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
+              </div>
+            </Link>
+          </div>
+        )}
       </nav>
 
       <div className="border-t border-border px-3 py-3 shrink-0">

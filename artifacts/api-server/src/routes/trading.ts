@@ -88,6 +88,32 @@ router.get("/my-trader", async (req, res): Promise<void> => {
   }
 });
 
+/* PATCH /my-trader — trader updates their own profile */
+router.patch("/my-trader", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const trader = await db.select().from(tradersTable)
+      .where(eq(tradersTable.userId, clerkId)).limit(1).then((r) => r[0]);
+    if (!trader) { res.status(404).json({ error: "No trader profile found" }); return; }
+
+    const { displayName, bio, strategy, markets, riskScore, avatarUrl } = req.body;
+    const update: Record<string, unknown> = {};
+    if (displayName !== undefined) update.displayName = displayName;
+    if (bio !== undefined) update.bio = bio;
+    if (strategy !== undefined) update.strategy = strategy;
+    if (markets !== undefined) update.markets = markets;
+    if (riskScore !== undefined) update.riskScore = riskScore !== null ? parseInt(String(riskScore)) : null;
+    if (avatarUrl !== undefined) update.avatarUrl = avatarUrl;
+
+    const [updated] = await db.update(tradersTable).set(update).where(eq(tradersTable.userId, clerkId)).returning();
+    res.json(buildTraderResponse(updated));
+  } catch (err) {
+    req.log.error({ err }, "Error updating my trader");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ═══════════════════════════════════════════════════════════════════
    COPY ACCOUNTS  (copier broker accounts + master accounts)
 ════════════════════════════════════════════════════════════════════ */

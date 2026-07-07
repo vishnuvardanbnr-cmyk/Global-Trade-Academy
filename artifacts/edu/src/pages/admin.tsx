@@ -563,6 +563,22 @@ function UsersTab() {
     finally { setActing(null); }
   };
 
+  const makeTrader = async (userId: string, displayName: string) => {
+    setActing(userId);
+    try {
+      const res = await fetch("/api/admin/trading/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, displayName: displayName || "Trader" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      toast({ title: data.alreadyExists ? "Already a trader" : `${displayName} promoted to trader` });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to promote", variant: "destructive" });
+    } finally { setActing(null); }
+  };
+
   const filtered = (users ?? []).filter((u) =>
     !search || (u.displayName ?? "").toLowerCase().includes(search.toLowerCase()) || (u.email ?? "").toLowerCase().includes(search.toLowerCase())
   );
@@ -651,6 +667,15 @@ function UsersTab() {
                         disabled={acting === user.id}
                       >
                         <KeyRound className="h-3 w-3" /> Access
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-7 px-2 gap-1 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                        title="Promote to trader"
+                        onClick={() => makeTrader(user.id, user.displayName ?? user.email ?? "Trader")}
+                        disabled={acting === user.id}
+                      >
+                        <TrendingUp className="h-3 w-3" /> Trader
                       </Button>
                       <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 px-2" onClick={() => deleteUser(user.id, user.displayName ?? user.email ?? user.id)} disabled={acting === user.id}>
                         <Trash2 className="h-3.5 w-3.5" />

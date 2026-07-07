@@ -1200,6 +1200,44 @@ router.patch("/admin/trading/traders/:id", async (req, res): Promise<void> => {
   }
 });
 
+/* POST /admin/trading/promote — create a trader profile for a user */
+router.post("/admin/trading/promote", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { userId, displayName } = req.body as { userId: string; displayName: string };
+    if (!userId || !displayName) { res.status(400).json({ error: "userId and displayName required" }); return; }
+
+    const user = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1).then((r) => r[0]);
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+    const existing = await db.select().from(tradersTable).where(eq(tradersTable.userId, userId)).limit(1).then((r) => r[0]);
+    if (existing) { res.json({ ...existing, alreadyExists: true }); return; }
+
+    const [trader] = await db.insert(tradersTable).values({ userId, displayName }).returning();
+    res.status(201).json(trader);
+  } catch (err) {
+    req.log.error({ err }, "admin promote trader");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* DELETE /admin/trading/traders/:id — remove trader profile */
+router.delete("/admin/trading/traders/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.delete(tradersTable).where(eq(tradersTable.id, id));
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "admin delete trader");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* GET /admin/trading/signals — recent trade signals */
 router.get("/admin/trading/signals", async (req, res): Promise<void> => {
   try {
