@@ -25,9 +25,10 @@ type Trader = {
   strategy: string | null; monthlyReturn: number | null; riskScore: number | null;
 };
 type CopyAccount = {
-  id: number; type: "binance" | "bybit" | "mt5"; label: string;
+  id: number; type: "binance" | "bybit" | "mt5" | "metaapi"; label: string;
   status: string; lastError: string | null; apiKeyHint: string | null;
-  mt5Login: string | null; mt5Server: string | null; createdAt: string;
+  mt5Login: string | null; mt5Server: string | null;
+  metaapiAccountId: string | null; createdAt: string;
 };
 type Subscription = {
   id: number; traderId: number; traderName: string | null;
@@ -69,18 +70,19 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   open: boolean; onClose: () => void; onCreated: (a: CopyAccount) => void;
 }) {
   const { toast } = useToast();
-  const [type, setType] = useState<"binance" | "bybit" | "mt5">("binance");
+  const [type, setType] = useState<"binance" | "bybit" | "mt5" | "metaapi">("binance");
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [mt5Login, setMt5Login] = useState("");
   const [mt5Password, setMt5Password] = useState("");
   const [mt5Server, setMt5Server] = useState("");
+  const [metaapiAccountId, setMetaapiAccountId] = useState("");
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setType("binance"); setLabel(""); setApiKey(""); setApiSecret("");
-    setMt5Login(""); setMt5Password(""); setMt5Server("");
+    setMt5Login(""); setMt5Password(""); setMt5Server(""); setMetaapiAccountId("");
   };
 
   const submit = async () => {
@@ -88,8 +90,9 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
     setSaving(true);
     try {
       const body: Record<string, string> = { type, label: label.trim() };
-      if (type !== "mt5") { body.apiKey = apiKey; body.apiSecret = apiSecret; }
-      else { body.mt5Login = mt5Login; body.mt5Password = mt5Password; body.mt5Server = mt5Server; }
+      if (type === "binance" || type === "bybit") { body.apiKey = apiKey; body.apiSecret = apiSecret; }
+      else if (type === "mt5") { body.mt5Login = mt5Login; body.mt5Password = mt5Password; body.mt5Server = mt5Server; }
+      else if (type === "metaapi") { body.metaapiAccountId = metaapiAccountId.trim(); }
 
       const res = await fetch("/api/copy-accounts", {
         method: "POST",
@@ -108,9 +111,10 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   };
 
   const typeMeta = {
-    binance: { label: "Binance", color: "text-yellow-500" },
-    bybit:   { label: "Bybit",   color: "text-orange-500" },
-    mt5:     { label: "MT5",     color: "text-blue-500" },
+    binance:  { label: "Binance",  color: "text-yellow-500" },
+    bybit:    { label: "Bybit",    color: "text-orange-500" },
+    mt5:      { label: "MT5",      color: "text-blue-500" },
+    metaapi:  { label: "MetaAPI",  color: "text-purple-500" },
   };
 
   return (
@@ -121,12 +125,12 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
         </DialogHeader>
         <div className="space-y-4 pt-1">
           {/* Type selector */}
-          <div className="grid grid-cols-3 gap-2">
-            {(["binance", "bybit", "mt5"] as const).map((t) => (
+          <div className="grid grid-cols-4 gap-2">
+            {(["binance", "bybit", "mt5", "metaapi"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setType(t)}
-                className={`rounded-lg border-2 p-3 text-sm font-semibold transition-colors ${
+                className={`rounded-lg border-2 p-2.5 text-xs font-semibold transition-colors ${
                   type === t ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"
                 }`}
               >
@@ -140,7 +144,7 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
             <Input placeholder="e.g. My Binance Main" value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
 
-          {type !== "mt5" ? (
+          {(type === "binance" || type === "bybit") && (
             <>
               <div className="space-y-1">
                 <Label>API Key</Label>
@@ -154,7 +158,9 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
                 Use a <strong>read + trade</strong> key. Disable withdrawal permissions. Your credentials are stored AES-256 encrypted.
               </p>
             </>
-          ) : (
+          )}
+
+          {type === "mt5" && (
             <>
               <div className="space-y-1">
                 <Label>MT5 Login Number</Label>
@@ -170,6 +176,31 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
               </div>
               <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
                 Your password is encrypted. Make sure your server name matches exactly what appears in MT5.
+              </p>
+            </>
+          )}
+
+          {type === "metaapi" && (
+            <>
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 space-y-1.5">
+                <p className="text-xs font-semibold text-purple-400">Setup steps</p>
+                <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Go to <strong>app.metaapi.cloud</strong> and create a free account</li>
+                  <li>Add your MT4/MT5 broker account — MetaAPI will connect it</li>
+                  <li>Copy your <strong>Account ID</strong> from the MetaAPI dashboard</li>
+                  <li>Paste it below — we'll subscribe it to the strategy automatically</li>
+                </ol>
+              </div>
+              <div className="space-y-1">
+                <Label>MetaAPI Account ID</Label>
+                <Input
+                  placeholder="e.g. d38e8430-a1f7-4d3c-b9e2-..."
+                  value={metaapiAccountId}
+                  onChange={(e) => setMetaapiAccountId(e.target.value)}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
+                Your MT5 credentials stay with MetaAPI — we never see them. Trades are copied via MetaAPI's CopyFactory infrastructure.
               </p>
             </>
           )}

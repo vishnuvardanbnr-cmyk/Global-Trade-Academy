@@ -43,13 +43,14 @@ export const copyAccountsTable = pgTable("copy_accounts", {
   userId: text("user_id").notNull(),
   role: text("role").notNull().default("copier"),     // "master" | "copier"
   traderId: integer("trader_id"),                      // set when role = "master"
-  type: text("type").notNull(), // "binance" | "bybit" | "mt5"
+  type: text("type").notNull(), // "binance" | "bybit" | "mt5" | "metaapi"
   label: text("label").notNull(),
   apiKey: text("api_key"),        // AES-256-GCM encrypted
   apiSecret: text("api_secret"),  // AES-256-GCM encrypted
   mt5Login: text("mt5_login"),
   mt5Password: text("mt5_password"), // AES-256-GCM encrypted
   mt5Server: text("mt5_server"),
+  metaapiAccountId: text("metaapi_account_id"), // MetaAPI subscriber account ID
   status: text("status").notNull().default("active"), // active | error | disconnected
   lastError: text("last_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

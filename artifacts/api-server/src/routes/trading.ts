@@ -8,7 +8,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
-import { fanOutSignal } from "../lib/fan-out";
+import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe } from "../lib/fan-out";
 
 const router = Router();
 
@@ -37,6 +37,7 @@ function maskAccount(a: typeof copyAccountsTable.$inferSelect) {
     apiKeyHint: a.apiKey ? `****${decrypt(a.apiKey).slice(-4)}` : null,
     mt5Login: a.mt5Login ?? null,
     mt5Server: a.mt5Server ?? null,
+    metaapiAccountId: a.metaapiAccountId ?? null,
   };
 }
 
@@ -108,16 +109,24 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { type, label, apiKey, apiSecret, mt5Login, mt5Password, mt5Server } = req.body as Record<string, string>;
+    const { type, label, apiKey, apiSecret, mt5Login, mt5Password, mt5Server, metaapiAccountId } = req.body as Record<string, string>;
     if (!type || !label) { res.status(400).json({ error: "type and label required" }); return; }
-    if (!["binance", "bybit", "mt5"].includes(type)) {
-      res.status(400).json({ error: "type must be binance, bybit, or mt5" }); return;
+    if (!["binance", "bybit", "mt5", "metaapi"].includes(type)) {
+      res.status(400).json({ error: "type must be binance, bybit, mt5, or metaapi" }); return;
     }
     if ((type === "binance" || type === "bybit") && (!apiKey || !apiSecret)) {
       res.status(400).json({ error: "apiKey and apiSecret required for exchange accounts" }); return;
     }
     if (type === "mt5" && (!mt5Login || !mt5Password || !mt5Server)) {
       res.status(400).json({ error: "mt5Login, mt5Password, and mt5Server required" }); return;
+    }
+    if (type === "metaapi" && !metaapiAccountId) {
+      res.status(400).json({ error: "metaapiAccountId required for MetaAPI accounts" }); return;
+    }
+
+    // For MetaAPI, subscribe the account to our CopyFactory strategy before saving
+    if (type === "metaapi") {
+      await metaapiSubscribe(metaapiAccountId, label, 1.0);
     }
 
     const [inserted] = await db.insert(copyAccountsTable).values({
@@ -127,6 +136,7 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       mt5Login: mt5Login ?? null,
       mt5Password: mt5Password ? encrypt(mt5Password) : null,
       mt5Server: mt5Server ?? null,
+      metaapiAccountId: metaapiAccountId ?? null,
     }).returning();
 
     res.status(201).json(maskAccount(inserted));
@@ -147,6 +157,10 @@ router.delete("/copy-accounts/:id", async (req, res): Promise<void> => {
     // Also clean up any stored positions for master accounts
     if (account.role === "master") {
       await db.delete(masterPositionsTable).where(eq(masterPositionsTable.masterAccountId, id));
+    }
+    // For MetaAPI accounts, unsubscribe from the strategy (best-effort)
+    if (account.metaapiAccountId) {
+      await metaapiUnsubscribe(account.metaapiAccountId).catch(() => {});
     }
     await db.delete(copyAccountsTable).where(eq(copyAccountsTable.id, id));
     res.status(204).send();

@@ -181,6 +181,133 @@ async function executeBybit(
   return json.result?.orderId ?? "unknown";
 }
 
+/* ── MetaAPI CopyFactory external signal ───────────────────────── */
+
+const METAAPI_HISTORY_BASE =
+  "https://copyfactory-application-history-master-v1.agiliumtrade.agiliumtrade.ai";
+const METAAPI_CONFIG_BASE =
+  "https://copyfactory-application-configuration-v2.agiliumtrade.agiliumtrade.ai";
+
+/**
+ * Subscribe a MetaAPI account to our CopyFactory strategy.
+ * Called when the copier connects their MetaAPI account on our platform.
+ */
+export async function metaapiSubscribe(
+  metaapiAccountId: string,
+  label: string,
+  lotMultiplier: number,
+): Promise<void> {
+  const token = process.env.METAAPI_TOKEN;
+  const strategyId = process.env.METAAPI_STRATEGY_ID;
+  if (!token || !strategyId) throw new Error("METAAPI_TOKEN or METAAPI_STRATEGY_ID not configured");
+
+  const res = await fetchWithTimeout(
+    `${METAAPI_CONFIG_BASE}/users/current/configuration/subscribers/${metaapiAccountId}`,
+    {
+      method: "PUT",
+      headers: { "auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: label,
+        subscriptions: [
+          {
+            strategyId,
+            multiplier: lotMultiplier,
+            skipPendingOrders: false,
+            mode: "TRADE_COPYING_MODE_TRADE_SIZE_SCALING",
+          },
+        ],
+      }),
+    },
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`MetaAPI subscribe error ${res.status}: ${txt}`);
+  }
+}
+
+/**
+ * Unsubscribe a MetaAPI account from our CopyFactory strategy.
+ * Called when the copier removes their account from our platform.
+ */
+export async function metaapiUnsubscribe(metaapiAccountId: string): Promise<void> {
+  const token = process.env.METAAPI_TOKEN;
+  const strategyId = process.env.METAAPI_STRATEGY_ID;
+  if (!token || !strategyId) return; // non-fatal if not configured
+
+  await fetchWithTimeout(
+    `${METAAPI_CONFIG_BASE}/users/current/configuration/subscribers/${metaapiAccountId}/strategies/${strategyId}`,
+    {
+      method: "DELETE",
+      headers: { "auth-token": token },
+    },
+  ).catch(() => {
+    // best-effort
+  });
+}
+
+/**
+ * Push one external signal to MetaAPI CopyFactory.
+ * MetaAPI fans it out to ALL subscribers of the strategy automatically.
+ */
+async function executeMetaApi(
+  signal: typeof tradeSignalsTable.$inferSelect,
+): Promise<string> {
+  const token = process.env.METAAPI_TOKEN;
+  const strategyId = process.env.METAAPI_STRATEGY_ID;
+  if (!token || !strategyId) throw new Error("METAAPI_TOKEN or METAAPI_STRATEGY_ID not configured");
+
+  if (signal.action === "modify") return "modify-noop";
+
+  const externalSignalId = `bi-${signal.id}`;
+
+  if (signal.action === "close") {
+    // Remove the open signal so MetaAPI closes positions for all subscribers
+    const res = await fetchWithTimeout(
+      `${METAAPI_HISTORY_BASE}/users/current/strategies/${strategyId}/external-signals/${externalSignalId}`,
+      {
+        method: "DELETE",
+        headers: { "auth-token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ time: new Date().toISOString() }),
+      },
+    );
+    // 404 means signal was already removed — not an error
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text();
+      throw new Error(`MetaAPI remove signal ${res.status}: ${txt}`);
+    }
+    return `metaapi-close-${externalSignalId}`;
+  }
+
+  const type = signal.action === "buy" ? "POSITION_TYPE_BUY" : "POSITION_TYPE_SELL";
+  const volume = parseFloat(signal.quantity as string);
+
+  const body: Record<string, unknown> = {
+    symbol: signal.symbol,
+    type,
+    time: new Date().toISOString(),
+    volume,
+  };
+  if (signal.stopLoss)   body.stopLoss   = parseFloat(signal.stopLoss   as string);
+  if (signal.takeProfit) body.takeProfit = parseFloat(signal.takeProfit as string);
+  if (signal.price && signal.orderType !== "market") {
+    body.openPrice = parseFloat(signal.price as string);
+  }
+
+  const res = await fetchWithTimeout(
+    `${METAAPI_HISTORY_BASE}/users/current/strategies/${strategyId}/external-signals/${externalSignalId}`,
+    {
+      method: "PUT",
+      headers: { "auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`MetaAPI signal error ${res.status}: ${txt}`);
+  }
+  return externalSignalId;
+}
+
 /* ── MT5 bridge order ──────────────────────────────────────────── */
 async function executeMt5(
   login: string,
@@ -274,8 +401,78 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
   let successCount = 0;
   let failCount = 0;
 
+  // ── MetaAPI: fire ONE external signal covering all MetaAPI subscribers ──
+  // MetaAPI's CopyFactory handles fan-out to all subscribers automatically,
+  // so we only need one API call regardless of how many MetaAPI copiers exist.
+  const metaapiSubs = activeSubs.filter(
+    (s) => accountMap[s.copyAccountId!]?.type === "metaapi",
+  );
+  const nonMetaapiSubs = activeSubs.filter(
+    (s) => accountMap[s.copyAccountId!]?.type !== "metaapi",
+  );
+
+  if (metaapiSubs.length > 0) {
+    // Insert copy_trade rows for all MetaAPI subscribers (pending), then resolve them together
+    const metaaTrades = await Promise.all(
+      metaapiSubs.map((sub) =>
+        db
+          .insert(copyTradesTable)
+          .values({
+            signalId: signal.id,
+            subscriptionId: sub.id,
+            userId: sub.userId,
+            copyAccountId: sub.copyAccountId!,
+            status: "pending",
+            quantity: signal.quantity ? String(signal.quantity) : null,
+          })
+          .returning()
+          .then((r) => ({ trade: r[0], sub })),
+      ),
+    );
+
+    try {
+      const brokerOrderId = await executeMetaApi(signal);
+      // Mark all MetaAPI copy_trades as executed
+      await Promise.all(
+        metaaTrades.map(({ trade, sub }) =>
+          Promise.all([
+            db
+              .update(copyTradesTable)
+              .set({ status: "executed", brokerOrderId, executedPrice: signal.price ?? null })
+              .where(eq(copyTradesTable.id, trade.id)),
+            db
+              .update(copyAccountsTable)
+              .set({ status: "active", lastError: null })
+              .where(eq(copyAccountsTable.id, sub.copyAccountId!)),
+          ]),
+        ),
+      );
+      successCount += metaapiSubs.length;
+      logger.info({ signalId: signal.id, brokerOrderId }, "MetaAPI signal dispatched");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "MetaAPI unknown error";
+      logger.error({ err: msg }, "MetaAPI fan-out error");
+      await Promise.all(
+        metaaTrades.map(({ trade, sub }) =>
+          Promise.all([
+            db
+              .update(copyTradesTable)
+              .set({ status: "failed", errorMessage: msg })
+              .where(eq(copyTradesTable.id, trade.id)),
+            db
+              .update(copyAccountsTable)
+              .set({ status: "error", lastError: msg })
+              .where(eq(copyAccountsTable.id, sub.copyAccountId!)),
+          ]),
+        ),
+      );
+      failCount += metaapiSubs.length;
+    }
+  }
+
+  // ── Per-copier fan-out for Binance / Bybit / MT5 ────────────────────────
   await Promise.allSettled(
-    activeSubs.map(async (sub) => {
+    nonMetaapiSubs.map(async (sub) => {
       const account = accountMap[sub.copyAccountId!];
       if (!account) return;
       if (account.role === "master") return;
