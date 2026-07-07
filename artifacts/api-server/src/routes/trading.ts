@@ -424,7 +424,7 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { traderId, symbol, market, action, orderType, price, quantity, stopLoss, takeProfit, leverage, notes } = req.body;
+    const { traderId, symbol, market, action, orderType, price, stopPrice, quantity, stopLoss, takeProfit, leverage, notes } = req.body;
     if (!traderId || !symbol || !market || !action || !quantity) {
       res.status(400).json({ error: "traderId, symbol, market, action, quantity required" }); return;
     }
@@ -433,6 +433,7 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
       traderId, symbol, market, action,
       orderType: orderType ?? "market",
       price: price?.toString() ?? null,
+      stopPrice: stopPrice?.toString() ?? null,
       quantity: quantity.toString(),
       stopLoss: stopLoss?.toString() ?? null,
       takeProfit: takeProfit?.toString() ?? null,
@@ -443,6 +444,7 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
     res.status(201).json({
       ...signal,
       price: signal.price ? parseFloat(signal.price as string) : null,
+      stopPrice: signal.stopPrice ? parseFloat(signal.stopPrice as string) : null,
       quantity: signal.quantity ? parseFloat(signal.quantity as string) : null,
     });
 

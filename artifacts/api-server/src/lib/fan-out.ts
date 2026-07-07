@@ -15,53 +15,85 @@ import { eq, and, inArray } from "drizzle-orm";
 import { decrypt } from "./encrypt";
 import { logger } from "./logger";
 
-/* ── Binance market order ─────────────────────────────────────── */
+/* ── Helpers ───────────────────────────────────────────────────── */
+
+/** Map our order type to Binance futures type string + required extra params */
+function binanceOrderParams(
+  signal: typeof tradeSignalsTable.$inferSelect,
+): Record<string, string> {
+  const ot = signal.orderType ?? "market";
+  const price   = signal.price      ? parseFloat(signal.price      as string).toString() : "";
+  const stopPx  = signal.stopPrice  ? parseFloat(signal.stopPrice  as string).toString() : "";
+
+  switch (ot) {
+    case "limit":
+      return { type: "LIMIT", timeInForce: "GTC", price };
+    case "stop":
+      // Stop-Market: triggers at stopPrice, fills at market
+      return { type: "STOP_MARKET", stopPrice: stopPx };
+    case "stop_limit":
+      // Stop-Limit: triggers at stopPrice, places limit at price
+      return { type: "STOP", stopPrice: stopPx, price, timeInForce: "GTC" };
+    default: // market
+      return { type: "MARKET" };
+  }
+}
+
+/** Map our order type to Bybit orderType + triggerPrice */
+function bybitOrderParams(
+  signal: typeof tradeSignalsTable.$inferSelect,
+): Record<string, string | undefined> {
+  const ot = signal.orderType ?? "market";
+  const price   = signal.price      ? parseFloat(signal.price      as string).toString() : undefined;
+  const stopPx  = signal.stopPrice  ? parseFloat(signal.stopPrice  as string).toString() : undefined;
+
+  switch (ot) {
+    case "limit":
+      return { orderType: "Limit", price };
+    case "stop":
+      return { orderType: "Market", triggerPrice: stopPx, triggerDirection: "1", orderFilter: "StopOrder" };
+    case "stop_limit":
+      return { orderType: "Limit", price, triggerPrice: stopPx, triggerDirection: "1", orderFilter: "StopOrder" };
+    default:
+      return { orderType: "Market" };
+  }
+}
+
+/* ── Binance order ─────────────────────────────────────────────── */
 async function executeBinance(
   apiKey: string,
   apiSecret: string,
   signal: typeof tradeSignalsTable.$inferSelect,
   lotMultiplier: number,
 ): Promise<string> {
-  if (signal.action === "close" || signal.action === "modify") {
-    // For close/modify we issue a REDUCE_ONLY market order
-    const side = signal.action === "close"
-      ? (signal.notes?.includes("long") ? "SELL" : "BUY")  // close long = sell
-      : "BUY"; // modify doesn't place an order — handled by update SL/TP endpoint
-    if (signal.action === "modify") return "modify-noop";
+  if (signal.action === "modify") return "modify-noop";
 
-    const qty = (parseFloat(signal.quantity as string) * lotMultiplier).toFixed(6);
-    const params = new URLSearchParams({
-      symbol: signal.symbol.toUpperCase(),
-      side,
-      type: "MARKET",
-      quantity: qty,
-      reduceOnly: "true",
-      timestamp: Date.now().toString(),
-    });
-    const sig = createHmac("sha256", apiSecret).update(params.toString()).digest("hex");
-    params.append("signature", sig);
-    const res = await fetch(`https://fapi.binance.com/fapi/v1/order?${params.toString()}`, {
-      method: "POST",
-      headers: { "X-MBX-APIKEY": apiKey },
-    });
-    const json = await res.json() as { orderId?: number; msg?: string };
-    if (!res.ok) throw new Error(json.msg ?? "Binance close error");
-    return String(json.orderId);
-  }
+  const isClose = signal.action === "close";
+  const side = isClose
+    ? (signal.notes?.includes("long") ? "SELL" : "BUY")
+    : signal.action === "buy" ? "BUY" : "SELL";
 
-  const side = signal.action === "buy" ? "BUY" : "SELL";
   const qty = (parseFloat(signal.quantity as string) * lotMultiplier).toFixed(6);
+  const extraParams = binanceOrderParams(signal);
+
+  // Use futures endpoint for close (reduce-only) and for stop order types
+  const isFutures = isClose || ["stop", "stop_limit"].includes(signal.orderType ?? "market");
+  const baseUrl = isFutures
+    ? "https://fapi.binance.com/fapi/v1/order"
+    : "https://api.binance.com/api/v3/order";
+
   const params = new URLSearchParams({
     symbol: signal.symbol.toUpperCase(),
     side,
-    type: "MARKET",
     quantity: qty,
     timestamp: Date.now().toString(),
+    ...extraParams,
+    ...(isClose ? { reduceOnly: "true" } : {}),
   });
   const sig = createHmac("sha256", apiSecret).update(params.toString()).digest("hex");
   params.append("signature", sig);
 
-  const res = await fetch(`https://api.binance.com/api/v3/order?${params.toString()}`, {
+  const res = await fetch(`${baseUrl}?${params.toString()}`, {
     method: "POST",
     headers: { "X-MBX-APIKEY": apiKey },
   });
@@ -70,7 +102,7 @@ async function executeBinance(
   return String(json.orderId);
 }
 
-/* ── Bybit market order ────────────────────────────────────────── */
+/* ── Bybit order ───────────────────────────────────────────────── */
 async function executeBybit(
   apiKey: string,
   apiSecret: string,
@@ -81,17 +113,24 @@ async function executeBybit(
 
   const timestamp = Date.now().toString();
   const qty = (parseFloat(signal.quantity as string) * lotMultiplier).toFixed(6);
-  let side = signal.action === "buy" ? "Buy" : "Sell";
   const isClose = signal.action === "close";
-  if (isClose) side = signal.notes?.includes("long") ? "Sell" : "Buy";
+  const side = isClose
+    ? (signal.notes?.includes("long") ? "Sell" : "Buy")
+    : signal.action === "buy" ? "Buy" : "Sell";
+
+  const extra = bybitOrderParams(signal);
+  // Remove undefined keys before JSON.stringify
+  const cleanExtra = Object.fromEntries(
+    Object.entries(extra).filter(([, v]) => v !== undefined)
+  );
 
   const body = JSON.stringify({
     category: "linear",
     symbol: signal.symbol.toUpperCase(),
     side,
-    orderType: "Market",
     qty,
     ...(isClose ? { reduceOnly: true } : {}),
+    ...cleanExtra,
   });
   const toSign = `${timestamp}${apiKey}5000${body}`;
   const signature = createHmac("sha256", apiSecret).update(toSign).digest("hex");

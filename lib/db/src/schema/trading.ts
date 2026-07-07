@@ -81,8 +81,9 @@ export const tradeSignalsTable = pgTable("trade_signals", {
   symbol: text("symbol").notNull(),
   market: text("market").notNull(), // crypto | forex
   action: text("action").notNull(), // buy | sell | close
-  orderType: text("order_type").notNull().default("market"), // market | limit
+  orderType: text("order_type").notNull().default("market"), // market | limit | stop | stop_limit
   price: numeric("price", { precision: 20, scale: 8 }),
+  stopPrice: numeric("stop_price", { precision: 20, scale: 8 }), // trigger price for stop / stop_limit
   quantity: numeric("quantity", { precision: 20, scale: 8 }),
   stopLoss: numeric("stop_loss", { precision: 20, scale: 8 }),
   takeProfit: numeric("take_profit", { precision: 20, scale: 8 }),

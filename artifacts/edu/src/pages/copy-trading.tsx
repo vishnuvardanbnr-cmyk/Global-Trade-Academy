@@ -281,6 +281,7 @@ function StatusIcon({ status }: { status: string }) {
 /* ─── Quick Trade Panel (instructor / admin only) ────────────────── */
 type QuickTradeAction = "buy" | "sell" | "close" | "modify";
 type QuickTradeMarket = "crypto" | "forex" | "commodities" | "stocks";
+type QuickTradeOrderType = "market" | "limit" | "stop" | "stop_limit";
 
 function QuickTradePanel({
   traderId,
@@ -294,15 +295,26 @@ function QuickTradePanel({
   const { toast } = useToast();
   const [action, setAction] = useState<QuickTradeAction>("buy");
   const [market, setMarket] = useState<QuickTradeMarket>("crypto");
-  const [orderType, setOrderType] = useState<"market" | "limit">("market");
+  const [orderType, setOrderType] = useState<QuickTradeOrderType>("market");
   const [symbol, setSymbol] = useState("");
   const [price, setPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
   const [quantity, setQuantity] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [leverage, setLeverage] = useState("1");
   const [notes, setNotes] = useState("");
   const [firing, setFiring] = useState(false);
+
+  const needsPrice    = orderType === "limit" || orderType === "stop_limit";
+  const needsStopPx   = orderType === "stop"  || orderType === "stop_limit";
+
+  const orderTypeMeta: Record<QuickTradeOrderType, string> = {
+    market:     "Market",
+    limit:      "Limit",
+    stop:       "Stop (Market)",
+    stop_limit: "Stop-Limit",
+  };
 
   const actionMeta: Record<QuickTradeAction, { label: string; color: string; bg: string; activeBg: string }> = {
     buy:    { label: "BUY",    color: "text-green-700",  bg: "border-green-200 hover:bg-green-50",  activeBg: "bg-green-500 text-white border-green-500" },
@@ -314,6 +326,8 @@ function QuickTradePanel({
   const fire = async () => {
     if (!symbol.trim()) { toast({ title: "Symbol required", variant: "destructive" }); return; }
     if (!quantity.trim()) { toast({ title: "Quantity required", variant: "destructive" }); return; }
+    if (needsStopPx && !stopPrice.trim()) { toast({ title: "Trigger (stop) price required", variant: "destructive" }); return; }
+    if (needsPrice && !price.trim()) { toast({ title: "Limit price required", variant: "destructive" }); return; }
     setFiring(true);
     try {
       const body: Record<string, unknown> = {
@@ -325,8 +339,9 @@ function QuickTradePanel({
         quantity: parseFloat(quantity),
         leverage: parseFloat(leverage) || 1,
       };
-      if (orderType === "limit" && price) body.price = parseFloat(price);
-      if (stopLoss) body.stopLoss = parseFloat(stopLoss);
+      if (needsPrice && price)   body.price     = parseFloat(price);
+      if (needsStopPx && stopPrice) body.stopPrice = parseFloat(stopPrice);
+      if (stopLoss)   body.stopLoss  = parseFloat(stopLoss);
       if (takeProfit) body.takeProfit = parseFloat(takeProfit);
       if (notes.trim()) body.notes = notes.trim();
 
@@ -338,7 +353,7 @@ function QuickTradePanel({
       if (!res.ok) { const e = await res.json() as { error: string }; throw new Error(e.error); }
       const sig = await res.json() as Signal;
       onSignalCreated(sig);
-      setSymbol(""); setPrice(""); setQuantity(""); setStopLoss(""); setTakeProfit(""); setNotes("");
+      setSymbol(""); setPrice(""); setStopPrice(""); setQuantity(""); setStopLoss(""); setTakeProfit(""); setNotes("");
       toast({
         title: `${action.toUpperCase()} ${sig.symbol} fired!`,
         description: `Fanning out to ${subscriberCount} copier${subscriberCount !== 1 ? "s" : ""}…`,
@@ -409,17 +424,18 @@ function QuickTradePanel({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Order Type</Label>
-            <Select value={orderType} onValueChange={(v) => setOrderType(v as "market" | "limit")}>
+            <Select value={orderType} onValueChange={(v) => setOrderType(v as QuickTradeOrderType)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="market">Market</SelectItem>
-                <SelectItem value="limit">Limit</SelectItem>
+                {(Object.entries(orderTypeMeta) as [QuickTradeOrderType, string][]).map(([val, label]) => (
+                  <SelectItem key={val} value={val}>{label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
 
-        {/* Row 2: Quantity + Price (if limit) + Leverage */}
+        {/* Row 2: Quantity + Trigger price (stop/stop_limit) + Limit price (limit/stop_limit) + Leverage */}
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">Quantity / Lots</Label>
@@ -430,16 +446,28 @@ function QuickTradePanel({
               onChange={(e) => setQuantity(e.target.value)}
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Price {orderType === "market" ? "(optional)" : "*"}</Label>
-            <Input
-              type="number" min="0" step="any"
-              placeholder={orderType === "market" ? "auto" : "entry price"}
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              disabled={orderType === "market" && false}
-            />
-          </div>
+          {needsStopPx ? (
+            <div className="space-y-1">
+              <Label className="text-xs text-orange-500">Trigger Price *</Label>
+              <Input
+                type="number" min="0" step="any"
+                placeholder="stop trigger price"
+                value={stopPrice}
+                onChange={(e) => setStopPrice(e.target.value)}
+                className="border-orange-300 focus:border-orange-500"
+              />
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label className="text-xs">{needsPrice ? "Limit Price *" : "Price (optional)"}</Label>
+              <Input
+                type="number" min="0" step="any"
+                placeholder={needsPrice ? "entry price" : "auto"}
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </div>
+          )}
           <div className="space-y-1">
             <Label className="text-xs">Leverage</Label>
             <Input
@@ -450,6 +478,21 @@ function QuickTradePanel({
             />
           </div>
         </div>
+
+        {/* Extra row: limit price shown alongside trigger price for stop_limit */}
+        {orderType === "stop_limit" && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-start-2 space-y-1">
+              <Label className="text-xs">Limit Price *</Label>
+              <Input
+                type="number" min="0" step="any"
+                placeholder="limit entry price"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Row 3: SL + TP */}
         <div className="grid grid-cols-2 gap-3">
