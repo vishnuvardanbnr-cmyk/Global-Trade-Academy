@@ -4,7 +4,7 @@ import { db } from "@workspace/db";
 import {
   tradersTable, copySubscriptionsTable, watchlistTable,
   copyAccountsTable, tradeSignalsTable, copyTradesTable,
-  masterPositionsTable,
+  masterPositionsTable, usersTable,
 } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
@@ -318,12 +318,38 @@ router.get("/copy-subscriptions", async (req, res): Promise<void> => {
   }
 });
 
+/* Copier limits by plan — premium/elite get unlimited (-1) */
+const PLAN_COPIER_LIMITS: Record<string, number> = {
+  free:    1,
+  pro:     3,
+  premium: -1,
+  elite:   -1,
+};
+
 router.post("/copy-subscriptions", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const { traderId, copyAccountId, maxAmount, stopLoss, allocatedAmount, lotMultiplier } = req.body;
     if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
+
+    // Check plan copier limit
+    const userRow = await db.select({ plan: usersTable.plan }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
+    const plan = userRow?.plan ?? "free";
+    const limit = PLAN_COPIER_LIMITS[plan] ?? 1;
+    if (limit !== -1) {
+      const existing = await db.select({ id: copySubscriptionsTable.id }).from(copySubscriptionsTable)
+        .where(and(eq(copySubscriptionsTable.userId, clerkId), eq(copySubscriptionsTable.status, "active")));
+      if (existing.length >= limit) {
+        res.status(403).json({
+          error: `Your ${plan} plan allows up to ${limit} active copier${limit !== 1 ? "s" : ""}. Upgrade to Premium for unlimited copiers.`,
+          code: "PLAN_LIMIT_REACHED",
+          plan,
+          limit,
+        });
+        return;
+      }
+    }
 
     // Verify the copy account belongs to this user if provided
     if (copyAccountId) {

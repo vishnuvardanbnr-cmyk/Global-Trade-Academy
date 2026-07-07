@@ -18,6 +18,7 @@ function buildUserResponse(user: typeof usersTable.$inferSelect) {
     avatarUrl: user.avatarUrl,
     bio: user.bio,
     role: user.role,
+    plan: user.plan ?? "free",
     xp: user.xp,
     badges: user.badges,
     marketFocus: user.marketFocus,

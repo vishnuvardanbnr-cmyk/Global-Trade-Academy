@@ -3,6 +3,7 @@ export interface AuthUser {
   email: string;
   displayName: string | null;
   role: string;
+  plan?: string;
   status?: string;
   avatarUrl?: string | null;
 }

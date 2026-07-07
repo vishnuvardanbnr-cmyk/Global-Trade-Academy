@@ -416,7 +416,7 @@ type DetailedStats = { totalUsers: number; totalCourses: number; publishedCourse
 type AdminCourse = { id: number; title: string; status: string; level: string | null; category: string | null; subCategory: string | null; price: string | null; instructorName: string; enrollments: number; isFeatured: boolean | null; createdAt: string; };
 type AdminEnrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; groupName: string | null; };
 type AdminActivity = { id: number; type: string; userId: string | null; userName: string | null; description: string | null; metadata: unknown; createdAt: string; };
-type AdminUser = { id: string; email: string; displayName: string | null; role: string; xp: number; createdAt: string; };
+type AdminUser = { id: string; email: string; displayName: string | null; role: string; plan: string; xp: number; createdAt: string; };
 
 /* ─── Overview Tab ─── */
 function OverviewTab() {
@@ -526,6 +526,17 @@ function UsersTab() {
     finally { setActing(null); }
   };
 
+  const changePlan = async (userId: string, plan: string) => {
+    setActing(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/plan`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }) });
+      if (!res.ok) throw new Error();
+      toast({ title: `Plan changed to ${plan}` });
+      qc.invalidateQueries({ queryKey: ["listUsers"] });
+    } catch { toast({ title: "Failed to change plan", variant: "destructive" }); }
+    finally { setActing(null); }
+  };
+
   const saveXp = async () => {
     if (!editXpUser) return;
     const xp = parseInt(xpValue);
@@ -574,6 +585,7 @@ function UsersTab() {
               <tr className="border-b border-border text-muted-foreground text-xs">
                 <th className="text-left px-4 py-3 font-medium">User</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
+                <th className="text-left px-4 py-3 font-medium">Plan</th>
                 <th className="text-right px-4 py-3 font-medium">XP</th>
                 <th className="text-right px-4 py-3 font-medium">Joined</th>
                 <th className="text-right px-4 py-3 font-medium">Actions</th>
@@ -602,6 +614,19 @@ function UsersTab() {
                         <SelectItem value="student">Student</SelectItem>
                         <SelectItem value="instructor">Instructor</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Select value={(user as AdminUser).plan ?? "free"} onValueChange={(v) => changePlan(user.id, v)} disabled={acting === user.id}>
+                      <SelectTrigger className="h-7 w-28 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="free">Free</SelectItem>
+                        <SelectItem value="pro">Pro</SelectItem>
+                        <SelectItem value="premium">Premium ⭐</SelectItem>
+                        <SelectItem value="elite">Elite 💎</SelectItem>
                       </SelectContent>
                     </Select>
                   </td>

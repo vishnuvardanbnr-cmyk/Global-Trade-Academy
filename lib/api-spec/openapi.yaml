@@ -2122,6 +2122,7 @@ components:
         avatarUrl: { type: ["string", "null"] }
         bio: { type: ["string", "null"] }
         role: { type: string }
+        plan: { type: string }
         xp: { type: integer }
         badges: { type: array, items: { type: string } }
         marketFocus: { type: ["string", "null"] }

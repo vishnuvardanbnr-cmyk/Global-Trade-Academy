@@ -14,6 +14,7 @@ import {
   TrendingUp, TrendingDown, Users, ShieldCheck, Plus, Trash2,
   Zap, Link2, Clock, CheckCircle2, XCircle, AlertCircle,
   RefreshCw, ChevronDown, ChevronUp, Send, Crosshair, Loader2,
+  Crown, Sparkles,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────────────── */
@@ -206,12 +207,24 @@ function SubscribeModal({ trader, accounts, open, onClose, onSubscribed }: {
           lotMultiplier: parseFloat(lotMultiplier) || 1,
         }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const data = await res.json() as { error: string; code?: string };
+        if (data.code === "PLAN_LIMIT_REACHED") {
+          toast({
+            title: "Copier limit reached",
+            description: data.error,
+            variant: "destructive",
+          });
+        } else {
+          throw new Error(data.error ?? "Failed");
+        }
+        return;
+      }
       onSubscribed();
       onClose();
       toast({ title: `Now copying ${trader.displayName}` });
-    } catch {
-      toast({ title: "Failed to subscribe", variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to subscribe", variant: "destructive" });
     } finally { setSaving(false); }
   };
 
@@ -731,6 +744,49 @@ export default function CopyTrading() {
           </div>
         )}
       </section>
+
+      {/* ── Plan / Copier Usage Banner ── */}
+      {!isInstructor && (() => {
+        const plan = user?.plan ?? "free";
+        const limits: Record<string, number> = { free: 1, pro: 3, premium: -1, elite: -1 };
+        const limit = limits[plan] ?? 1;
+        const used = subscriptions.filter((s) => s.status === "active").length;
+        const isUnlimited = limit === -1;
+        const atLimit = !isUnlimited && used >= limit;
+        const planColors: Record<string, string> = {
+          free:    "border-gray-200 bg-gray-50 text-gray-700",
+          pro:     "border-blue-200 bg-blue-50 text-blue-800",
+          premium: "border-amber-200 bg-amber-50 text-amber-800",
+          elite:   "border-purple-200 bg-purple-50 text-purple-800",
+        };
+        const planIcons: Record<string, React.ReactNode> = {
+          premium: <Crown className="h-3.5 w-3.5" />,
+          elite:   <Sparkles className="h-3.5 w-3.5" />,
+        };
+        return (
+          <div className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${planColors[plan] ?? planColors.free}`}>
+            <div className="flex items-center gap-1.5 font-semibold text-sm capitalize">
+              {planIcons[plan]}
+              {plan} Plan
+            </div>
+            <span className="text-muted-foreground text-xs">·</span>
+            <span className="text-sm">
+              {isUnlimited
+                ? <><span className="font-semibold">{used}</span> active copier{used !== 1 ? "s" : ""} <span className="text-green-600 font-medium">(unlimited)</span></>
+                : <><span className="font-semibold">{used}</span> / {limit} copier{limit !== 1 ? "s" : ""} used</>
+              }
+            </span>
+            {atLimit && (
+              <span className="ml-auto text-xs font-medium text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full">
+                Upgrade to Premium for unlimited copiers →
+              </span>
+            )}
+            {!atLimit && !isUnlimited && (
+              <span className="ml-auto text-xs text-muted-foreground">{limit - used} slot{limit - used !== 1 ? "s" : ""} remaining</span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Active Subscriptions ── */}
       {subscriptions.length > 0 && (

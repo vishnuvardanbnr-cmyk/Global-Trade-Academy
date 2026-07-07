@@ -97,6 +97,31 @@ router.patch("/admin/users/:id/role", async (req, res): Promise<void> => {
   }
 });
 
+/* ── PATCH /api/admin/users/:id/plan ───────────────────────────── */
+router.patch("/admin/users/:id/plan", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { plan } = req.body;
+    if (!["free", "pro", "premium", "elite"].includes(plan)) {
+      res.status(400).json({ error: "Invalid plan. Must be free, pro, premium, or elite" }); return;
+    }
+
+    const updated = await db
+      .update(usersTable)
+      .set({ plan, updatedAt: new Date() })
+      .where(eq(usersTable.id, req.params.id))
+      .returning();
+
+    if (!updated[0]) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({ success: true, plan: updated[0].plan });
+  } catch (err) {
+    req.log.error({ err }, "Error updating user plan");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── PATCH /api/admin/users/:id/xp ─────────────────────────────── */
 router.patch("/admin/users/:id/xp", async (req, res): Promise<void> => {
   try {

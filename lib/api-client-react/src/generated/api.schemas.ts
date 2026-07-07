@@ -20,6 +20,7 @@ export interface UserProfile {
   /** @nullable */
   bio?: string | null;
   role: string;
+  plan?: string;
   xp?: number;
   badges?: string[];
   /** @nullable */
