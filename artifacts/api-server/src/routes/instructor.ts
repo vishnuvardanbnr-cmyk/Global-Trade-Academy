@@ -128,6 +128,64 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/instructor/students/export ─────────────────────────── */
+router.get("/instructor/students/export", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const courseIds = await getInstructorCourseIds(clerkId);
+    if (courseIds.length === 0) { res.json([]); return; }
+
+    const enrollments = await db
+      .select({ userId: enrollmentsTable.userId, courseId: enrollmentsTable.courseId, status: enrollmentsTable.status })
+      .from(enrollmentsTable)
+      .where(inArray(enrollmentsTable.courseId, courseIds));
+
+    if (enrollments.length === 0) { res.json([]); return; }
+
+    const studentIds = [...new Set(enrollments.map((e) => e.userId))];
+
+    const [students, courses, groupMembers] = await Promise.all([
+      db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email, phone: usersTable.phone, country: usersTable.country, createdAt: usersTable.createdAt })
+        .from(usersTable).where(inArray(usersTable.id, studentIds)),
+      db.select({ id: coursesTable.id, title: coursesTable.title }).from(coursesTable).where(inArray(coursesTable.id, courseIds)),
+      studentIds.length ? db.select({ userId: groupMembersTable.userId, groupName: groupsTable.name })
+        .from(groupMembersTable).innerJoin(groupsTable, eq(groupMembersTable.groupId, groupsTable.id))
+        .where(inArray(groupMembersTable.userId, studentIds)) : [],
+    ]);
+
+    const courseMap = Object.fromEntries(courses.map((c) => [c.id, c.title]));
+    const groupMap = Object.fromEntries(groupMembers.map((g) => [g.userId, g.groupName]));
+
+    const byStudent: Record<string, { enrolled: string[]; completed: string[] }> = {};
+    for (const e of enrollments) {
+      if (!byStudent[e.userId]) byStudent[e.userId] = { enrolled: [], completed: [] };
+      const title = courseMap[e.courseId] ?? "Unknown";
+      byStudent[e.userId].enrolled.push(title);
+      if (e.status === "completed") byStudent[e.userId].completed.push(title);
+    }
+
+    const rows = students.map((s) => ({
+      Name: s.displayName ?? "",
+      Email: s.email ?? "",
+      Phone: s.phone ?? "",
+      Country: s.country ?? "",
+      Group: groupMap[s.id] ?? "",
+      "Enrolled Courses": (byStudent[s.id]?.enrolled ?? []).join("; "),
+      "Completed Courses": (byStudent[s.id]?.completed ?? []).join("; "),
+      "Enrolled Count": byStudent[s.id]?.enrolled.length ?? 0,
+      "Completed Count": byStudent[s.id]?.completed.length ?? 0,
+      "Joined Date": s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "",
+    }));
+
+    res.json(rows);
+  } catch (err) {
+    req.log.error({ err }, "Error exporting students");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── GET /api/instructor/enrollments ────────────────────────────── */
 router.get("/instructor/enrollments", async (req, res): Promise<void> => {
   try {

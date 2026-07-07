@@ -81,6 +81,7 @@
     "canvas-confetti": "^1.9.4",
     "hls.js": "^1.6.16",
     "lightweight-charts": "^5.2.0",
-    "livekit-client": "^2.19.1"
+    "livekit-client": "^2.19.1",
+    "xlsx": "^0.18.5"
   }
 }

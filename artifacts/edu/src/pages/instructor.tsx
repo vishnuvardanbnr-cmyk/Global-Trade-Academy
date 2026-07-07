@@ -32,10 +32,11 @@ import {
   FileQuestion, Clock, BarChart3, Pencil, ImageIcon, CalendarPlus,
   ListTodo, ExternalLink, GraduationCap, TrendingUp, Award,
   UserCheck, ChevronRight, RefreshCw, Star, Megaphone, Send, Link2, Check, X,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Download,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
+import * as XLSX from "xlsx";
 
 /* ─── Announcement Card ─── */
 function AnnouncementCard({ courses }: { courses: { id: number; title: string }[] }) {
@@ -956,7 +957,9 @@ type Student = { userId: string; displayName: string; email: string; avatarUrl: 
 function StudentsTab() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState("");
+  const { toast } = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -967,13 +970,39 @@ function StudentsTab() {
   };
   useEffect(() => { load(); }, []);
 
+  const downloadExcel = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/instructor/students/export");
+      if (!res.ok) throw new Error();
+      const rows = await res.json();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const colWidths = [
+        { wch: 25 }, { wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 20 },
+        { wch: 50 }, { wch: 50 }, { wch: 14 }, { wch: 15 }, { wch: 14 },
+      ];
+      ws["!cols"] = colWidths;
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Students");
+      const date = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `students-export-${date}.xlsx`);
+    } catch {
+      toast({ title: "Export failed", variant: "destructive" });
+    } finally { setExporting(false); }
+  };
+
   const filtered = students.filter((s) => !search || s.displayName.toLowerCase().includes(search.toLowerCase()) || s.email.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <Input placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-        <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={downloadExcel} disabled={exporting || loading}>
+            <Download className="h-3.5 w-3.5 mr-1.5" />{exporting ? "Exporting…" : "Export Excel"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh</Button>
+        </div>
       </div>
 
       {loading ? (
