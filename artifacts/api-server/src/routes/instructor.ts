@@ -6,6 +6,7 @@ import {
   lessonProgressTable, quizAttemptsTable, quizzesTable,
   taskCompletionsTable, tasksTable, lessonGatesTable,
   xpEventsTable, liveClassesTable, certificatesTable,
+  groupMembersTable, groupsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, count, avg } from "drizzle-orm";
 import { ownsCourse } from "../lib/lms";
@@ -150,15 +151,20 @@ router.get("/instructor/enrollments", async (req, res): Promise<void> => {
       .orderBy(desc(enrollmentsTable.enrolledAt));
 
     const userIds = [...new Set(enrollments.map((e) => e.userId))];
-    const [users, courses] = await Promise.all([
+    const [users, courses, groupMembers] = await Promise.all([
       userIds.length ? db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email, avatarUrl: usersTable.avatarUrl })
         .from(usersTable).where(inArray(usersTable.id, userIds)) : [],
       db.select({ id: coursesTable.id, title: coursesTable.title })
         .from(coursesTable).where(inArray(coursesTable.id, courseIds)),
+      userIds.length ? db.select({ userId: groupMembersTable.userId, groupName: groupsTable.name })
+        .from(groupMembersTable)
+        .innerJoin(groupsTable, eq(groupMembersTable.groupId, groupsTable.id))
+        .where(inArray(groupMembersTable.userId, userIds)) : [],
     ]);
 
     const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
     const courseMap = Object.fromEntries(courses.map((c) => [c.id, c.title]));
+    const groupMap = Object.fromEntries(groupMembers.map((g) => [g.userId, g.groupName]));
 
     res.json(enrollments.map((e) => ({
       ...e,
@@ -166,6 +172,7 @@ router.get("/instructor/enrollments", async (req, res): Promise<void> => {
       userEmail: userMap[e.userId]?.email ?? "",
       userAvatar: userMap[e.userId]?.avatarUrl ?? null,
       courseTitle: courseMap[e.courseId] ?? "Unknown Course",
+      groupName: groupMap[e.userId] ?? null,
     })));
   } catch (err) {
     req.log.error({ err }, "Error listing instructor enrollments");

@@ -1169,7 +1169,7 @@ function AnalyticsTab({ courses }: { courses?: { id: number; title: string }[] }
 }
 
 /* ─── Enrollments Tab ─── */
-type Enrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; };
+type Enrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; groupName: string | null; };
 
 type EnrollmentRequest = { id: number; userId: string; courseId: number; status: string; enrolledAt: string | null; userName: string; userEmail: string; courseTitle: string };
 
@@ -1317,6 +1317,11 @@ function EnrollmentsTab() {
                     <td className="px-4 py-3">
                       <p className="font-medium truncate max-w-[160px]">{e.userName}</p>
                       <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{e.userEmail}</p>
+                      {e.groupName && (
+                        <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                          <Users className="h-2.5 w-2.5" />{e.groupName}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground truncate max-w-[180px]">{e.courseTitle}</td>
                     <td className="px-4 py-3 text-center">
@@ -1847,7 +1852,15 @@ export default function InstructorPanel() {
   const updateCourse = useUpdateCourse({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) }); toast({ title: "Course updated" }); } } });
   const deleteCourse = useDeleteCourse({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) }); toast({ title: "Course deleted" }); } } });
 
-  const totalStudents = courses?.reduce((a, c) => a + (c.enrollmentCount ?? 0), 0) ?? 0;
+  const [uniqueStudentCount, setUniqueStudentCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!clerkId) return;
+    fetch("/api/instructor/students")
+      .then((r) => r.ok ? r.json() : [])
+      .then((students: unknown[]) => setUniqueStudentCount(students.length))
+      .catch(() => {});
+  }, [clerkId]);
+  const totalStudents = uniqueStudentCount ?? courses?.reduce((a, c) => a + (c.enrollmentCount ?? 0), 0) ?? 0;
   const pendingCount = reviews?.length ?? 0;
 
   return (
