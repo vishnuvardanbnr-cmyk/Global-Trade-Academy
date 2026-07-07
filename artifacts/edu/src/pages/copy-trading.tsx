@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -653,7 +654,208 @@ function QuickTradePanel({
 }
 
 /* ─── Main page ──────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   PAYWALL — checks platform subscription before showing copy trading
+════════════════════════════════════════════════════════════════════ */
+type PlatformSubStatus = {
+  id: number; plan: string; status: string;
+  startDate: string | null; endDate: string | null; adminNote: string | null;
+} | null;
+type SubPlan = { plan: string; label: string; durationMonths: number; priceUsdt: number; priceFiat: number; enabled: boolean };
+
+function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
+  const { toast } = useToast();
+  const [sub, setSub] = useState<PlatformSubStatus | "loading">("loading");
+  const [plans, setPlans] = useState<SubPlan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<string>("3m");
+  const [paymentMethod, setPaymentMethod] = useState<"usdt_bep20" | "bank_transfer">("usdt_bep20");
+  const [txHash, setTxHash] = useState("");
+  const [screenshotUrl, setScreenshotUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const reload = useCallback(async () => {
+    const [subRes, plansRes] = await Promise.all([
+      fetch("/api/my-platform-subscription").then((r) => r.ok ? r.json() : null),
+      fetch("/api/subscription-plans").then((r) => r.ok ? r.json() : []),
+    ]);
+    setSub(subRes as PlatformSubStatus);
+    setPlans((plansRes as SubPlan[]).filter((p) => p.enabled));
+    if ((subRes as PlatformSubStatus)?.status === "active") onActive();
+  }, [onActive]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const handleSubmit = async () => {
+    if (!txHash.trim()) { toast({ title: "TX hash / reference required", variant: "destructive" }); return; }
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/platform-subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selectedPlan, paymentMethod, txHash, screenshotUrl }),
+      });
+      if (!r.ok) { const d = await r.json() as { error: string }; throw new Error(d.error); }
+      toast({ title: "Payment submitted — awaiting admin approval" });
+      await reload();
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to submit", variant: "destructive" });
+    } finally { setSubmitting(false); }
+  };
+
+  const PLAN_LABELS: Record<string, string> = { "1m": "1 Month", "3m": "3 Months", "6m": "6 Months", "1y": "1 Year" };
+  const USDT_ADDRESS = "0xYourWalletAddressHere"; // admin sets this from a site setting
+
+  if (sub === "loading") return (
+    <div className="flex items-center justify-center gap-2 text-muted-foreground py-20">
+      <Loader2 className="h-5 w-5 animate-spin" />Loading…
+    </div>
+  );
+
+  /* ── Active subscription — render the real UI ── */
+  if (sub?.status === "active") return null; // parent replaces with inner
+
+  /* ── Pending approval ── */
+  if (sub?.status === "pending_payment") return (
+    <div className="max-w-lg mx-auto py-16 space-y-4 text-center">
+      <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
+        <Clock className="h-8 w-8 text-amber-500" />
+      </div>
+      <h2 className="text-xl font-bold">Payment Submitted</h2>
+      <p className="text-muted-foreground text-sm">
+        Your payment is awaiting admin review. This usually takes up to 24 hours.
+        Once approved, copy trading will unlock automatically.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Plan: <strong>{PLAN_LABELS[sub.plan] ?? sub.plan}</strong> · Submitted {new Date(sub.endDate ?? Date.now()).toLocaleDateString()}
+      </p>
+      <div className="flex items-center justify-center gap-2 pt-2">
+        <Badge variant="outline" className="text-amber-400 border-amber-400/30">Pending Review</Badge>
+      </div>
+    </div>
+  );
+
+  /* ── Rejected — allow re-submission ── */
+  const isRejected = sub?.status === "rejected";
+
+  /* ── No sub or expired ── */
+  const selectedPlanData = plans.find((p) => p.plan === selectedPlan) ?? plans[0];
+
+  return (
+    <div className="max-w-2xl mx-auto py-8 space-y-6 px-4">
+      {/* Header */}
+      <div className="text-center space-y-2">
+        {sub?.status === "expired" && (
+          <Badge variant="outline" className="text-muted-foreground mb-2">Subscription Expired</Badge>
+        )}
+        {isRejected && sub?.adminNote && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm text-left mb-4">
+            <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div><p className="font-medium text-destructive">Submission Rejected</p><p className="text-muted-foreground text-xs mt-0.5">{sub.adminNote}</p></div>
+          </div>
+        )}
+        <Crown className="h-10 w-10 text-primary mx-auto" />
+        <h2 className="text-2xl font-bold">Copy Trading Access</h2>
+        <p className="text-muted-foreground text-sm">Select a plan and submit your payment to activate copy trading.</p>
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {plans.map((p) => (
+          <button
+            key={p.plan}
+            onClick={() => setSelectedPlan(p.plan)}
+            className={cn(
+              "rounded-xl border p-4 text-center transition-all space-y-1 relative",
+              selectedPlan === p.plan
+                ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                : "border-border hover:border-primary/40 bg-secondary/20",
+            )}
+          >
+            {p.plan === "1y" && (
+              <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">BEST VALUE</span>
+            )}
+            <p className="font-bold text-sm">{PLAN_LABELS[p.plan]}</p>
+            <p className="text-xl font-black text-primary">${p.priceUsdt}</p>
+            <p className="text-[10px] text-muted-foreground">USDT</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Payment form */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Pay &amp; Submit Proof</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Payment method toggle */}
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {(["usdt_bep20", "bank_transfer"] as const).map((m) => (
+              <button key={m}
+                onClick={() => setPaymentMethod(m)}
+                className={cn("flex-1 py-2 text-sm font-medium transition-all",
+                  paymentMethod === m ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"
+                )}>
+                {m === "usdt_bep20" ? "💎 USDT BEP-20" : "🏦 Bank Transfer"}
+              </button>
+            ))}
+          </div>
+
+          {/* Payment instructions */}
+          {paymentMethod === "usdt_bep20" && selectedPlanData && (
+            <div className="rounded-lg bg-secondary/50 border border-border p-4 space-y-2">
+              <p className="text-sm font-semibold">Send exactly <span className="text-primary font-black">${selectedPlanData.priceUsdt} USDT</span> (BEP-20) to:</p>
+              <code className="text-xs bg-background border border-border rounded px-3 py-2 block break-all select-all">{USDT_ADDRESS}</code>
+              <p className="text-xs text-muted-foreground">Network: BNB Smart Chain (BSC) · Minimum confirmations: 1</p>
+            </div>
+          )}
+          {paymentMethod === "bank_transfer" && selectedPlanData && (
+            <div className="rounded-lg bg-secondary/50 border border-border p-4 space-y-1 text-sm">
+              <p className="font-semibold">Transfer <span className="text-primary font-black">${selectedPlanData.priceFiat} USD</span> to:</p>
+              <p className="text-muted-foreground text-xs">Contact support for bank details. Include your email in the reference.</p>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">
+              {paymentMethod === "usdt_bep20" ? "TX Hash (transaction ID)" : "Bank Reference / Transfer ID"}
+            </label>
+            <Input
+              placeholder={paymentMethod === "usdt_bep20" ? "0x..." : "Transfer reference…"}
+              value={txHash} onChange={(e) => setTxHash(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Screenshot URL <span className="text-muted-foreground font-normal">(optional)</span></label>
+            <Input placeholder="https://…" value={screenshotUrl} onChange={(e) => setScreenshotUrl(e.target.value)} />
+          </div>
+
+          <Button className="w-full" onClick={handleSubmit} disabled={submitting || !txHash.trim()}>
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            Submit Payment — {selectedPlanData ? PLAN_LABELS[selectedPlanData.plan] : ""} for ${selectedPlanData?.priceUsdt ?? "…"} USDT
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function CopyTrading() {
+  const { user } = useAuthContext();
+  const isInstructor = user?.role === "instructor" || user?.role === "admin";
+  const [hasActiveSub, setHasActiveSub] = useState(false);
+
+  if (!isInstructor && !hasActiveSub) {
+    return (
+      <div className="space-y-8">
+        <CopyTradingPaywall onActive={() => setHasActiveSub(true)} />
+      </div>
+    );
+  }
+  return <CopyTradingInner />;
+}
+
+function CopyTradingInner() {
   const { toast } = useToast();
   const { user } = useAuthContext();
   const isInstructor = user?.role === "instructor" || user?.role === "admin";

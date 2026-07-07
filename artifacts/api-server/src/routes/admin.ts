@@ -7,6 +7,7 @@ import {
   xpEventsTable, activityTable, liveClassesTable, certificatesTable,
   postsTable, commentsTable, eventsTable, siteSettingsTable,
   livekitAccountsTable, groupMembersTable, groupsTable,
+  platformSubscriptionsTable, subscriptionPlansTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not, asc } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
@@ -946,6 +947,142 @@ router.post("/admin/livekit-accounts/:id/set-priority", async (req, res): Promis
       .set({ priority })
       .where(eq(livekitAccountsTable.id, parseInt(req.params.id)));
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   SUBSCRIPTION PLANS (admin sets prices)
+════════════════════════════════════════════════════════════════════ */
+
+const DEFAULT_PLANS_ADMIN = [
+  { plan: "1m",  label: "1 Month",  durationMonths: 1,  priceUsdt: "49",  priceFiat: "49"  },
+  { plan: "3m",  label: "3 Months", durationMonths: 3,  priceUsdt: "129", priceFiat: "129" },
+  { plan: "6m",  label: "6 Months", durationMonths: 6,  priceUsdt: "229", priceFiat: "229" },
+  { plan: "1y",  label: "1 Year",   durationMonths: 12, priceUsdt: "399", priceFiat: "399" },
+];
+
+router.get("/admin/subscription-plans", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const rows = await db.select().from(subscriptionPlansTable);
+    if (!rows.length) {
+      res.json(DEFAULT_PLANS_ADMIN.map((p) => ({ ...p, enabled: true })));
+      return;
+    }
+    res.json(rows.map((r) => ({
+      plan: r.plan, label: r.label, durationMonths: r.durationMonths,
+      priceUsdt: parseFloat(r.priceUsdt as string),
+      priceFiat: parseFloat(r.priceFiat as string),
+      enabled: r.enabled,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/admin/subscription-plans/:plan", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { plan } = req.params;
+    if (!["1m","3m","6m","1y"].includes(plan)) { res.status(400).json({ error: "Invalid plan" }); return; }
+    const { priceUsdt, priceFiat, enabled } = req.body as { priceUsdt: number; priceFiat: number; enabled: boolean };
+
+    const defaults = DEFAULT_PLANS_ADMIN.find((p) => p.plan === plan)!;
+    await db
+      .insert(subscriptionPlansTable)
+      .values({
+        plan, label: defaults.label, durationMonths: defaults.durationMonths,
+        priceUsdt: (priceUsdt ?? parseFloat(defaults.priceUsdt)).toString(),
+        priceFiat: (priceFiat ?? parseFloat(defaults.priceFiat)).toString(),
+        enabled: enabled ?? true,
+      })
+      .onConflictDoUpdate({
+        target: subscriptionPlansTable.plan,
+        set: {
+          priceUsdt: (priceUsdt ?? parseFloat(defaults.priceUsdt)).toString(),
+          priceFiat: (priceFiat ?? parseFloat(defaults.priceFiat)).toString(),
+          enabled: enabled ?? true,
+          updatedAt: new Date(),
+        },
+      });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   PLATFORM SUBSCRIPTIONS (admin approves / rejects)
+════════════════════════════════════════════════════════════════════ */
+
+router.get("/admin/platform-subscriptions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { status } = req.query as { status?: string };
+
+    let query = db.select().from(platformSubscriptionsTable).$dynamic();
+    if (status) query = query.where(eq(platformSubscriptionsTable.status, status));
+    const rows = await query.orderBy(desc(platformSubscriptionsTable.createdAt)).limit(200);
+
+    const userIds = [...new Set(rows.map((r) => r.userId))];
+    const users = userIds.length
+      ? await db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email })
+          .from(usersTable).where(inArray(usersTable.id, userIds))
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
+
+    res.json(rows.map((r) => ({
+      id: r.id, userId: r.userId,
+      userEmail: userMap[r.userId]?.email ?? r.userId,
+      userName: userMap[r.userId]?.displayName ?? userMap[r.userId]?.email ?? r.userId,
+      plan: r.plan, status: r.status,
+      priceUsdt: r.priceUsdt ? parseFloat(r.priceUsdt as string) : null,
+      priceFiat: r.priceFiat ? parseFloat(r.priceFiat as string) : null,
+      paymentMethod: r.paymentMethod, txHash: r.txHash,
+      screenshotUrl: r.screenshotUrl, adminNote: r.adminNote,
+      startDate: r.startDate, endDate: r.endDate, createdAt: r.createdAt,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const PLAN_MONTHS: Record<string, number> = { "1m": 1, "3m": 3, "6m": 6, "1y": 12 };
+
+router.patch("/admin/platform-subscriptions/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const { action, adminNote } = req.body as { action: "approve" | "reject"; adminNote?: string };
+    if (!["approve","reject"].includes(action)) { res.status(400).json({ error: "action must be approve or reject" }); return; }
+
+    const sub = await db.select().from(platformSubscriptionsTable).where(eq(platformSubscriptionsTable.id, id)).limit(1).then((r) => r[0]);
+    if (!sub) { res.status(404).json({ error: "Not found" }); return; }
+
+    if (action === "approve") {
+      const months = PLAN_MONTHS[sub.plan] ?? 1;
+      const startDate = new Date();
+      const endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + months);
+      await db.update(platformSubscriptionsTable).set({
+        status: "active", startDate, endDate,
+        adminNote: adminNote ?? null, updatedAt: new Date(),
+      }).where(eq(platformSubscriptionsTable.id, id));
+    } else {
+      await db.update(platformSubscriptionsTable).set({
+        status: "rejected", adminNote: adminNote ?? null, updatedAt: new Date(),
+      }).where(eq(platformSubscriptionsTable.id, id));
+    }
+
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }

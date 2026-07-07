@@ -3074,6 +3074,274 @@ function GroupsTab() {
 }
 
 /* ════════════════════════════════════════════
+   SUBSCRIPTIONS TAB
+════════════════════════════════════════════ */
+type PlanRow = { plan: string; label: string; durationMonths: number; priceUsdt: number; priceFiat: number; enabled: boolean };
+type PlatformSub = {
+  id: number; userId: string; userEmail: string; userName: string;
+  plan: string; status: string; paymentMethod: string | null; txHash: string | null;
+  screenshotUrl: string | null; adminNote: string | null;
+  priceUsdt: number | null; startDate: string | null; endDate: string | null; createdAt: string;
+};
+
+function SubscriptionsTab() {
+  const { toast } = useToast();
+  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [planEdits, setPlanEdits] = useState<Record<string, { priceUsdt: string; priceFiat: string; enabled: boolean }>>({});
+  const [submissions, setSubmissions] = useState<PlatformSub[]>([]);
+  const [statusFilter, setStatusFilter] = useState("pending_payment");
+  const [loading, setLoading] = useState(true);
+  const [savingPlan, setSavingPlan] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<number | null>(null);
+  const [rejectId, setRejectId] = useState<number | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+
+  const loadPlans = async () => {
+    const r = await fetch("/api/admin/subscription-plans");
+    const data = await r.json() as PlanRow[];
+    setPlans(data);
+    const edits: typeof planEdits = {};
+    data.forEach((p) => { edits[p.plan] = { priceUsdt: String(p.priceUsdt), priceFiat: String(p.priceFiat), enabled: p.enabled }; });
+    setPlanEdits(edits);
+  };
+
+  const loadSubs = async () => {
+    const r = await fetch(`/api/admin/platform-subscriptions${statusFilter ? `?status=${statusFilter}` : ""}`);
+    const data = await r.json() as PlatformSub[];
+    setSubmissions(data);
+  };
+
+  useEffect(() => {
+    Promise.all([loadPlans(), loadSubs()]).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { setLoading(true); loadSubs().finally(() => setLoading(false)); }, [statusFilter]);
+
+  const savePlan = async (plan: string) => {
+    setSavingPlan(plan);
+    try {
+      const edit = planEdits[plan];
+      const r = await fetch(`/api/admin/subscription-plans/${plan}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceUsdt: parseFloat(edit.priceUsdt), priceFiat: parseFloat(edit.priceFiat), enabled: edit.enabled }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      toast({ title: `${plan} plan saved` });
+      await loadPlans();
+    } catch { toast({ title: "Failed to save plan", variant: "destructive" }); }
+    finally { setSavingPlan(null); }
+  };
+
+  const actOnSub = async (id: number, action: "approve" | "reject", note?: string) => {
+    setActingId(id);
+    try {
+      const r = await fetch(`/api/admin/platform-subscriptions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, adminNote: note ?? "" }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      toast({ title: action === "approve" ? "Subscription approved" : "Submission rejected" });
+      await loadSubs();
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setActingId(null); setRejectId(null); setRejectNote(""); }
+  };
+
+  const STATUS_COLORS: Record<string, string> = {
+    pending_payment: "text-amber-400 border-amber-400/30",
+    active:          "text-green-400 border-green-400/30",
+    expired:         "text-muted-foreground",
+    rejected:        "text-red-400 border-red-400/30",
+  };
+
+  const PLAN_LABELS: Record<string, string> = { "1m": "1 Month", "3m": "3 Months", "6m": "6 Months", "1y": "1 Year" };
+
+  if (loading && !plans.length) return (
+    <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Plan pricing */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <DollarSign className="h-4 w-4" />Copy Trading Plan Prices
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">Set USDT and fiat prices for each subscription duration.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {plans.map((p) => {
+              const edit = planEdits[p.plan] ?? { priceUsdt: String(p.priceUsdt), priceFiat: String(p.priceFiat), enabled: p.enabled };
+              return (
+                <div key={p.plan} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary/20">
+                  <div className="w-20 shrink-0">
+                    <p className="font-semibold text-sm">{PLAN_LABELS[p.plan] ?? p.plan}</p>
+                    <p className="text-xs text-muted-foreground">{p.durationMonths}mo</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className="relative flex-1 max-w-[120px]">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-bold">$</span>
+                      <Input
+                        type="number" min="0" step="1"
+                        className="pl-6 h-8 text-sm"
+                        value={edit.priceUsdt}
+                        onChange={(e) => setPlanEdits((prev) => ({ ...prev, [p.plan]: { ...edit, priceUsdt: e.target.value } }))}
+                        placeholder="USDT"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">USDT</span>
+                    </div>
+                    <div className="relative flex-1 max-w-[120px]">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-bold">$</span>
+                      <Input
+                        type="number" min="0" step="1"
+                        className="pl-6 h-8 text-sm"
+                        value={edit.priceFiat}
+                        onChange={(e) => setPlanEdits((prev) => ({ ...prev, [p.plan]: { ...edit, priceFiat: e.target.value } }))}
+                        placeholder="Fiat"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">USD</span>
+                    </div>
+                    <label className="flex items-center gap-1.5 text-sm shrink-0 cursor-pointer">
+                      <input type="checkbox" checked={edit.enabled}
+                        onChange={(e) => setPlanEdits((prev) => ({ ...prev, [p.plan]: { ...edit, enabled: e.target.checked } }))}
+                        className="rounded border-border" />
+                      Enabled
+                    </label>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-8 shrink-0"
+                    onClick={() => savePlan(p.plan)} disabled={savingPlan === p.plan}>
+                    {savingPlan === p.plan ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment submissions */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+            <CheckCircle className="h-4 w-4" />Payment Submissions
+            <div className="ml-auto flex gap-1.5">
+              {(["pending_payment","active","rejected",""] as const).map((s) => (
+                <button key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={cn("px-2.5 py-0.5 rounded-full text-xs font-medium border transition-all",
+                    statusFilter === s
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  )}>
+                  {s === "" ? "All" : s === "pending_payment" ? "Pending" : s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />Loading…
+            </div>
+          ) : submissions.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">No submissions found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                    <th className="text-left px-4 py-3">User</th>
+                    <th className="text-left px-4 py-3">Plan</th>
+                    <th className="text-left px-4 py-3">Status</th>
+                    <th className="text-left px-4 py-3">Method</th>
+                    <th className="text-left px-4 py-3">TX / Ref</th>
+                    <th className="text-left px-4 py-3">Submitted</th>
+                    <th className="text-right px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {submissions.map((sub) => (
+                    <tr key={sub.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-medium">{sub.userName}</p>
+                        <p className="text-xs text-muted-foreground">{sub.userEmail}</p>
+                      </td>
+                      <td className="px-4 py-3 font-medium">{PLAN_LABELS[sub.plan] ?? sub.plan}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className={STATUS_COLORS[sub.status] ?? ""}>
+                          {sub.status.replace("_", " ")}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs capitalize">
+                        {sub.paymentMethod?.replace("_", " ") ?? "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <code className="text-xs bg-secondary rounded px-1.5 py-0.5 max-w-[140px] truncate block">{sub.txHash ?? "—"}</code>
+                          {sub.screenshotUrl && (
+                            <a href={sub.screenshotUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-primary hover:underline text-xs shrink-0">
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                        {sub.adminNote && <p className="text-xs text-muted-foreground mt-0.5 italic">{sub.adminNote}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {new Date(sub.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {sub.status === "pending_payment" && (
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                              onClick={() => actOnSub(sub.id, "approve")} disabled={actingId === sub.id}>
+                              <CheckCircle className="h-3 w-3 mr-1" />Approve
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+                              onClick={() => { setRejectId(sub.id); setRejectNote(""); }} disabled={actingId === sub.id}>
+                              <XCircle className="h-3 w-3 mr-1" />Reject
+                            </Button>
+                          </div>
+                        )}
+                        {sub.status === "active" && sub.endDate && (
+                          <p className="text-xs text-green-500 text-right">Expires {new Date(sub.endDate).toLocaleDateString()}</p>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Reject note dialog */}
+      <Dialog open={rejectId !== null} onOpenChange={(v) => { if (!v) { setRejectId(null); setRejectNote(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Reject Submission</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground">Optionally add a note explaining the rejection.</p>
+            <Textarea placeholder="Reason (optional)…" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} rows={3} />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setRejectId(null); setRejectNote(""); }}>Cancel</Button>
+              <Button variant="destructive" onClick={() => rejectId && actOnSub(rejectId, "reject", rejectNote)}
+                disabled={actingId !== null}>
+                {actingId !== null ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}Reject
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    INTEGRATIONS TAB
 ════════════════════════════════════════════ */
 function IntegrationsTab() {
@@ -3220,6 +3488,9 @@ export default function AdminPanel() {
           <TabsTrigger value="integrations" className="flex items-center gap-1.5">
             <KeyRound className="h-3.5 w-3.5" />Integrations
           </TabsTrigger>
+          <TabsTrigger value="subscriptions" className="flex items-center gap-1.5">
+            <DollarSign className="h-3.5 w-3.5" />Subscriptions
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
@@ -3236,6 +3507,7 @@ export default function AdminPanel() {
         <TabsContent value="groups" className="mt-6"><GroupsTab /></TabsContent>
         <TabsContent value="livekit" className="mt-6"><LiveKitAccountsTab /></TabsContent>
         <TabsContent value="integrations" className="mt-6"><IntegrationsTab /></TabsContent>
+        <TabsContent value="subscriptions" className="mt-6"><SubscriptionsTab /></TabsContent>
       </Tabs>
     </div>
   );

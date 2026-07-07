@@ -129,6 +129,36 @@ export const activityTable = pgTable("activity", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/* ── Subscription plans (admin-configurable pricing) ───────────── */
+export const subscriptionPlansTable = pgTable("subscription_plans", {
+  plan: text("plan").primaryKey(),              // "1m" | "3m" | "6m" | "1y"
+  label: text("label").notNull(),              // "1 Month" etc.
+  durationMonths: integer("duration_months").notNull(),
+  priceUsdt: numeric("price_usdt", { precision: 10, scale: 2 }).notNull().default("0"),
+  priceFiat: numeric("price_fiat", { precision: 10, scale: 2 }).notNull().default("0"),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+/* ── Platform subscriptions (user's paid access to copy trading) ── */
+export const platformSubscriptionsTable = pgTable("platform_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  plan: text("plan").notNull(),               // "1m" | "3m" | "6m" | "1y"
+  status: text("status").notNull().default("pending_payment"),
+  // pending_payment | active | expired | rejected
+  priceUsdt: numeric("price_usdt", { precision: 10, scale: 2 }),
+  priceFiat: numeric("price_fiat", { precision: 10, scale: 2 }),
+  paymentMethod: text("payment_method"),      // "usdt_bep20" | "bank_transfer"
+  txHash: text("tx_hash"),                    // USDT tx hash or bank reference
+  screenshotUrl: text("screenshot_url"),
+  adminNote: text("admin_note"),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  endDate: timestamp("end_date", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 export const insertTraderSchema = createInsertSchema(tradersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTrader = z.infer<typeof insertTraderSchema>;
 export type Trader = typeof tradersTable.$inferSelect;

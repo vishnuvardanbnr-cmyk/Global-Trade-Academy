@@ -5,6 +5,7 @@ import {
   tradersTable, copySubscriptionsTable, watchlistTable,
   copyAccountsTable, tradeSignalsTable, copyTradesTable,
   masterPositionsTable, usersTable,
+  platformSubscriptionsTable, subscriptionPlansTable,
 } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
@@ -123,6 +124,11 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     }
     if (type === "metaapi" && (!mt5Login || !mt5Password || !mt5Server)) {
       res.status(400).json({ error: "mt5Login, mt5Password, and mt5Server required for MetaAPI accounts" }); return;
+    }
+
+    // Gate: require active platform subscription
+    if (!(await requireActiveSub(clerkId))) {
+      res.status(403).json({ error: "Active copy trading subscription required", code: "SUBSCRIPTION_REQUIRED" }); return;
     }
 
     // For MetaAPI: provision the broker account via MetaAPI API, then subscribe to our strategy
@@ -358,6 +364,11 @@ router.post("/copy-subscriptions", async (req, res): Promise<void> => {
     const { traderId, copyAccountId, maxAmount, stopLoss, allocatedAmount, lotMultiplier } = req.body;
     if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
 
+    // Gate: require active platform subscription
+    if (!(await requireActiveSub(clerkId))) {
+      res.status(403).json({ error: "Active copy trading subscription required", code: "SUBSCRIPTION_REQUIRED" }); return;
+    }
+
     // Check plan copier limit
     const userRow = await db.select({ plan: usersTable.plan }).from(usersTable).where(eq(usersTable.id, clerkId)).limit(1).then((r) => r[0]);
     const plan = userRow?.plan ?? "free";
@@ -584,5 +595,131 @@ router.delete("/watchlist/:itemId", async (req, res): Promise<void> => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/* ═══════════════════════════════════════════════════════════════════
+   PLATFORM SUBSCRIPTION PLANS  (public — returns pricing)
+════════════════════════════════════════════════════════════════════ */
+
+const DEFAULT_PLANS = [
+  { plan: "1m",  label: "1 Month",  durationMonths: 1,  priceUsdt: "49",  priceFiat: "49"  },
+  { plan: "3m",  label: "3 Months", durationMonths: 3,  priceUsdt: "129", priceFiat: "129" },
+  { plan: "6m",  label: "6 Months", durationMonths: 6,  priceUsdt: "229", priceFiat: "229" },
+  { plan: "1y",  label: "1 Year",   durationMonths: 12, priceUsdt: "399", priceFiat: "399" },
+];
+
+router.get("/subscription-plans", async (req, res): Promise<void> => {
+  try {
+    const rows = await db.select().from(subscriptionPlansTable);
+    if (!rows.length) {
+      res.json(DEFAULT_PLANS.map((p) => ({ ...p, enabled: true })));
+      return;
+    }
+    res.json(rows.map((r) => ({
+      plan: r.plan, label: r.label, durationMonths: r.durationMonths,
+      priceUsdt: parseFloat(r.priceUsdt as string),
+      priceFiat: parseFloat(r.priceFiat as string),
+      enabled: r.enabled,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error listing subscription plans");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /my-platform-subscription ─────────────────────────────── */
+router.get("/my-platform-subscription", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const now = new Date();
+
+    const sub = await db.select().from(platformSubscriptionsTable)
+      .where(eq(platformSubscriptionsTable.userId, clerkId))
+      .orderBy(desc(platformSubscriptionsTable.createdAt))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!sub) { res.json(null); return; }
+
+    // Re-check expiry
+    if (sub.status === "active" && sub.endDate && sub.endDate < now) {
+      await db.update(platformSubscriptionsTable).set({ status: "expired" }).where(eq(platformSubscriptionsTable.id, sub.id));
+      sub.status = "expired";
+    }
+
+    res.json({
+      id: sub.id, plan: sub.plan, status: sub.status,
+      startDate: sub.startDate, endDate: sub.endDate,
+      paymentMethod: sub.paymentMethod, adminNote: sub.adminNote,
+      createdAt: sub.createdAt,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error getting platform subscription");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /platform-subscriptions — submit payment proof ─────── */
+router.post("/platform-subscriptions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const { plan, paymentMethod, txHash, screenshotUrl } = req.body as Record<string, string>;
+    if (!plan || !["1m","3m","6m","1y"].includes(plan)) {
+      res.status(400).json({ error: "plan must be 1m, 3m, 6m, or 1y" }); return;
+    }
+    if (!paymentMethod || !["usdt_bep20","bank_transfer"].includes(paymentMethod)) {
+      res.status(400).json({ error: "paymentMethod must be usdt_bep20 or bank_transfer" }); return;
+    }
+    if (!txHash?.trim()) {
+      res.status(400).json({ error: "txHash / reference is required" }); return;
+    }
+
+    // Look up plan price
+    const planRow = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.plan, plan)).limit(1).then((r) => r[0]);
+    const defaults = DEFAULT_PLANS.find((p) => p.plan === plan);
+    const priceUsdt = planRow?.priceUsdt ?? defaults?.priceUsdt ?? "0";
+    const priceFiat = planRow?.priceFiat ?? defaults?.priceFiat ?? "0";
+
+    // Cancel any existing pending_payment for this user so they can resubmit
+    await db.update(platformSubscriptionsTable)
+      .set({ status: "rejected", adminNote: "Superseded by new submission" })
+      .where(and(
+        eq(platformSubscriptionsTable.userId, clerkId),
+        eq(platformSubscriptionsTable.status, "pending_payment"),
+      ));
+
+    const [inserted] = await db.insert(platformSubscriptionsTable).values({
+      userId: clerkId, plan, status: "pending_payment",
+      priceUsdt: priceUsdt.toString(), priceFiat: priceFiat.toString(),
+      paymentMethod, txHash: txHash.trim(),
+      screenshotUrl: screenshotUrl?.trim() ?? null,
+    }).returning();
+
+    res.status(201).json({ id: inserted.id, status: inserted.status });
+  } catch (err) {
+    req.log.error({ err }, "Error submitting platform subscription");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── Helper: gate copy trading behind an active platform subscription */
+async function requireActiveSub(clerkId: string): Promise<boolean> {
+  const now = new Date();
+  const sub = await db.select().from(platformSubscriptionsTable)
+    .where(and(
+      eq(platformSubscriptionsTable.userId, clerkId),
+      eq(platformSubscriptionsTable.status, "active"),
+    ))
+    .limit(1).then((r) => r[0]);
+  if (!sub) return false;
+  if (sub.endDate && sub.endDate < now) {
+    await db.update(platformSubscriptionsTable).set({ status: "expired" }).where(eq(platformSubscriptionsTable.id, sub.id));
+    return false;
+  }
+  return true;
+}
 
 export default router;
