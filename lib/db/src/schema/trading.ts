@@ -19,6 +19,7 @@ export const tradersTable = pgTable("traders", {
   strategy: text("strategy"),
   monthlyReturn: numeric("monthly_return", { precision: 10, scale: 2 }),
   riskScore: integer("risk_score"), // 1-10
+  metaapiStrategyId: text("metaapi_strategy_id"), // per-trader CopyFactory strategy ID
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

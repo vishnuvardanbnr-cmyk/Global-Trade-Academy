@@ -11,6 +11,7 @@ import {
   tradeSignalsTable,
   copyTradesTable,
   siteSettingsTable,
+  tradersTable,
 } from "@workspace/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { decrypt } from "./encrypt";
@@ -192,8 +193,8 @@ const METAAPI_CONFIG_BASE =
 const METAAPI_PROVISION_BASE =
   "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 
-/** Read MetaAPI token + strategyId from DB (integration_settings) with env-var fallback */
-async function getMetaapiConfig(): Promise<{ token: string; strategyId: string }> {
+/** Read MetaAPI platform token from DB (integration_settings) with env-var fallback */
+async function getMetaapiToken(): Promise<string> {
   const row = await db
     .select()
     .from(siteSettingsTable)
@@ -202,12 +203,33 @@ async function getMetaapiConfig(): Promise<{ token: string; strategyId: string }
     .then((r) => r[0]);
 
   const stored = row ? (JSON.parse(row.value) as Record<string, string>) : {};
-  const token      = stored.metaapiToken    ?? process.env.METAAPI_TOKEN    ?? "";
-  const strategyId = stored.metaapiStrategy ?? process.env.METAAPI_STRATEGY_ID ?? "";
+  const token = stored.metaapiToken ?? process.env.METAAPI_TOKEN ?? "";
+  if (!token) throw new Error("METAAPI_TOKEN not configured — set it in Admin → Trading");
+  return token;
+}
 
-  if (!token)      throw new Error("METAAPI_TOKEN not configured — set it in Admin → Integrations");
-  if (!strategyId) throw new Error("METAAPI_STRATEGY_ID not configured — set it in Admin → Integrations");
-  return { token, strategyId };
+/**
+ * Create a new CopyFactory strategy for a trader.
+ * Called once when a user is promoted to trader.
+ * Returns the new strategy ID.
+ */
+export async function metaapiCreateStrategy(name: string): Promise<string> {
+  const token = await getMetaapiToken();
+  const res = await fetchWithTimeout(
+    `${METAAPI_CONFIG_BASE}/users/current/configuration/strategies`,
+    {
+      method: "POST",
+      headers: { "auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, type: "ACCOUNT" }),
+    },
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`MetaAPI create strategy ${res.status}: ${txt}`);
+  }
+  const data = await res.json() as { id: string };
+  if (!data.id) throw new Error("MetaAPI did not return a strategy ID");
+  return data.id;
 }
 
 /**
@@ -222,7 +244,7 @@ export async function metaapiCreateAccount(opts: {
   platform: "mt4" | "mt5";
   name: string;
 }): Promise<string> {
-  const { token } = await getMetaapiConfig();
+  const token = await getMetaapiToken();
 
   const res = await fetchWithTimeout(
     `${METAAPI_PROVISION_BASE}/users/current/accounts`,
@@ -253,15 +275,17 @@ export async function metaapiCreateAccount(opts: {
 }
 
 /**
- * Subscribe a MetaAPI account to our CopyFactory strategy.
- * Called when the copier connects their MetaAPI account on our platform.
+ * Subscribe a MetaAPI copier account to a specific trader's CopyFactory strategy.
+ * Called when the copier subscribes to a trader (not when they add their account).
+ * strategyId is per-trader — each trader has their own CopyFactory strategy.
  */
 export async function metaapiSubscribe(
   metaapiAccountId: string,
   label: string,
   lotMultiplier: number,
+  strategyId: string,
 ): Promise<void> {
-  const { token, strategyId } = await getMetaapiConfig();
+  const token = await getMetaapiToken();
 
   const res = await fetchWithTimeout(
     `${METAAPI_CONFIG_BASE}/users/current/configuration/subscribers/${metaapiAccountId}`,
@@ -288,12 +312,12 @@ export async function metaapiSubscribe(
 }
 
 /**
- * Unsubscribe a MetaAPI account from our CopyFactory strategy.
- * Called when the copier removes their account from our platform.
+ * Unsubscribe a MetaAPI copier account from a specific trader's CopyFactory strategy.
+ * Called when the copier unsubscribes from a trader.
  */
-export async function metaapiUnsubscribe(metaapiAccountId: string): Promise<void> {
-  let token: string; let strategyId: string;
-  try { ({ token, strategyId } = await getMetaapiConfig()); } catch { return; } // non-fatal if not configured
+export async function metaapiUnsubscribe(metaapiAccountId: string, strategyId: string): Promise<void> {
+  let token: string;
+  try { token = await getMetaapiToken(); } catch { return; } // non-fatal if not configured
 
   await fetchWithTimeout(
     `${METAAPI_CONFIG_BASE}/users/current/configuration/subscribers/${metaapiAccountId}/strategies/${strategyId}`,
@@ -312,8 +336,9 @@ export async function metaapiUnsubscribe(metaapiAccountId: string): Promise<void
  */
 async function executeMetaApi(
   signal: typeof tradeSignalsTable.$inferSelect,
+  strategyId: string,
 ): Promise<string> {
-  const { token, strategyId } = await getMetaapiConfig();
+  const token = await getMetaapiToken();
 
   if (signal.action === "modify") return "modify-noop";
 
@@ -470,7 +495,32 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
     (s) => accountMap[s.copyAccountId!]?.type !== "metaapi",
   );
 
+  // Look up this trader's per-trader CopyFactory strategy ID
+  const traderRow = await db
+    .select({ metaapiStrategyId: tradersTable.metaapiStrategyId })
+    .from(tradersTable)
+    .where(eq(tradersTable.id, signal.traderId))
+    .limit(1)
+    .then((r) => r[0]);
+  const traderStrategyId = traderRow?.metaapiStrategyId ?? null;
+
   if (metaapiSubs.length > 0) {
+    if (!traderStrategyId) {
+      // Trader has no CopyFactory strategy — log and skip MetaAPI fan-out
+      logger.warn({ traderId: signal.traderId }, "MetaAPI signal skipped — trader has no CopyFactory strategy configured");
+      const msg = "Trader has no CopyFactory strategy. Admin must promote the trader after setting METAAPI_TOKEN.";
+      await Promise.all(
+        metaapiSubs.map((sub) =>
+          db.insert(copyTradesTable).values({
+            signalId: signal.id, subscriptionId: sub.id, userId: sub.userId,
+            copyAccountId: sub.copyAccountId!, status: "failed",
+            quantity: signal.quantity ? String(signal.quantity) : null,
+            errorMessage: msg,
+          }),
+        ),
+      );
+      failCount += metaapiSubs.length;
+    } else {
     // Insert copy_trade rows for all MetaAPI subscribers (pending), then resolve them together
     const metaaTrades = await Promise.all(
       metaapiSubs.map((sub) =>
@@ -490,7 +540,7 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
     );
 
     try {
-      const brokerOrderId = await executeMetaApi(signal);
+      const brokerOrderId = await executeMetaApi(signal, traderStrategyId);
       // Mark all MetaAPI copy_trades as executed
       await Promise.all(
         metaaTrades.map(({ trade, sub }) =>
@@ -527,6 +577,7 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
       );
       failCount += metaapiSubs.length;
     }
+    } // end else (traderStrategyId exists)
   }
 
   // ── Per-copier fan-out for Binance / Bybit / MT5 ────────────────────────

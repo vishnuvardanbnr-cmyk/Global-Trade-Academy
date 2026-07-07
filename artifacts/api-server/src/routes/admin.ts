@@ -1216,6 +1216,20 @@ router.post("/admin/trading/promote", async (req, res): Promise<void> => {
     if (existing) { res.json({ ...existing, alreadyExists: true }); return; }
 
     const [trader] = await db.insert(tradersTable).values({ userId, displayName }).returning();
+
+    // Auto-create a per-trader CopyFactory strategy if MetaAPI is configured.
+    // Non-fatal: if token not set yet, admin can set it later and the strategy can be
+    // assigned manually via PATCH /admin/trading/traders/:id.
+    try {
+      const { metaapiCreateStrategy } = await import("../lib/fan-out");
+      const strategyId = await metaapiCreateStrategy(displayName);
+      await db.update(tradersTable).set({ metaapiStrategyId: strategyId }).where(eq(tradersTable.id, trader.id));
+      trader.metaapiStrategyId = strategyId;
+      req.log.info({ traderId: trader.id, strategyId }, "CopyFactory strategy created for trader");
+    } catch (err) {
+      req.log.warn({ err }, "MetaAPI strategy creation skipped (token not configured or API error)");
+    }
+
     res.status(201).json(trader);
   } catch (err) {
     req.log.error({ err }, "admin promote trader");

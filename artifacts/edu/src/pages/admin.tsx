@@ -3999,34 +3999,26 @@ function TradingTab() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">API Token</label>
-              <div className="flex gap-1.5">
-                <Input
-                  type={showMetaapiToken ? "text" : "password"}
-                  placeholder={metaapiStatus?.metaapiTokenSet ? "Paste to replace…" : "app.metaapi.cloud → Account Settings → API Token"}
-                  value={metaapiToken}
-                  onChange={(e) => setMetaapiToken(e.target.value)}
-                  className="text-sm h-8"
-                />
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowMetaapiToken((v) => !v)}>
-                  {showMetaapiToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CopyFactory Strategy ID</label>
+          <p className="text-xs text-muted-foreground">
+            Each trader gets their own CopyFactory strategy (auto-created on promotion). Only one platform-level token is needed.
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">API Token</label>
+            <div className="flex gap-1.5">
               <Input
-                placeholder={metaapiStatus?.metaapiStrategySet ? metaapiStatus.metaapiStrategy : "app.metaapi.cloud → CopyFactory → Strategies → copy ID"}
-                value={metaapiStrategy}
-                onChange={(e) => setMetaapiStrategy(e.target.value)}
+                type={showMetaapiToken ? "text" : "password"}
+                placeholder={metaapiStatus?.metaapiTokenSet ? "Paste to replace current token…" : "app.metaapi.cloud → Account Settings → API Token"}
+                value={metaapiToken}
+                onChange={(e) => setMetaapiToken(e.target.value)}
                 className="text-sm h-8"
               />
+              <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowMetaapiToken((v) => !v)}>
+                {showMetaapiToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
             </div>
           </div>
           <div className="flex justify-end">
-            <Button size="sm" onClick={saveMetaapiConfig} disabled={metaapiSaving || (!metaapiToken.trim() && !metaapiStrategy.trim())}>
+            <Button size="sm" onClick={saveMetaapiConfig} disabled={metaapiSaving || !metaapiToken.trim()}>
               <Save className="h-3.5 w-3.5 mr-1.5" />{metaapiSaving ? "Saving…" : "Save"}
             </Button>
           </div>

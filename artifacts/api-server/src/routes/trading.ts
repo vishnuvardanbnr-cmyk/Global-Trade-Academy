@@ -158,7 +158,9 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       res.status(403).json({ error: "Active copy trading subscription required", code: "SUBSCRIPTION_REQUIRED" }); return;
     }
 
-    // For MetaAPI: provision the broker account via MetaAPI API, then subscribe to our strategy
+    // For MetaAPI: provision the broker account in MetaAPI cloud only.
+    // Strategy subscription happens when the copier subscribes to a specific trader
+    // (POST /copy-subscriptions), so each trader's subscribers are isolated.
     let resolvedMetaapiAccountId = metaapiAccountId ?? null;
     if (type === "metaapi") {
       const platform = (mt5Platform === "mt4" ? "mt4" : "mt5") as "mt4" | "mt5";
@@ -169,7 +171,6 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
         platform,
         name: label,
       });
-      await metaapiSubscribe(resolvedMetaapiAccountId, label, 1.0);
     }
 
     const [inserted] = await db.insert(copyAccountsTable).values({
@@ -202,10 +203,8 @@ router.delete("/copy-accounts/:id", async (req, res): Promise<void> => {
     if (account.role === "master") {
       await db.delete(masterPositionsTable).where(eq(masterPositionsTable.masterAccountId, id));
     }
-    // For MetaAPI accounts, unsubscribe from the strategy (best-effort)
-    if (account.metaapiAccountId) {
-      await metaapiUnsubscribe(account.metaapiAccountId).catch(() => {});
-    }
+    // MetaAPI account deletion: individual copy-subscriptions are cleaned up via DELETE /copy-subscriptions,
+    // which handles per-strategy unsubscription. Nothing to do here at the account level.
     await db.delete(copyAccountsTable).where(eq(copyAccountsTable.id, id));
     res.status(204).send();
   } catch (err) {
@@ -415,9 +414,10 @@ router.post("/copy-subscriptions", async (req, res): Promise<void> => {
     }
 
     // Verify the copy account belongs to this user if provided
+    let copyAccount: typeof copyAccountsTable.$inferSelect | undefined;
     if (copyAccountId) {
-      const acc = await db.select().from(copyAccountsTable).where(eq(copyAccountsTable.id, copyAccountId)).limit(1).then((r) => r[0]);
-      if (!acc || acc.userId !== clerkId) { res.status(403).json({ error: "Invalid copy account" }); return; }
+      copyAccount = await db.select().from(copyAccountsTable).where(eq(copyAccountsTable.id, copyAccountId)).limit(1).then((r) => r[0]);
+      if (!copyAccount || copyAccount.userId !== clerkId) { res.status(403).json({ error: "Invalid copy account" }); return; }
     }
 
     const [inserted] = await db.insert(copySubscriptionsTable).values({
@@ -430,8 +430,22 @@ router.post("/copy-subscriptions", async (req, res): Promise<void> => {
       lotMultiplier: lotMultiplier?.toString() ?? "1.00",
     }).returning();
 
-    const trader = await db.select({ displayName: tradersTable.displayName })
+    const trader = await db.select({ displayName: tradersTable.displayName, metaapiStrategyId: tradersTable.metaapiStrategyId })
       .from(tradersTable).where(eq(tradersTable.id, inserted.traderId)).limit(1);
+
+    // If copier chose a MetaAPI account, subscribe it to this specific trader's strategy
+    if (copyAccount?.type === "metaapi" && copyAccount.metaapiAccountId && trader[0]?.metaapiStrategyId) {
+      try {
+        await metaapiSubscribe(
+          copyAccount.metaapiAccountId,
+          copyAccount.label,
+          parseFloat((inserted.lotMultiplier ?? "1") as string),
+          trader[0].metaapiStrategyId,
+        );
+      } catch (err) {
+        req.log.warn({ err }, "MetaAPI subscribe failed — subscription created but MetaAPI not wired");
+      }
+    }
 
     // Increment follower count
     await db.update(tradersTable).set({ followers: (await db.select({ f: tradersTable.followers }).from(tradersTable).where(eq(tradersTable.id, traderId)).limit(1).then((r) => (r[0]?.f ?? 0) + 1)) }).where(eq(tradersTable.id, traderId));
@@ -477,6 +491,19 @@ router.delete("/copy-subscriptions/:subscriptionId", async (req, res): Promise<v
   try {
     const id = parseInt(req.params.subscriptionId);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    // Look up subscription + account + trader before deleting, to unsubscribe from MetaAPI
+    const sub = await db.select().from(copySubscriptionsTable).where(eq(copySubscriptionsTable.id, id)).limit(1).then((r) => r[0]);
+    if (sub?.copyAccountId) {
+      const [account, traderRow] = await Promise.all([
+        db.select().from(copyAccountsTable).where(eq(copyAccountsTable.id, sub.copyAccountId)).limit(1).then((r) => r[0]),
+        db.select({ metaapiStrategyId: tradersTable.metaapiStrategyId }).from(tradersTable).where(eq(tradersTable.id, sub.traderId)).limit(1).then((r) => r[0]),
+      ]);
+      if (account?.type === "metaapi" && account.metaapiAccountId && traderRow?.metaapiStrategyId) {
+        await metaapiUnsubscribe(account.metaapiAccountId, traderRow.metaapiStrategyId);
+      }
+    }
+
     await db.delete(copySubscriptionsTable).where(eq(copySubscriptionsTable.id, id));
     res.status(204).send();
   } catch (err) {
