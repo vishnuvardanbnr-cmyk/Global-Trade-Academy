@@ -1021,33 +1021,76 @@ router.get("/admin/subscription-plans", async (req, res): Promise<void> => {
   }
 });
 
+router.post("/admin/subscription-plans", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { plan, label, durationMonths, priceUsdt, priceFiat, enabled } = req.body as {
+      plan: string; label: string; durationMonths: number;
+      priceUsdt: number; priceFiat: number; enabled?: boolean;
+    };
+    if (!plan || !label || !durationMonths || priceUsdt == null) {
+      res.status(400).json({ error: "plan, label, durationMonths, and priceUsdt are required" }); return;
+    }
+    const planKey = plan.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!planKey) { res.status(400).json({ error: "Invalid plan key" }); return; }
+    await db.insert(subscriptionPlansTable).values({
+      plan: planKey, label, durationMonths,
+      priceUsdt: priceUsdt.toString(),
+      priceFiat: (priceFiat ?? 0).toString(),
+      enabled: enabled ?? true,
+    });
+    res.status(201).json({ ok: true, plan: planKey });
+  } catch (err: unknown) {
+    const msg = (err as { code?: string })?.code === "23505" ? "A plan with that key already exists" : "Internal server error";
+    res.status(msg.startsWith("A plan") ? 409 : 500).json({ error: msg });
+  }
+});
+
 router.put("/admin/subscription-plans/:plan", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
     const { plan } = req.params;
-    if (!["1m","3m","6m","1y"].includes(plan)) { res.status(400).json({ error: "Invalid plan" }); return; }
-    const { priceUsdt, priceFiat, enabled } = req.body as { priceUsdt: number; priceFiat: number; enabled: boolean };
+    const { priceUsdt, priceFiat, enabled, label, durationMonths } = req.body as {
+      priceUsdt: number; priceFiat: number; enabled: boolean; label?: string; durationMonths?: number;
+    };
 
-    const defaults = DEFAULT_PLANS_ADMIN.find((p) => p.plan === plan)!;
+    const defaults = DEFAULT_PLANS_ADMIN.find((p) => p.plan === plan);
     await db
       .insert(subscriptionPlansTable)
       .values({
-        plan, label: defaults.label, durationMonths: defaults.durationMonths,
-        priceUsdt: (priceUsdt ?? parseFloat(defaults.priceUsdt)).toString(),
-        priceFiat: (priceFiat ?? parseFloat(defaults.priceFiat)).toString(),
+        plan,
+        label: label ?? defaults?.label ?? plan,
+        durationMonths: durationMonths ?? defaults?.durationMonths ?? 1,
+        priceUsdt: (priceUsdt ?? parseFloat(defaults?.priceUsdt ?? "0")).toString(),
+        priceFiat: (priceFiat ?? parseFloat(defaults?.priceFiat ?? "0")).toString(),
         enabled: enabled ?? true,
       })
       .onConflictDoUpdate({
         target: subscriptionPlansTable.plan,
         set: {
-          priceUsdt: (priceUsdt ?? parseFloat(defaults.priceUsdt)).toString(),
-          priceFiat: (priceFiat ?? parseFloat(defaults.priceFiat)).toString(),
+          priceUsdt: (priceUsdt ?? parseFloat(defaults?.priceUsdt ?? "0")).toString(),
+          priceFiat: (priceFiat ?? parseFloat(defaults?.priceFiat ?? "0")).toString(),
           enabled: enabled ?? true,
           updatedAt: new Date(),
+          ...(label ? { label } : {}),
+          ...(durationMonths ? { durationMonths } : {}),
         },
       });
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/admin/subscription-plans/:plan", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { plan } = req.params;
+    await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.plan, plan));
+    res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }

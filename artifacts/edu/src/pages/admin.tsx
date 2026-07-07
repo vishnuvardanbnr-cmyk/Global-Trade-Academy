@@ -3117,6 +3117,14 @@ function SubscriptionsTab() {
   const [statusFilter, setStatusFilter] = useState("pending_payment");
   const [loading, setLoading] = useState(true);
   const [savingPlan, setSavingPlan] = useState<string | null>(null);
+  const [deletingPlan, setDeletingPlan] = useState<string | null>(null);
+  const [showNewPlanDialog, setShowNewPlanDialog] = useState(false);
+  const [newPlanKey, setNewPlanKey] = useState("");
+  const [newPlanLabel, setNewPlanLabel] = useState("");
+  const [newPlanMonths, setNewPlanMonths] = useState("1");
+  const [newPlanUsdt, setNewPlanUsdt] = useState("");
+  const [newPlanFiat, setNewPlanFiat] = useState("");
+  const [savingNewPlan, setSavingNewPlan] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejectNote, setRejectNote] = useState("");
@@ -3196,6 +3204,46 @@ function SubscriptionsTab() {
       await loadPlans();
     } catch { toast({ title: "Failed to save plan", variant: "destructive" }); }
     finally { setSavingPlan(null); }
+  };
+
+  const createNewPlan = async () => {
+    if (!newPlanKey.trim() || !newPlanLabel.trim() || !newPlanUsdt.trim()) {
+      toast({ title: "Plan ID, label, and USDT price are required", variant: "destructive" }); return;
+    }
+    setSavingNewPlan(true);
+    try {
+      const r = await fetch("/api/admin/subscription-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: newPlanKey.trim(),
+          label: newPlanLabel.trim(),
+          durationMonths: parseInt(newPlanMonths) || 1,
+          priceUsdt: parseFloat(newPlanUsdt),
+          priceFiat: parseFloat(newPlanFiat) || 0,
+          enabled: true,
+        }),
+      });
+      const d = await r.json() as { error?: string };
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      toast({ title: "Plan created!" });
+      setShowNewPlanDialog(false);
+      setNewPlanKey(""); setNewPlanLabel(""); setNewPlanMonths("1"); setNewPlanUsdt(""); setNewPlanFiat("");
+      await loadPlans();
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to create plan", variant: "destructive" });
+    } finally { setSavingNewPlan(false); }
+  };
+
+  const deletePlan = async (plan: string) => {
+    if (!confirm(`Delete plan "${plan}"? This cannot be undone.`)) return;
+    setDeletingPlan(plan);
+    try {
+      await fetch(`/api/admin/subscription-plans/${plan}`, { method: "DELETE" });
+      toast({ title: "Plan deleted" });
+      await loadPlans();
+    } catch { toast({ title: "Failed to delete plan", variant: "destructive" }); }
+    finally { setDeletingPlan(null); }
   };
 
   const actOnSub = async (id: number, action: "approve" | "reject", note?: string) => {
@@ -3280,20 +3328,30 @@ function SubscriptionsTab() {
       {/* Plan pricing */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <DollarSign className="h-4 w-4" />Copy Trading Plan Prices
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">Set USDT and fiat prices for each subscription duration.</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />Copy Trading Plans
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-0.5">Set USDT and fiat prices for each plan. Plans appear on the paywall page.</p>
+            </div>
+            <Button size="sm" onClick={() => setShowNewPlanDialog(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />New Plan
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {plans.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-6">No plans yet. Click "New Plan" to create your first subscription plan.</p>
+            )}
             {plans.map((p) => {
               const edit = planEdits[p.plan] ?? { priceUsdt: String(p.priceUsdt), priceFiat: String(p.priceFiat), enabled: p.enabled };
               return (
                 <div key={p.plan} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary/20">
-                  <div className="w-20 shrink-0">
-                    <p className="font-semibold text-sm">{PLAN_LABELS[p.plan] ?? p.plan}</p>
-                    <p className="text-xs text-muted-foreground">{p.durationMonths}mo</p>
+                  <div className="w-24 shrink-0">
+                    <p className="font-semibold text-sm">{p.label}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{p.plan} · {p.durationMonths}mo</p>
                   </div>
                   <div className="flex items-center gap-2 flex-1">
                     <div className="relative flex-1 max-w-[120px]">
@@ -3325,16 +3383,76 @@ function SubscriptionsTab() {
                       Enabled
                     </label>
                   </div>
-                  <Button size="sm" variant="outline" className="h-8 shrink-0"
-                    onClick={() => savePlan(p.plan)} disabled={savingPlan === p.plan}>
-                    {savingPlan === p.plan ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button size="sm" variant="outline" className="h-8"
+                      onClick={() => savePlan(p.plan)} disabled={savingPlan === p.plan}>
+                      {savingPlan === p.plan ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => deletePlan(p.plan)} disabled={deletingPlan === p.plan}>
+                      {deletingPlan === p.plan ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
                 </div>
               );
             })}
           </div>
         </CardContent>
       </Card>
+
+      {/* New Plan Dialog */}
+      <Dialog open={showNewPlanDialog} onOpenChange={setShowNewPlanDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Subscription Plan</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Plan ID <span className="text-muted-foreground text-xs">(unique key)</span></label>
+                <Input placeholder="e.g. 2m, weekly, vip" value={newPlanKey}
+                  onChange={(e) => setNewPlanKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))} />
+                <p className="text-[11px] text-muted-foreground">Lowercase letters, numbers, hyphens only</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Display Label</label>
+                <Input placeholder="e.g. 2 Months, Weekly, VIP" value={newPlanLabel}
+                  onChange={(e) => setNewPlanLabel(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Duration (months)</label>
+              <Input type="number" min="1" step="1" placeholder="1" value={newPlanMonths}
+                onChange={(e) => setNewPlanMonths(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">USDT Price</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <Input type="number" min="0" step="1" className="pl-5" placeholder="49"
+                    value={newPlanUsdt} onChange={(e) => setNewPlanUsdt(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Fiat Price <span className="text-muted-foreground text-xs">(optional)</span></label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <Input type="number" min="0" step="1" className="pl-5" placeholder="49"
+                    value={newPlanFiat} onChange={(e) => setNewPlanFiat(e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" onClick={() => setShowNewPlanDialog(false)}>Cancel</Button>
+              <Button onClick={createNewPlan} disabled={savingNewPlan}>
+                {savingNewPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                Create Plan
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Payment submissions */}
       <Card>

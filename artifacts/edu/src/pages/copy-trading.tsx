@@ -841,58 +841,158 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
   /* ── Select plan ── */
   const selectedPlanData = plans.find((p) => p.plan === selectedPlan) ?? plans[0];
 
+  // Find cheapest-per-month plan to compute savings badges
+  const monthlyPlan = plans.reduce<SubPlan | null>((best, p) =>
+    p.durationMonths === 1 ? p : best, null);
+  const monthlyRate = monthlyPlan?.priceUsdt ?? null;
+
+  const getSavingsPct = (p: SubPlan) => {
+    if (!monthlyRate || p.durationMonths <= 1) return null;
+    const fullPrice = monthlyRate * p.durationMonths;
+    const saved = Math.round((1 - p.priceUsdt / fullPrice) * 100);
+    return saved > 0 ? saved : null;
+  };
+
+  // "Best value" = plan with highest savings %
+  const bestValuePlan = plans.reduce<{ plan: string; savings: number } | null>((best, p) => {
+    const s = getSavingsPct(p);
+    if (!s) return best;
+    return !best || s > best.savings ? { plan: p.plan, savings: s } : best;
+  }, null);
+
+  const features = [
+    { icon: TrendingUp, title: "Verified Traders", desc: "Follow professional traders with audited track records and real performance data." },
+    { icon: Zap, title: "Instant Execution", desc: "Signals fan out to your broker account in milliseconds — fully automated." },
+    { icon: ShieldCheck, title: "Secure & Encrypted", desc: "Your broker credentials are AES-256 encrypted. We never touch your funds directly." },
+  ];
+
   return (
-    <div className="max-w-2xl mx-auto py-8 space-y-6 px-4">
-      <div className="text-center space-y-2">
-        {sub?.status === "expired" && (
-          <Badge variant="outline" className="text-muted-foreground mb-2">Subscription Expired</Badge>
-        )}
-        {sub?.status === "rejected" && sub.adminNote && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm text-left mb-4">
-            <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-            <div><p className="font-medium text-destructive">Payment Issue</p><p className="text-muted-foreground text-xs mt-0.5">{sub.adminNote}</p></div>
-          </div>
-        )}
-        <Crown className="h-10 w-10 text-primary mx-auto" />
-        <h2 className="text-2xl font-bold">Copy Trading Access</h2>
-        <p className="text-muted-foreground text-sm">Select a plan — you'll get a unique USDT amount to send. Access activates automatically.</p>
+    <div className="max-w-3xl mx-auto py-8 px-4 space-y-10">
+      {/* Status banners */}
+      {sub?.status === "expired" && (
+        <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-600">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>Your subscription has expired. Renew below to restore access.</span>
+        </div>
+      )}
+      {sub?.status === "rejected" && sub.adminNote && (
+        <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-destructive/10 border border-destructive/30 text-sm">
+          <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <div><p className="font-semibold text-destructive">Payment Issue</p><p className="text-muted-foreground text-xs mt-1">{sub.adminNote}</p></div>
+        </div>
+      )}
+
+      {/* Hero */}
+      <div className="text-center space-y-4">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 mb-2">
+          <Crown className="h-8 w-8 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Copy Expert Traders</h1>
+          <p className="text-muted-foreground mt-2 max-w-md mx-auto">
+            Mirror real trades from vetted professionals. Fully automated — your account executes the same positions the moment they do.
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {plans.map((p) => (
-          <button key={p.plan} onClick={() => setSelectedPlan(p.plan)}
-            className={cn(
-              "rounded-xl border p-4 text-center transition-all space-y-1 relative",
-              selectedPlan === p.plan
-                ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                : "border-border hover:border-primary/40 bg-secondary/20",
-            )}>
-            {p.plan === "1y" && (
-              <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">BEST VALUE</span>
-            )}
-            <p className="font-bold text-sm">{PLAN_LABELS[p.plan]}</p>
-            <p className="text-xl font-black text-primary">${p.priceUsdt}</p>
-            <p className="text-[10px] text-muted-foreground">USDT</p>
-          </button>
+      {/* Feature highlights */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {features.map(({ icon: Icon, title, desc }) => (
+          <div key={title} className="rounded-xl border border-border bg-secondary/30 p-4 space-y-2">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Icon className="h-4 w-4 text-primary" />
+            </div>
+            <p className="font-semibold text-sm">{title}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
+          </div>
         ))}
       </div>
 
-      <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-2">
-        <p className="text-sm font-medium flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-green-500" />How it works
-        </p>
-        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          <li>Click "Pay with USDT" to get your unique payment amount</li>
-          <li>Send exactly that amount in USDT (BEP-20) to our address</li>
-          <li>Your access activates automatically — no manual steps needed</li>
-        </ol>
-      </div>
+      {/* Plan selector */}
+      <div className="space-y-4">
+        <div className="text-center">
+          <h2 className="text-lg font-semibold">Choose Your Plan</h2>
+          <p className="text-sm text-muted-foreground mt-1">Pay in USDT (BEP-20). Access activates automatically once your payment is detected.</p>
+        </div>
 
-      <Button className="w-full h-12 text-base font-semibold" onClick={initiatePay}
-        disabled={initiating || !selectedPlanData || plans.length === 0}>
-        {initiating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />}
-        Pay with USDT — {selectedPlanData ? `$${selectedPlanData.priceUsdt}` : "…"}
-      </Button>
+        <div className={cn("grid gap-3", plans.length <= 2 ? "grid-cols-1 sm:grid-cols-2 max-w-lg mx-auto" : plans.length === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-4")}>
+          {plans.map((p) => {
+            const savings = getSavingsPct(p);
+            const isBest = bestValuePlan?.plan === p.plan;
+            const isSelected = (selectedPlan === p.plan) || (!selectedPlan && p === plans[0]);
+            return (
+              <button key={p.plan} onClick={() => setSelectedPlan(p.plan)}
+                className={cn(
+                  "relative rounded-xl border-2 p-5 text-center transition-all space-y-2 flex flex-col items-center",
+                  isSelected
+                    ? "border-primary bg-primary/8 shadow-lg shadow-primary/10"
+                    : "border-border hover:border-primary/40 bg-card hover:bg-secondary/30",
+                )}>
+                {isBest && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-primary text-primary-foreground px-3 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                    BEST VALUE
+                  </span>
+                )}
+                {savings && !isBest && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-green-500 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                    SAVE {savings}%
+                  </span>
+                )}
+                <p className="font-semibold text-sm text-muted-foreground">{p.label}</p>
+                <div>
+                  <p className="text-3xl font-black tabular-nums">${p.priceUsdt}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">USDT</p>
+                </div>
+                {p.durationMonths > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    ${(p.priceUsdt / p.durationMonths).toFixed(0)}/mo
+                  </p>
+                )}
+                {isSelected && (
+                  <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center mt-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-primary-foreground" />
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {plans.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />Loading plans…
+          </div>
+        )}
+
+        {/* How it works */}
+        <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />How payment works
+          </p>
+          <ol className="space-y-1.5">
+            {[
+              "Click the button below — you'll receive a unique payment amount.",
+              "Send exactly that amount in USDT (BEP-20) to our address.",
+              "Your access activates automatically once detected on-chain. No manual steps.",
+            ].map((step, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-xs text-muted-foreground">
+                <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px]">{i + 1}</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <Button className="w-full h-12 text-base font-semibold" onClick={initiatePay}
+          disabled={initiating || !selectedPlanData || plans.length === 0}>
+          {initiating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />}
+          {selectedPlanData ? `Get Access — $${selectedPlanData.priceUsdt} USDT` : "Select a plan"}
+        </Button>
+
+        <p className="text-center text-[11px] text-muted-foreground">
+          Secured by BSC · Payments verified automatically via BscScan · No recurring charges
+        </p>
+      </div>
     </div>
   );
 }
