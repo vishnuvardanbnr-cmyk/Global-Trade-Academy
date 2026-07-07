@@ -8,7 +8,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
-import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe } from "../lib/fan-out";
+import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe, metaapiCreateAccount } from "../lib/fan-out";
 
 const router = Router();
 
@@ -109,7 +109,8 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { type, label, apiKey, apiSecret, mt5Login, mt5Password, mt5Server, metaapiAccountId } = req.body as Record<string, string>;
+    const { type, label, apiKey, apiSecret, mt5Login, mt5Password, mt5Server,
+            metaapiAccountId, mt5Platform } = req.body as Record<string, string>;
     if (!type || !label) { res.status(400).json({ error: "type and label required" }); return; }
     if (!["binance", "bybit", "mt5", "metaapi"].includes(type)) {
       res.status(400).json({ error: "type must be binance, bybit, mt5, or metaapi" }); return;
@@ -120,23 +121,33 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     if (type === "mt5" && (!mt5Login || !mt5Password || !mt5Server)) {
       res.status(400).json({ error: "mt5Login, mt5Password, and mt5Server required" }); return;
     }
-    if (type === "metaapi" && !metaapiAccountId) {
-      res.status(400).json({ error: "metaapiAccountId required for MetaAPI accounts" }); return;
+    if (type === "metaapi" && (!mt5Login || !mt5Password || !mt5Server)) {
+      res.status(400).json({ error: "mt5Login, mt5Password, and mt5Server required for MetaAPI accounts" }); return;
     }
 
-    // For MetaAPI, subscribe the account to our CopyFactory strategy before saving
+    // For MetaAPI: provision the broker account via MetaAPI API, then subscribe to our strategy
+    let resolvedMetaapiAccountId = metaapiAccountId ?? null;
     if (type === "metaapi") {
-      await metaapiSubscribe(metaapiAccountId, label, 1.0);
+      const platform = (mt5Platform === "mt4" ? "mt4" : "mt5") as "mt4" | "mt5";
+      resolvedMetaapiAccountId = await metaapiCreateAccount({
+        login: mt5Login,
+        password: mt5Password,
+        server: mt5Server,
+        platform,
+        name: label,
+      });
+      await metaapiSubscribe(resolvedMetaapiAccountId, label, 1.0);
     }
 
     const [inserted] = await db.insert(copyAccountsTable).values({
       userId: clerkId, role: "copier", type, label,
       apiKey: apiKey ? encrypt(apiKey) : null,
       apiSecret: apiSecret ? encrypt(apiSecret) : null,
+      // Store login/server for MetaAPI accounts too (display only — credentials stay with MetaAPI)
       mt5Login: mt5Login ?? null,
-      mt5Password: mt5Password ? encrypt(mt5Password) : null,
+      mt5Password: (type === "mt5" && mt5Password) ? encrypt(mt5Password) : null,
       mt5Server: mt5Server ?? null,
-      metaapiAccountId: metaapiAccountId ?? null,
+      metaapiAccountId: resolvedMetaapiAccountId,
     }).returning();
 
     res.status(201).json(maskAccount(inserted));

@@ -188,6 +188,52 @@ const METAAPI_HISTORY_BASE =
 const METAAPI_CONFIG_BASE =
   "https://copyfactory-application-configuration-v2.agiliumtrade.agiliumtrade.ai";
 
+const METAAPI_PROVISION_BASE =
+  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
+
+/**
+ * Create a MetaAPI broker account from the copier's MT credentials.
+ * Fully handled server-side — copier never visits app.metaapi.cloud.
+ * Returns the MetaAPI account ID.
+ */
+export async function metaapiCreateAccount(opts: {
+  login: string;
+  password: string;
+  server: string;
+  platform: "mt4" | "mt5";
+  name: string;
+}): Promise<string> {
+  const token = process.env.METAAPI_TOKEN;
+  if (!token) throw new Error("METAAPI_TOKEN not configured");
+
+  const res = await fetchWithTimeout(
+    `${METAAPI_PROVISION_BASE}/users/current/accounts`,
+    {
+      method: "POST",
+      headers: { "auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        login: opts.login,
+        password: opts.password,
+        server: opts.server,
+        platform: opts.platform,
+        name: opts.name,
+        type: "cloud",
+        magic: 0,
+        application: "MetaApi",
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`MetaAPI account creation error ${res.status}: ${txt}`);
+  }
+
+  const data = await res.json() as { id: string };
+  if (!data.id) throw new Error("MetaAPI did not return an account ID");
+  return data.id;
+}
+
 /**
  * Subscribe a MetaAPI account to our CopyFactory strategy.
  * Called when the copier connects their MetaAPI account on our platform.

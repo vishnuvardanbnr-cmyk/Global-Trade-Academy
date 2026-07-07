@@ -78,11 +78,13 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   const [mt5Password, setMt5Password] = useState("");
   const [mt5Server, setMt5Server] = useState("");
   const [metaapiAccountId, setMetaapiAccountId] = useState("");
+  const [mt5Platform, setMt5Platform] = useState<"mt5" | "mt4">("mt5");
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setType("binance"); setLabel(""); setApiKey(""); setApiSecret("");
     setMt5Login(""); setMt5Password(""); setMt5Server(""); setMetaapiAccountId("");
+    setMt5Platform("mt5");
   };
 
   const submit = async () => {
@@ -92,7 +94,10 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
       const body: Record<string, string> = { type, label: label.trim() };
       if (type === "binance" || type === "bybit") { body.apiKey = apiKey; body.apiSecret = apiSecret; }
       else if (type === "mt5") { body.mt5Login = mt5Login; body.mt5Password = mt5Password; body.mt5Server = mt5Server; }
-      else if (type === "metaapi") { body.metaapiAccountId = metaapiAccountId.trim(); }
+      else if (type === "metaapi") {
+        body.mt5Login = mt5Login; body.mt5Password = mt5Password;
+        body.mt5Server = mt5Server; body.mt5Platform = mt5Platform;
+      }
 
       const res = await fetch("/api/copy-accounts", {
         method: "POST",
@@ -182,25 +187,42 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
 
           {type === "metaapi" && (
             <>
-              <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 space-y-1.5">
-                <p className="text-xs font-semibold text-purple-400">Setup steps</p>
-                <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal list-inside">
-                  <li>Go to <strong>app.metaapi.cloud</strong> and create a free account</li>
-                  <li>Add your MT4/MT5 broker account — MetaAPI will connect it</li>
-                  <li>Copy your <strong>Account ID</strong> from the MetaAPI dashboard</li>
-                  <li>Paste it below — we'll subscribe it to the strategy automatically</li>
-                </ol>
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 space-y-1">
+                <p className="text-xs font-semibold text-purple-400">MetaAPI — Cloud MT4/MT5 copy trading</p>
+                <p className="text-[11px] text-muted-foreground">Enter your broker credentials below. We'll connect your account to our copy trading strategy automatically — no external dashboards needed.</p>
+              </div>
+              {/* Platform toggle */}
+              <div className="space-y-1">
+                <Label>Platform</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["mt5", "mt4"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setMt5Platform(p)}
+                      className={`rounded-lg border-2 p-2 text-sm font-semibold transition-colors ${
+                        mt5Platform === p ? "border-purple-500 bg-purple-500/10 text-purple-400" : "border-border hover:border-purple-500/40"
+                      }`}
+                    >
+                      {p.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="space-y-1">
-                <Label>MetaAPI Account ID</Label>
-                <Input
-                  placeholder="e.g. d38e8430-a1f7-4d3c-b9e2-..."
-                  value={metaapiAccountId}
-                  onChange={(e) => setMetaapiAccountId(e.target.value)}
-                />
+                <Label>Login Number</Label>
+                <Input placeholder="e.g. 12345678" value={mt5Login} onChange={(e) => setMt5Login(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Password</Label>
+                <Input type="password" placeholder="Your MT4/MT5 password" value={mt5Password} onChange={(e) => setMt5Password(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Broker Server</Label>
+                <Input placeholder="e.g. ICMarkets-Live01 or Deriv-Server" value={mt5Server} onChange={(e) => setMt5Server(e.target.value)} />
               </div>
               <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
-                Your MT5 credentials stay with MetaAPI — we never see them. Trades are copied via MetaAPI's CopyFactory infrastructure.
+                Your credentials are transmitted securely to MetaAPI's encrypted cloud infrastructure. We store only your login number and server name for display — never your password.
               </p>
             </>
           )}
