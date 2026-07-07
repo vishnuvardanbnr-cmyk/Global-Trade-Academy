@@ -3102,25 +3102,38 @@ function SubscriptionsTab() {
   const [savingPaySettings, setSavingPaySettings] = useState(false);
 
   const loadPaySettings = async () => {
-    const r = await fetch("/api/admin/payment-settings");
-    const data = await r.json() as { usdtAddress: string; bscscanApiKey: string };
-    setPaySettings(data);
-    setPaySettingsEdits(data);
+    try {
+      const r = await fetch("/api/admin/payment-settings");
+      if (!r.ok) return;
+      const data = await r.json() as { usdtAddress: string; bscscanApiKey: string };
+      if (data && typeof data === "object" && !Array.isArray(data) && !("error" in data)) {
+        setPaySettings(data);
+        setPaySettingsEdits(data);
+      }
+    } catch { /* ignore */ }
   };
 
   const loadPlans = async () => {
-    const r = await fetch("/api/admin/subscription-plans");
-    const data = await r.json() as PlanRow[];
-    setPlans(data);
-    const edits: typeof planEdits = {};
-    data.forEach((p) => { edits[p.plan] = { priceUsdt: String(p.priceUsdt), priceFiat: String(p.priceFiat), enabled: p.enabled }; });
-    setPlanEdits(edits);
+    try {
+      const r = await fetch("/api/admin/subscription-plans");
+      if (!r.ok) return;
+      const data = await r.json();
+      if (Array.isArray(data)) {
+        setPlans(data as PlanRow[]);
+        const edits: typeof planEdits = {};
+        (data as PlanRow[]).forEach((p) => { edits[p.plan] = { priceUsdt: String(p.priceUsdt), priceFiat: String(p.priceFiat), enabled: p.enabled }; });
+        setPlanEdits(edits);
+      }
+    } catch { /* ignore */ }
   };
 
   const loadSubs = async () => {
-    const r = await fetch(`/api/admin/platform-subscriptions${statusFilter ? `?status=${statusFilter}` : ""}`);
-    const data = await r.json() as PlatformSub[];
-    setSubmissions(data);
+    try {
+      const r = await fetch(`/api/admin/platform-subscriptions${statusFilter ? `?status=${statusFilter}` : ""}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (Array.isArray(data)) setSubmissions(data as PlatformSub[]);
+    } catch { /* ignore */ }
   };
 
   useEffect(() => {
@@ -3184,7 +3197,7 @@ function SubscriptionsTab() {
 
   const PLAN_LABELS: Record<string, string> = { "1m": "1 Month", "3m": "3 Months", "6m": "6 Months", "1y": "1 Year" };
 
-  if (loading && !plans.length) return (
+  if (loading) return (
     <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>
   );
 
