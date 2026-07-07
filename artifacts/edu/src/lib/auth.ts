@@ -21,12 +21,13 @@ export async function apiLogin(email: string, password: string): Promise<{ token
 }
 
 export async function apiRegister(
-  email: string, password: string, firstName?: string, lastName?: string
+  email: string, password: string, firstName?: string, lastName?: string,
+  country?: string, phone?: string
 ): Promise<{ token: string; pendingApproval?: boolean; user: AuthUser }> {
   const res = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, firstName, lastName }),
+    body: JSON.stringify({ email, password, firstName, lastName, country, phone }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

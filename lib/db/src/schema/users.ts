@@ -14,6 +14,8 @@ export const usersTable = pgTable("users", {
   status: text("status").notNull().default("pending_approval"), // pending_approval | active | suspended
   xp: integer("xp").notNull().default(0),
   badges: text("badges").array().notNull().default([]),
+  country: text("country"),
+  phone: text("phone"),
   marketFocus: text("market_focus"),
   skillLevel: text("skill_level"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

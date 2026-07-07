@@ -60,8 +60,9 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
 /* ── POST /api/auth/register ────────────────────────────────── */
 router.post("/auth/register", async (req, res): Promise<void> => {
   try {
-    const { email, password, firstName, lastName } = req.body as {
+    const { email, password, firstName, lastName, country, phone } = req.body as {
       email: string; password: string; firstName?: string; lastName?: string;
+      country?: string; phone?: string;
     };
 
     if (!email || !password) {
@@ -94,6 +95,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       status: "pending_approval",
       xp: 0,
       badges: [],
+      country: country || null,
+      phone: phone || null,
     }).returning();
 
     const token = signToken({ userId: user.id, email: user.email });

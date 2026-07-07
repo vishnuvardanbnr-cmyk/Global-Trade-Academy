@@ -1,10 +1,57 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { BarChart3, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, RefreshCw } from "lucide-react";
+import { BarChart3, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, RefreshCw, ChevronDown } from "lucide-react";
 import { apiRegister, apiSendOtp, apiVerifyOtp } from "@/lib/auth";
 import { useAuthContext } from "@/lib/authContext";
 import { queryClient } from "@/lib/queryClient";
+
+const COUNTRIES: { name: string; code: string; dial: string; flag: string }[] = [
+  { name: "Malaysia", code: "MY", dial: "+60", flag: "🇲🇾" },
+  { name: "Singapore", code: "SG", dial: "+65", flag: "🇸🇬" },
+  { name: "Indonesia", code: "ID", dial: "+62", flag: "🇮🇩" },
+  { name: "Thailand", code: "TH", dial: "+66", flag: "🇹🇭" },
+  { name: "Philippines", code: "PH", dial: "+63", flag: "🇵🇭" },
+  { name: "Vietnam", code: "VN", dial: "+84", flag: "🇻🇳" },
+  { name: "Brunei", code: "BN", dial: "+673", flag: "🇧🇳" },
+  { name: "Myanmar", code: "MM", dial: "+95", flag: "🇲🇲" },
+  { name: "Cambodia", code: "KH", dial: "+855", flag: "🇰🇭" },
+  { name: "Laos", code: "LA", dial: "+856", flag: "🇱🇦" },
+  { name: "United States", code: "US", dial: "+1", flag: "🇺🇸" },
+  { name: "United Kingdom", code: "GB", dial: "+44", flag: "🇬🇧" },
+  { name: "Australia", code: "AU", dial: "+61", flag: "🇦🇺" },
+  { name: "Canada", code: "CA", dial: "+1", flag: "🇨🇦" },
+  { name: "India", code: "IN", dial: "+91", flag: "🇮🇳" },
+  { name: "China", code: "CN", dial: "+86", flag: "🇨🇳" },
+  { name: "Japan", code: "JP", dial: "+81", flag: "🇯🇵" },
+  { name: "South Korea", code: "KR", dial: "+82", flag: "🇰🇷" },
+  { name: "Hong Kong", code: "HK", dial: "+852", flag: "🇭🇰" },
+  { name: "Taiwan", code: "TW", dial: "+886", flag: "🇹🇼" },
+  { name: "United Arab Emirates", code: "AE", dial: "+971", flag: "🇦🇪" },
+  { name: "Saudi Arabia", code: "SA", dial: "+966", flag: "🇸🇦" },
+  { name: "Qatar", code: "QA", dial: "+974", flag: "🇶🇦" },
+  { name: "Kuwait", code: "KW", dial: "+965", flag: "🇰🇼" },
+  { name: "Bahrain", code: "BH", dial: "+973", flag: "🇧🇭" },
+  { name: "New Zealand", code: "NZ", dial: "+64", flag: "🇳🇿" },
+  { name: "Germany", code: "DE", dial: "+49", flag: "🇩🇪" },
+  { name: "France", code: "FR", dial: "+33", flag: "🇫🇷" },
+  { name: "Netherlands", code: "NL", dial: "+31", flag: "🇳🇱" },
+  { name: "Switzerland", code: "CH", dial: "+41", flag: "🇨🇭" },
+  { name: "Turkey", code: "TR", dial: "+90", flag: "🇹🇷" },
+  { name: "Nigeria", code: "NG", dial: "+234", flag: "🇳🇬" },
+  { name: "South Africa", code: "ZA", dial: "+27", flag: "🇿🇦" },
+  { name: "Kenya", code: "KE", dial: "+254", flag: "🇰🇪" },
+  { name: "Ghana", code: "GH", dial: "+233", flag: "🇬🇭" },
+  { name: "Egypt", code: "EG", dial: "+20", flag: "🇪🇬" },
+  { name: "Pakistan", code: "PK", dial: "+92", flag: "🇵🇰" },
+  { name: "Bangladesh", code: "BD", dial: "+880", flag: "🇧🇩" },
+  { name: "Sri Lanka", code: "LK", dial: "+94", flag: "🇱🇰" },
+  { name: "Nepal", code: "NP", dial: "+977", flag: "🇳🇵" },
+  { name: "Brazil", code: "BR", dial: "+55", flag: "🇧🇷" },
+  { name: "Mexico", code: "MX", dial: "+52", flag: "🇲🇽" },
+];
+
+const DEFAULT_COUNTRY = COUNTRIES[0];
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = [
@@ -36,15 +83,21 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 type Step = "name" | "credentials" | "otp";
-
 const STEP_LABELS: Step[] = ["name", "credentials", "otp"];
 
 export default function SignUpPage() {
   const [, navigate] = useLocation();
   const { refetch } = useAuthContext();
   const [step, setStep] = useState<Step>("name");
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [country, setCountry] = useState(DEFAULT_COUNTRY);
+  const [phone, setPhone] = useState("");
+  const [countrySearch, setCountrySearch] = useState("");
+  const [countryOpen, setCountryOpen] = useState(false);
+  const countryRef = useRef<HTMLDivElement>(null);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -56,6 +109,22 @@ export default function SignUpPage() {
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (countryRef.current && !countryRef.current.contains(e.target as Node)) {
+        setCountryOpen(false);
+        setCountrySearch("");
+      }
+    };
+    if (countryOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [countryOpen]);
+
+  const filteredCountries = COUNTRIES.filter(c =>
+    c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+    c.dial.includes(countrySearch)
+  );
 
   const startCooldown = () => {
     setResendCooldown(60);
@@ -69,7 +138,8 @@ export default function SignUpPage() {
 
   const handleNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName.trim()) return;
+    if (!firstName.trim()) { setError("First name is required"); return; }
+    if (!phone.trim()) { setError("Phone number is required"); return; }
     setError(null);
     setStep("credentials");
   };
@@ -122,7 +192,8 @@ export default function SignUpPage() {
     setLoading(true);
     try {
       await apiVerifyOtp(email, code);
-      const result = await apiRegister(email, password, firstName.trim(), lastName.trim());
+      const fullPhone = `${country.dial}${phone.trim()}`;
+      const result = await apiRegister(email, password, firstName.trim(), lastName.trim(), country.name, fullPhone);
       queryClient.clear();
       await refetch();
       navigate(result.pendingApproval ? "/pending-approval" : "/dashboard");
@@ -152,7 +223,7 @@ export default function SignUpPage() {
   const stepIdx = STEP_LABELS.indexOf(step);
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-[#f4f4f5] px-4">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-[#f4f4f5] px-4 py-8">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -170,11 +241,10 @@ export default function SignUpPage() {
             </div>
             <h1 className="text-[1.25rem] font-bold text-[#09090b] mb-1">Create your account</h1>
             <p className="text-sm text-[#71717a]">
-              {step === "name" ? "Let's start with your name."
+              {step === "name" ? "Let's start with your details."
                 : step === "credentials" ? "Now set your email and password."
                 : `We sent a 6-digit code to ${email}`}
             </p>
-            {/* Step dots */}
             <div className="flex gap-1.5 mt-4">
               {STEP_LABELS.map((s, i) => (
                 <div
@@ -206,7 +276,7 @@ export default function SignUpPage() {
             </AnimatePresence>
 
             <AnimatePresence mode="wait">
-              {/* ── Step 1: Name ── */}
+              {/* ── Step 1: Name + Country + Phone ── */}
               {step === "name" && (
                 <motion.form
                   key="name"
@@ -215,19 +285,88 @@ export default function SignUpPage() {
                   onSubmit={handleNameSubmit}
                   className="space-y-4"
                 >
-                  <div>
-                    <label className="block text-xs font-semibold text-[#3f3f46] mb-1.5">First name</label>
-                    <input autoFocus type="text" value={firstName} onChange={e => setFirstName(e.target.value)}
-                      placeholder="Alex" required
-                      className="w-full h-10 px-3.5 rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-sm text-[#09090b] placeholder:text-[#a1a1aa] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#3f3f46] mb-1.5">First name <span className="text-[#dc2626]">*</span></label>
+                      <input autoFocus type="text" value={firstName} onChange={e => setFirstName(e.target.value)}
+                        placeholder="Alex" required
+                        className="w-full h-10 px-3.5 rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-sm text-[#09090b] placeholder:text-[#a1a1aa] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#3f3f46] mb-1.5">Last name <span className="text-[#a1a1aa] font-normal">(optional)</span></label>
+                      <input type="text" value={lastName} onChange={e => setLastName(e.target.value)}
+                        placeholder="Johnson"
+                        className="w-full h-10 px-3.5 rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-sm text-[#09090b] placeholder:text-[#a1a1aa] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all" />
+                    </div>
                   </div>
+
+                  {/* Country */}
                   <div>
-                    <label className="block text-xs font-semibold text-[#3f3f46] mb-1.5">Last name <span className="text-[#a1a1aa] font-normal">(optional)</span></label>
-                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value)}
-                      placeholder="Johnson"
-                      className="w-full h-10 px-3.5 rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-sm text-[#09090b] placeholder:text-[#a1a1aa] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all" />
+                    <label className="block text-xs font-semibold text-[#3f3f46] mb-1.5">Country <span className="text-[#dc2626]">*</span></label>
+                    <div ref={countryRef} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => { setCountryOpen(v => !v); setCountrySearch(""); }}
+                        className="w-full h-10 px-3.5 rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-sm text-[#09090b] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all flex items-center justify-between"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="text-base">{country.flag}</span>
+                          <span>{country.name}</span>
+                        </span>
+                        <ChevronDown className={`h-4 w-4 text-[#a1a1aa] transition-transform ${countryOpen ? "rotate-180" : ""}`} />
+                      </button>
+                      {countryOpen && (
+                        <div className="absolute z-50 mt-1 w-full bg-white border border-[#e4e4e7] rounded-xl shadow-lg overflow-hidden">
+                          <div className="p-2 border-b border-[#f4f4f5]">
+                            <input
+                              autoFocus
+                              type="text"
+                              value={countrySearch}
+                              onChange={e => setCountrySearch(e.target.value)}
+                              placeholder="Search country..."
+                              className="w-full h-8 px-3 rounded-lg border border-[#e4e4e7] bg-[#fafafa] text-sm text-[#09090b] placeholder:text-[#a1a1aa] focus:outline-none focus:border-[#2563eb] transition-all"
+                            />
+                          </div>
+                          <div className="max-h-52 overflow-y-auto">
+                            {filteredCountries.length === 0 ? (
+                              <p className="text-xs text-[#a1a1aa] text-center py-4">No countries found</p>
+                            ) : filteredCountries.map(c => (
+                              <button
+                                key={c.code}
+                                type="button"
+                                onClick={() => { setCountry(c); setCountryOpen(false); setCountrySearch(""); }}
+                                className={`w-full px-3.5 py-2.5 text-left text-sm flex items-center gap-2.5 hover:bg-[#f4f4f5] transition-colors ${country.code === c.code ? "bg-[#eff6ff] text-[#2563eb] font-medium" : "text-[#09090b]"}`}
+                              >
+                                <span className="text-base">{c.flag}</span>
+                                <span className="flex-1">{c.name}</span>
+                                <span className="text-[#71717a] text-xs">{c.dial}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <button type="submit" disabled={!firstName.trim()}
+
+                  {/* Phone */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#3f3f46] mb-1.5">Phone number <span className="text-[#dc2626]">*</span></label>
+                    <div className="flex rounded-xl border border-[#e4e4e7] bg-[#fafafa] focus-within:border-[#2563eb] focus-within:ring-3 focus-within:ring-[#2563eb]/15 focus-within:bg-white transition-all overflow-hidden">
+                      <span className="flex items-center px-3.5 text-sm font-medium text-[#3f3f46] border-r border-[#e4e4e7] shrink-0 bg-[#f4f4f5] select-none">
+                        {country.flag} {country.dial}
+                      </span>
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={e => setPhone(e.target.value.replace(/[^\d\s\-()]/g, ""))}
+                        placeholder="11 2345 6789"
+                        required
+                        className="flex-1 h-10 px-3.5 bg-transparent text-sm text-[#09090b] placeholder:text-[#a1a1aa] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={!firstName.trim() || !phone.trim()}
                     className="w-full h-10 rounded-xl bg-[#2563eb] hover:bg-[#1d4ed8] disabled:opacity-50 text-white text-sm font-semibold transition-colors mt-2">
                     Continue →
                   </button>
@@ -284,7 +423,6 @@ export default function SignUpPage() {
                   exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}
                   className="space-y-6"
                 >
-                  {/* 6-digit boxes */}
                   <div>
                     <label className="block text-xs font-semibold text-[#3f3f46] mb-3 text-center">Enter verification code</label>
                     <div className="flex gap-2 justify-center" onPaste={handleOtpPaste}>
@@ -298,7 +436,7 @@ export default function SignUpPage() {
                           value={digit}
                           onChange={e => handleOtpChange(idx, e.target.value)}
                           onKeyDown={e => handleOtpKeyDown(idx, e)}
-                          className="w-11 h-13 text-center text-xl font-bold rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-[#09090b] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all"
+                          className="w-11 text-center text-xl font-bold rounded-xl border border-[#e4e4e7] bg-[#fafafa] text-[#09090b] focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/15 focus:bg-white transition-all"
                           style={{ height: "52px" }}
                         />
                       ))}
