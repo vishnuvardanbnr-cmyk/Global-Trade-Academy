@@ -189,8 +189,34 @@ async function executeMt5(
   signal: typeof tradeSignalsTable.$inferSelect,
   lotMultiplier: number,
 ): Promise<string> {
+  // Modify signals are noop on Binance/Bybit; treat the same for MT5
+  if (signal.action === "modify") return "modify-noop";
+
   const bridgeUrl = process.env.MT5_BRIDGE_URL;
   if (!bridgeUrl) throw new Error("MT5_BRIDGE_URL not configured");
+
+  // MT5 lot sizes go to 2 decimal places (0.01 step). Round to avoid broker rejection.
+  const rawVol = parseFloat(signal.quantity as string) * lotMultiplier;
+  const volume = Math.round(rawVol * 100) / 100;
+  if (volume <= 0) throw new Error(`MT5: computed volume ${volume} is too small (min 0.01 lots)`);
+
+  // For CLOSE signals the bridge must know which side to counter-trade.
+  // Derive it from notes the same way the closeSide() helper works for Binance/Bybit.
+  const isClose = signal.action === "close";
+  let side: "buy" | "sell";
+  if (isClose) {
+    const notes = (signal.notes ?? "").toLowerCase();
+    if (!notes.includes("long") && !notes.includes("short")) {
+      throw new Error(
+        `MT5 CLOSE signal #${signal.id}: cannot determine position side. ` +
+        `Add 'long' or 'short' to the signal notes (e.g. "close long").`,
+      );
+    }
+    // Closing a long → SELL; closing a short → BUY
+    side = notes.includes("long") ? "sell" : "buy";
+  } else {
+    side = signal.action as "buy" | "sell";
+  }
 
   const res = await fetchWithTimeout(`${bridgeUrl}/signal`, {
     method: "POST",
@@ -198,14 +224,15 @@ async function executeMt5(
     body: JSON.stringify({
       login, password, server,
       symbol: signal.symbol,
-      action: signal.action,
+      action: signal.action,  // keep raw action for bridge routing logic
+      side,                   // explicit counter-trade side for open/close
       orderType: signal.orderType ?? "market",
-      volume: parseFloat(signal.quantity as string) * lotMultiplier,
-      price: signal.price      ? parseFloat(signal.price      as string) : 0,
-      stopPrice: signal.stopPrice ? parseFloat(signal.stopPrice as string) : 0,
-      sl: signal.stopLoss   ? parseFloat(signal.stopLoss   as string) : 0,
-      tp: signal.takeProfit ? parseFloat(signal.takeProfit as string) : 0,
-      leverage: signal.leverage ?? 1,
+      volume,
+      price:     signal.price      ? parseFloat(signal.price      as string) : 0,
+      stopPrice: signal.stopPrice  ? parseFloat(signal.stopPrice  as string) : 0,
+      sl:        signal.stopLoss   ? parseFloat(signal.stopLoss   as string) : 0,
+      tp:        signal.takeProfit ? parseFloat(signal.takeProfit as string) : 0,
+      leverage:  signal.leverage ?? 1,
     }),
   });
   const json = await res.json() as { orderId?: string; error?: string };
