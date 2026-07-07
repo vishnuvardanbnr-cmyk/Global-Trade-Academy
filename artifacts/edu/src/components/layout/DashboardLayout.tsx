@@ -345,7 +345,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const { data: myTraderData } = useQuery({
     queryKey: ["my-trader-sidebar"],
-    queryFn: () => fetch("/api/trading/my-trader").then((r) => r.ok ? r.json() : null).catch(() => null),
+    queryFn: () => fetch("/api/my-trader").then((r) => r.ok ? r.json() : null).catch(() => null),
     staleTime: 5 * 60 * 1000,
     enabled: !!me,
   });

@@ -99,7 +99,7 @@ export default function TraderDashboard() {
   const [histLoading, setHistLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/trading/my-trader")
+    fetch("/api/my-trader")
       .then(async (r) => {
         if (r.status === 404) { setNotTrader(true); return null; }
         if (!r.ok) throw new Error();
@@ -123,7 +123,7 @@ export default function TraderDashboard() {
 
   const loadMasterAccounts = () => {
     setMasterLoading(true);
-    fetch("/api/trading/master-accounts")
+    fetch("/api/master-accounts")
       .then((r) => r.json()).then(setMasterAccounts)
       .catch(() => toast({ title: "Failed to load master accounts", variant: "destructive" }))
       .finally(() => setMasterLoading(false));
@@ -132,7 +132,7 @@ export default function TraderDashboard() {
   const loadSignals = () => {
     if (!trader) return;
     setHistLoading(true);
-    fetch(`/api/trading/trade-signals?traderId=${trader.id}`)
+    fetch(`/api/trade-signals?traderId=${trader.id}`)
       .then((r) => r.json()).then(setSignals)
       .catch(() => toast({ title: "Failed to load signals", variant: "destructive" }))
       .finally(() => setHistLoading(false));
@@ -146,7 +146,7 @@ export default function TraderDashboard() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/trading/my-trader", {
+      const res = await fetch("/api/my-trader", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -180,7 +180,7 @@ export default function TraderDashboard() {
         body.apiKey = masterForm.apiKey;
         body.apiSecret = masterForm.apiSecret;
       }
-      const res = await fetch("/api/trading/master-accounts", {
+      const res = await fetch("/api/master-accounts", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
@@ -195,7 +195,7 @@ export default function TraderDashboard() {
 
   const deleteMasterAccount = async (id: number) => {
     if (!confirm("Remove this master account?")) return;
-    const res = await fetch(`/api/trading/master-accounts/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/master-accounts/${id}`, { method: "DELETE" });
     if (res.ok) { toast({ title: "Account removed" }); loadMasterAccounts(); }
     else toast({ title: "Failed to remove", variant: "destructive" });
   };
@@ -221,7 +221,7 @@ export default function TraderDashboard() {
       if (tradeForm.takeProfit) body.takeProfit = parseFloat(tradeForm.takeProfit);
       if (tradeForm.notes) body.notes = tradeForm.notes;
 
-      const res = await fetch("/api/trading/trade-signals", {
+      const res = await fetch("/api/trade-signals", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error();
