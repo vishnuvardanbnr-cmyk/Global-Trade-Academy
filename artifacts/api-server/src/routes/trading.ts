@@ -6,6 +6,7 @@ import {
   copyAccountsTable, tradeSignalsTable, copyTradesTable,
   masterPositionsTable, usersTable,
   platformSubscriptionsTable, subscriptionPlansTable,
+  siteSettingsTable,
 } from "@workspace/db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
@@ -595,6 +596,63 @@ router.delete("/watchlist/:itemId", async (req, res): Promise<void> => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/* ═══════════════════════════════════════════════════════════════════
+   PUBLIC PAYMENT SETTINGS  (returns deposit address — no API key)
+════════════════════════════════════════════════════════════════════ */
+router.get("/payment-settings", async (_req, res): Promise<void> => {
+  try {
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "payment_settings")).limit(1).then((r) => r[0]);
+    const settings = row?.value ? (JSON.parse(row.value as string) as Record<string, string>) : {};
+    res.json({ usdtAddress: settings.usdtAddress ?? "" });
+  } catch {
+    res.json({ usdtAddress: "" });
+  }
+});
+
+/* ── BscScan TX verification helper ────────────────────────────── */
+const USDT_BEP20_CONTRACT = "0x55d398326f99059ff775485246999027b3197955";
+const TRANSFER_TOPIC0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+async function verifyUsdtTx(
+  txHash: string,
+  depositAddress: string,
+  expectedUsdt: number,
+  apiKey: string,
+): Promise<{ valid: boolean; error?: string; amountUsdt?: number }> {
+  const url = `https://api.bscscan.com/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${apiKey || "YourApiKeyToken"}`;
+  const resp = await (fetch as typeof globalThis.fetch)(url, { signal: AbortSignal.timeout(10000) });
+  if (!resp.ok) return { valid: false, error: "BscScan API unreachable" };
+  const data = await resp.json() as { result?: Record<string, unknown> | null };
+  if (!data.result) return { valid: false, error: "Transaction not found or not yet confirmed. Please wait for at least 1 confirmation and try again." };
+
+  const receipt = data.result;
+  if (receipt.status !== "0x1") return { valid: false, error: "Transaction failed on chain." };
+
+  const logs = receipt.logs as Array<{ address: string; topics: string[]; data: string }> ?? [];
+  const transferLog = logs.find(
+    (log) =>
+      log.address.toLowerCase() === USDT_BEP20_CONTRACT &&
+      log.topics[0] === TRANSFER_TOPIC0 &&
+      log.topics[2] &&
+      ("0x" + log.topics[2].slice(26)).toLowerCase() === depositAddress.toLowerCase(),
+  );
+
+  if (!transferLog) {
+    return { valid: false, error: "No USDT (BEP-20) transfer to the deposit address was found in this transaction." };
+  }
+
+  // USDT BEP-20 has 18 decimals on BSC
+  const amountWei = BigInt(transferLog.data);
+  const amountUsdt = Number(amountWei) / 1e18;
+
+  if (amountUsdt < expectedUsdt * 0.99) {
+    return { valid: false, error: `Insufficient amount: received ${amountUsdt.toFixed(2)} USDT, expected ${expectedUsdt} USDT.` };
+  }
+
+  return { valid: true, amountUsdt };
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    PLATFORM SUBSCRIPTION PLANS  (public — returns pricing)

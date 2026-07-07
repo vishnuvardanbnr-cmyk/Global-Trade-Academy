@@ -714,6 +714,42 @@ router.put("/admin/site-settings/:key", async (req, res): Promise<void> => {
   }
 });
 
+/* ═══════════════════════════════════════════════════════════════════
+   PAYMENT SETTINGS (USDT deposit address + BscScan API key)
+════════════════════════════════════════════════════════════════════ */
+
+router.get("/admin/payment-settings", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const row = await db.select().from(siteSettingsTable).where(eq(siteSettingsTable.key, "payment_settings")).limit(1).then((r) => r[0]);
+    const settings = row?.value ? (JSON.parse(row.value as string) as Record<string, string>) : {};
+    res.json({
+      usdtAddress: settings.usdtAddress ?? "",
+      bscscanApiKey: settings.bscscanApiKey ?? "",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/admin/payment-settings", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { usdtAddress, bscscanApiKey } = req.body as { usdtAddress?: string; bscscanApiKey?: string };
+    const value = JSON.stringify({
+      usdtAddress: (usdtAddress ?? "").trim(),
+      bscscanApiKey: (bscscanApiKey ?? "").trim(),
+    });
+    await db.insert(siteSettingsTable).values({ key: "payment_settings", value })
+      .onConflictDoUpdate({ target: siteSettingsTable.key, set: { value } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── GET /api/admin/integration-settings (admin only) ─────────── */
 router.get("/admin/integration-settings", async (req, res): Promise<void> => {
   try {
