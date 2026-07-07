@@ -27,13 +27,64 @@ export const copySubscriptionsTable = pgTable("copy_subscriptions", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),
   traderId: integer("trader_id").notNull(),
+  copyAccountId: integer("copy_account_id"),
   status: text("status").notNull().default("active"), // active | paused | stopped
   maxAmount: numeric("max_amount", { precision: 15, scale: 2 }),
   stopLoss: numeric("stop_loss", { precision: 10, scale: 2 }),
   allocatedAmount: numeric("allocated_amount", { precision: 15, scale: 2 }),
+  lotMultiplier: numeric("lot_multiplier", { precision: 5, scale: 2 }).default("1.00"),
   currentPnl: numeric("current_pnl", { precision: 15, scale: 2 }).default("0"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const copyAccountsTable = pgTable("copy_accounts", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  type: text("type").notNull(), // "binance" | "bybit" | "mt5"
+  label: text("label").notNull(),
+  apiKey: text("api_key"),        // AES-256-GCM encrypted
+  apiSecret: text("api_secret"),  // AES-256-GCM encrypted
+  mt5Login: text("mt5_login"),
+  mt5Password: text("mt5_password"), // AES-256-GCM encrypted
+  mt5Server: text("mt5_server"),
+  status: text("status").notNull().default("active"), // active | error | disconnected
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const tradeSignalsTable = pgTable("trade_signals", {
+  id: serial("id").primaryKey(),
+  traderId: integer("trader_id").notNull(),
+  symbol: text("symbol").notNull(),
+  market: text("market").notNull(), // crypto | forex
+  action: text("action").notNull(), // buy | sell | close
+  orderType: text("order_type").notNull().default("market"), // market | limit
+  price: numeric("price", { precision: 20, scale: 8 }),
+  quantity: numeric("quantity", { precision: 20, scale: 8 }),
+  stopLoss: numeric("stop_loss", { precision: 20, scale: 8 }),
+  takeProfit: numeric("take_profit", { precision: 20, scale: 8 }),
+  leverage: integer("leverage").default(1),
+  notes: text("notes"),
+  status: text("status").notNull().default("pending"), // pending | executed | failed
+  executedAt: timestamp("executed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const copyTradesTable = pgTable("copy_trades", {
+  id: serial("id").primaryKey(),
+  signalId: integer("signal_id").notNull(),
+  subscriptionId: integer("subscription_id").notNull(),
+  userId: text("user_id").notNull(),
+  copyAccountId: integer("copy_account_id").notNull(),
+  status: text("status").notNull().default("pending"), // pending | executed | failed | skipped
+  executedPrice: numeric("executed_price", { precision: 20, scale: 8 }),
+  quantity: numeric("quantity", { precision: 20, scale: 8 }),
+  pnl: numeric("pnl", { precision: 15, scale: 2 }),
+  brokerOrderId: text("broker_order_id"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const watchlistTable = pgTable("watchlist", {
