@@ -952,7 +952,7 @@ function QuizAnalyticsCard({ courses }: { courses?: { id: number; title: string 
 }
 
 /* ─── Students Tab ─── */
-type Student = { userId: string; displayName: string; email: string; avatarUrl: string | null; xp: number; coursesEnrolled: number; coursesCompleted: number; lessonsCompleted: number; certificates: number; lastActivity: string; };
+type Student = { userId: string; displayName: string; email: string; avatarUrl: string | null; xp: number; coursesEnrolled: number; coursesCompleted: number; lessonsCompleted: number; totalLessons: number; certificates: number; lastActivity: string; };
 
 function StudentsTab() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -1016,8 +1016,8 @@ function StudentsTab() {
               <tr className="border-b border-border text-muted-foreground text-xs">
                 <th className="text-left px-4 py-3 font-medium">Student</th>
                 <th className="text-right px-4 py-3 font-medium">XP</th>
-                <th className="text-right px-4 py-3 font-medium">Courses</th>
-                <th className="text-center px-4 py-3 font-medium">Progress</th>
+                <th className="text-right px-4 py-3 font-medium">Enrolled</th>
+                <th className="text-center px-4 py-3 font-medium">Lesson Progress</th>
                 <th className="text-right px-4 py-3 font-medium">Lessons Done</th>
                 <th className="text-right px-4 py-3 font-medium">Certs</th>
                 <th className="text-right px-4 py-3 font-medium">Last Activity</th>
@@ -1025,7 +1025,7 @@ function StudentsTab() {
             </thead>
             <tbody>
               {filtered.map((s) => {
-                const completionPct = s.coursesEnrolled > 0 ? Math.round((s.coursesCompleted / s.coursesEnrolled) * 100) : 0;
+                const lessonPct = s.totalLessons > 0 ? Math.round((s.lessonsCompleted / s.totalLessons) * 100) : 0;
                 return (
                   <tr key={s.userId} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-3">
@@ -1040,18 +1040,22 @@ function StudentsTab() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className="font-mono font-semibold text-primary">{s.xp.toLocaleString()}</span>
+                      <span className={cn("font-mono font-semibold", s.xp > 0 ? "text-primary" : "text-muted-foreground")}>{s.xp.toLocaleString()}</span>
                     </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">
-                      <span className="font-medium text-foreground">{s.coursesCompleted}</span>/{s.coursesEnrolled}
+                    <td className="px-4 py-3 text-right">
+                      <span className="font-medium text-foreground">{s.coursesEnrolled}</span>
+                      {s.coursesCompleted > 0 && <span className="text-[11px] text-muted-foreground ml-1">({s.coursesCompleted} done)</span>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-center">
-                        <Progress value={completionPct} className="h-1.5 w-20" />
-                        <span className="text-[11px] text-muted-foreground w-8 text-right">{completionPct}%</span>
+                        <Progress value={lessonPct} className="h-1.5 w-20" />
+                        <span className="text-[11px] text-muted-foreground w-8 text-right">{lessonPct}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">{s.lessonsCompleted}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
+                      <span className={s.lessonsCompleted > 0 ? "font-medium text-foreground" : ""}>{s.lessonsCompleted}</span>
+                      {s.totalLessons > 0 && <span className="text-[11px] text-muted-foreground">/{s.totalLessons}</span>}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       {s.certificates > 0
                         ? <span className="inline-flex items-center gap-1 text-amber-500 font-medium"><Award className="h-3.5 w-3.5" />{s.certificates}</span>

@@ -70,12 +70,14 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
 
     const studentIds = [...new Set(enrollments.map((e) => e.userId))];
 
-    const [students, progressRows, xpRows, certRows] = await Promise.all([
+    const enrolledCourseIds = [...new Set(enrollments.map((e) => e.courseId))];
+
+    const [students, progressRows, xpRows, certRows, lessonCountRows] = await Promise.all([
       db.select({ id: usersTable.id, displayName: usersTable.displayName, email: usersTable.email, avatarUrl: usersTable.avatarUrl, xp: usersTable.xp, createdAt: usersTable.createdAt })
         .from(usersTable).where(and(inArray(usersTable.id, studentIds), eq(usersTable.role, "student"))),
       db.select({ userId: lessonProgressTable.userId, completed: sql<number>`count(*) filter (where ${lessonProgressTable.completed})::int` })
         .from(lessonProgressTable)
-        .where(and(inArray(lessonProgressTable.userId, studentIds)))
+        .where(inArray(lessonProgressTable.userId, studentIds))
         .groupBy(lessonProgressTable.userId),
       db.select({ userId: xpEventsTable.userId, total: sql<number>`sum(${xpEventsTable.amount})::int` })
         .from(xpEventsTable)
@@ -85,7 +87,15 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
         .from(certificatesTable)
         .where(inArray(certificatesTable.userId, studentIds))
         .groupBy(certificatesTable.userId),
+      enrolledCourseIds.length
+        ? db.select({ courseId: lessonsTable.courseId, count: sql<number>`count(*)::int` })
+            .from(lessonsTable)
+            .where(inArray(lessonsTable.courseId, enrolledCourseIds))
+            .groupBy(lessonsTable.courseId)
+        : Promise.resolve([]),
     ]);
+
+    const lessonCountMap = Object.fromEntries((lessonCountRows as { courseId: number; count: number }[]).map((r) => [r.courseId, r.count]));
 
     const studentMap = Object.fromEntries(students.map((s) => [s.id, s]));
     const progressMap = Object.fromEntries(progressRows.map((r) => [r.userId, r.completed]));
@@ -93,8 +103,10 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
     const certMap = Object.fromEntries(certRows.map((r) => [r.userId, r.count]));
 
     const courseMap: Record<string, number> = {};
+    const totalLessonsMap: Record<string, number> = {};
     for (const e of enrollments) {
       courseMap[e.userId] = (courseMap[e.userId] ?? 0) + 1;
+      totalLessonsMap[e.userId] = (totalLessonsMap[e.userId] ?? 0) + (lessonCountMap[e.courseId] ?? 0);
     }
     const completedMap: Record<string, number> = {};
     for (const e of enrollments.filter((e) => e.status === "completed")) {
@@ -116,6 +128,7 @@ router.get("/instructor/students", async (req, res): Promise<void> => {
         coursesEnrolled: courseMap[s.id] ?? 0,
         coursesCompleted: completedMap[s.id] ?? 0,
         lessonsCompleted: progressMap[s.id] ?? 0,
+        totalLessons: totalLessonsMap[s.id] ?? 0,
         certificates: certMap[s.id] ?? 0,
         lastActivity: lastEnroll?.enrolledAt ?? s.createdAt,
       });
