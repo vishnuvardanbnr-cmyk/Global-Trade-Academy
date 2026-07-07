@@ -240,6 +240,21 @@ paths:
         "204":
           description: Deleted
 
+  /courses/reorder:
+    post:
+      operationId: reorderCourses
+      tags: [courses]
+      summary: Reorder courses (instructor/admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderCoursesInput"
+      responses:
+        "204":
+          description: Reordered
+
   /courses/featured:
     get:
       operationId: listFeaturedCourses
@@ -2143,7 +2158,21 @@ components:
         rating: { type: ["number", "null"] }
         reviewCount: { type: integer }
         isFeatured: { type: boolean }
+        sortOrder: { type: integer }
         createdAt: { type: string }
+
+    ReorderCoursesInput:
+      type: object
+      required: [updates]
+      properties:
+        updates:
+          type: array
+          items:
+            type: object
+            required: [id, sortOrder]
+            properties:
+              id: { type: integer }
+              sortOrder: { type: integer }
 
     CourseInput:
       type: object

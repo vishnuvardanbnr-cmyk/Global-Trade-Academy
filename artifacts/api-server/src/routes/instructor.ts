@@ -454,4 +454,32 @@ router.get("/instructor/reviews", async (req, res): Promise<void> => {
   }
 });
 
+// POST /api/courses/reorder — reorder courses by sortOrder
+router.post("/courses/reorder", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    if (!(await isInstructorOrAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { updates } = req.body as { updates: { id: number; sortOrder: number }[] };
+    if (!Array.isArray(updates)) { res.status(400).json({ error: "updates array required" }); return; }
+
+    const courseIds = await getInstructorCourseIds(clerkId);
+    const allowedSet = new Set(courseIds);
+
+    await Promise.all(
+      updates
+        .filter(({ id }) => allowedSet.has(id))
+        .map(({ id, sortOrder }) =>
+          db.update(coursesTable).set({ sortOrder }).where(eq(coursesTable.id, id))
+        )
+    );
+
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Error reordering courses");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

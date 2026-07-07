@@ -12,7 +12,7 @@ import {
   lessonProgressTable,
   coursePrerequisitesTable,
 } from "@workspace/db";
-import { eq, ilike, and, sql, inArray } from "drizzle-orm";
+import { eq, ilike, and, sql, inArray, asc } from "drizzle-orm";
 import { ownsCourse } from "../lib/lms";
 
 const router = Router();
@@ -45,6 +45,7 @@ async function buildCourseResponse(course: typeof coursesTable.$inferSelect) {
     rating: reviewCount > 0 ? Math.round((ratingResult[0]?.avg ?? 0) * 10) / 10 : 0,
     reviewCount,
     isFeatured: course.isFeatured,
+    sortOrder: course.sortOrder,
     createdAt: course.createdAt,
   };
 }
@@ -62,7 +63,7 @@ router.get("/courses", async (req, res): Promise<void> => {
     if (search) conditions.push(ilike(coursesTable.title, `%${search}%`));
     if (!instructorId) conditions.push(eq(coursesTable.status, "published"));
 
-    query = query.where(and(...conditions));
+    query = query.where(and(...conditions)).orderBy(asc(coursesTable.sortOrder));
     const courses = await query.limit(50);
     const results = await Promise.all(courses.map(buildCourseResponse));
     res.json(results);

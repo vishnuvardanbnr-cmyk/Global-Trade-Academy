@@ -62,7 +62,17 @@ export interface Course {
   rating?: number | null;
   reviewCount?: number;
   isFeatured?: boolean;
+  sortOrder?: number;
   createdAt?: string;
+}
+
+export type ReorderCoursesInputUpdatesItem = {
+  id: number;
+  sortOrder: number;
+};
+
+export interface ReorderCoursesInput {
+  updates: ReorderCoursesInputUpdatesItem[];
 }
 
 export interface CourseInput {

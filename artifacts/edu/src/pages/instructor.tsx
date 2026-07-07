@@ -8,7 +8,7 @@ import {
   getListInstructorReviewsQueryKey, getGetInstructorReviewCountQueryKey,
   useGetGateAnalytics, getGetGateAnalyticsQueryKey,
   useListPrerequisites, useSetPrerequisites, getListPrerequisitesQueryKey,
-  useGetMe,
+  useGetMe, useReorderCourses,
   type GateReviewItem,
   type LiveClass,
 } from "@workspace/api-client-react";
@@ -32,6 +32,7 @@ import {
   FileQuestion, Clock, BarChart3, Pencil, ImageIcon, CalendarPlus,
   ListTodo, ExternalLink, GraduationCap, TrendingUp, Award,
   UserCheck, ChevronRight, RefreshCw, Star, Megaphone, Send, Link2, Check, X,
+  ArrowUp, ArrowDown,
 } from "lucide-react";
 import CourseContentManager from "@/pages/instructor/CourseContentManager";
 import { cn } from "@/lib/utils";
@@ -1851,6 +1852,20 @@ export default function InstructorPanel() {
 
   const updateCourse = useUpdateCourse({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) }); toast({ title: "Course updated" }); } } });
   const deleteCourse = useDeleteCourse({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) }); toast({ title: "Course deleted" }); } } });
+  const { mutateAsync: reorderCourses } = useReorderCourses();
+
+  const moveCourse = async (idx: number, dir: -1 | 1) => {
+    if (!courses) return;
+    const sorted = [...courses].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= sorted.length) return;
+    [sorted[idx], sorted[newIdx]] = [sorted[newIdx], sorted[idx]];
+    const updates = sorted.map((c, i) => ({ id: c.id, sortOrder: i }));
+    try {
+      await reorderCourses({ data: { updates } });
+      qc.invalidateQueries({ queryKey: getListCoursesQueryKey({ instructorId: clerkId }) });
+    } catch { toast({ title: "Could not reorder", variant: "destructive" }); }
+  };
 
   const [uniqueStudentCount, setUniqueStudentCount] = useState<number | null>(null);
   useEffect(() => {
@@ -1956,8 +1971,26 @@ export default function InstructorPanel() {
                 <div className="py-10 text-center text-muted-foreground">No courses yet. Use the button above to create one.</div>
               ) : (
                 <div className="space-y-3">
-                  {courses.map((course) => (
-                    <div key={course.id} className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-secondary/30 transition-colors" data-testid={`row-course-${course.id}`}>
+                  {[...courses].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((course, idx, sorted) => (
+                    <div key={course.id} className="flex items-center gap-3 p-4 rounded-lg border border-border hover:bg-secondary/30 transition-colors" data-testid={`row-course-${course.id}`}>
+                      <div className="flex flex-col gap-0.5 shrink-0">
+                        <button
+                          onClick={() => moveCourse(idx, -1)}
+                          disabled={idx === 0}
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-secondary text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          title="Move up"
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => moveCourse(idx, 1)}
+                          disabled={idx === sorted.length - 1}
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-secondary text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          title="Move down"
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold truncate">{course.title}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">

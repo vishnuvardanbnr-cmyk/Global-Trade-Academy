@@ -138,6 +138,7 @@ export const ListCoursesResponseItem = zod.object({
   "rating": zod.number().nullish(),
   "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
+  "sortOrder": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 export const ListCoursesResponse = zod.array(ListCoursesResponseItem)
@@ -186,6 +187,7 @@ export const GetCourseResponse = zod.object({
   "rating": zod.number().nullish(),
   "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
+  "sortOrder": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -227,6 +229,7 @@ export const UpdateCourseResponse = zod.object({
   "rating": zod.number().nullish(),
   "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
+  "sortOrder": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -236,6 +239,17 @@ export const UpdateCourseResponse = zod.object({
  */
 export const DeleteCourseParams = zod.object({
   "courseId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Reorder courses (instructor/admin)
+ */
+export const ReorderCoursesBody = zod.object({
+  "updates": zod.array(zod.object({
+  "id": zod.number(),
+  "sortOrder": zod.number()
+}))
 })
 
 
@@ -260,6 +274,7 @@ export const ListFeaturedCoursesResponseItem = zod.object({
   "rating": zod.number().nullish(),
   "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
+  "sortOrder": zod.number().optional(),
   "createdAt": zod.string().optional()
 })
 export const ListFeaturedCoursesResponse = zod.array(ListFeaturedCoursesResponseItem)
@@ -442,6 +457,7 @@ export const ListEnrollmentsResponseItem = zod.object({
   "rating": zod.number().nullish(),
   "reviewCount": zod.number().optional(),
   "isFeatured": zod.boolean().optional(),
+  "sortOrder": zod.number().optional(),
   "createdAt": zod.string().optional()
 }).optional()
 })

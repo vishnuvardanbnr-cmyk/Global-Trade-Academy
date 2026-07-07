@@ -31,5 +31,6 @@ export interface Course {
   rating?: number | null;
   reviewCount?: number;
   isFeatured?: boolean;
+  sortOrder?: number;
   createdAt?: string;
 }

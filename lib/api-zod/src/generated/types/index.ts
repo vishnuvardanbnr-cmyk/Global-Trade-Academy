@@ -94,6 +94,8 @@ export * from './quizQuestion';
 export * from './quizQuestionInput';
 export * from './quizQuestionResult';
 export * from './quizStat';
+export * from './reorderCoursesInput';
+export * from './reorderCoursesInputUpdatesItem';
 export * from './review';
 export * from './reviewCount';
 export * from './reviewInput';

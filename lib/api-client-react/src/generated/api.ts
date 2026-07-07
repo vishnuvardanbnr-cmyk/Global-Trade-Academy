@@ -98,6 +98,7 @@ import type {
   QuizAttemptInput,
   QuizAttemptResult,
   QuizInput,
+  ReorderCoursesInput,
   Review,
   ReviewCount,
   ReviewInput,
@@ -885,6 +886,77 @@ export const useDeleteCourse = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteCourseMutationOptions(options));
+    }
+
+export const getReorderCoursesUrl = () => {
+
+
+
+
+  return `/api/courses/reorder`
+}
+
+/**
+ * @summary Reorder courses (instructor/admin)
+ */
+export const reorderCourses = async (reorderCoursesInput: ReorderCoursesInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReorderCoursesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reorderCoursesInput,)
+  }
+);}
+
+
+
+
+export const getReorderCoursesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderCourses>>, TError,{data: BodyType<ReorderCoursesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderCourses>>, TError,{data: BodyType<ReorderCoursesInput>}, TContext> => {
+
+const mutationKey = ['reorderCourses'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderCourses>>, {data: BodyType<ReorderCoursesInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  reorderCourses(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderCoursesMutationResult = NonNullable<Awaited<ReturnType<typeof reorderCourses>>>
+    export type ReorderCoursesMutationBody = BodyType<ReorderCoursesInput>
+    export type ReorderCoursesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reorder courses (instructor/admin)
+ */
+export const useReorderCourses = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderCourses>>, TError,{data: BodyType<ReorderCoursesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderCourses>>,
+        TError,
+        {data: BodyType<ReorderCoursesInput>},
+        TContext
+      > => {
+      return useMutation(getReorderCoursesMutationOptions(options));
     }
 
 export const getListFeaturedCoursesUrl = () => {

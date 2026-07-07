@@ -15,6 +15,7 @@ export const coursesTable = pgTable("courses", {
   price: numeric("price", { precision: 10, scale: 2 }),
   duration: integer("duration"), // total minutes
   isFeatured: boolean("is_featured").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
