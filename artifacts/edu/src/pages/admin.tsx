@@ -3282,7 +3282,7 @@ function SubscriptionsTab() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <code className="text-xs bg-secondary rounded px-1.5 py-0.5 max-w-[140px] truncate block">{sub.txHash ?? "—"}</code>
-                          {sub.screenshotUrl && (
+                          {sub.screenshotUrl && /^https?:\/\//i.test(sub.screenshotUrl) && (
                             <a href={sub.screenshotUrl} target="_blank" rel="noopener noreferrer"
                               className="text-primary hover:underline text-xs shrink-0">
                               <ExternalLink className="h-3 w-3" />

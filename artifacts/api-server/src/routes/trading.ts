@@ -7,7 +7,7 @@ import {
   masterPositionsTable, usersTable,
   platformSubscriptionsTable, subscriptionPlansTable,
 } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
 import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe, metaapiCreateAccount } from "../lib/fan-out";
 
@@ -609,8 +609,10 @@ const DEFAULT_PLANS = [
 
 router.get("/subscription-plans", async (req, res): Promise<void> => {
   try {
-    const rows = await db.select().from(subscriptionPlansTable);
+    const rows = await db.select().from(subscriptionPlansTable)
+      .where(eq(subscriptionPlansTable.enabled, true));
     if (!rows.length) {
+      // Return default plans if table is empty (all enabled by default)
       res.json(DEFAULT_PLANS.map((p) => ({ ...p, enabled: true })));
       return;
     }
@@ -634,19 +636,24 @@ router.get("/my-platform-subscription", async (req, res): Promise<void> => {
 
     const now = new Date();
 
-    const sub = await db.select().from(platformSubscriptionsTable)
+    // First, check for a valid active subscription (best entitlement)
+    const allSubs = await db.select().from(platformSubscriptionsTable)
       .where(eq(platformSubscriptionsTable.userId, clerkId))
-      .orderBy(desc(platformSubscriptionsTable.createdAt))
-      .limit(1)
-      .then((r) => r[0]);
+      .orderBy(desc(platformSubscriptionsTable.createdAt));
 
-    if (!sub) { res.json(null); return; }
+    if (!allSubs.length) { res.json(null); return; }
 
-    // Re-check expiry
-    if (sub.status === "active" && sub.endDate && sub.endDate < now) {
-      await db.update(platformSubscriptionsTable).set({ status: "expired" }).where(eq(platformSubscriptionsTable.id, sub.id));
-      sub.status = "expired";
+    // Expire any active subs that have passed their endDate
+    for (const s of allSubs) {
+      if (s.status === "active" && s.endDate && s.endDate < now) {
+        await db.update(platformSubscriptionsTable).set({ status: "expired" }).where(eq(platformSubscriptionsTable.id, s.id));
+        s.status = "expired";
+      }
     }
+
+    // Priority: active > pending_payment > rejected > expired
+    const priority = ["active","pending_payment","rejected","expired"];
+    const sub = allSubs.sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status))[0];
 
     res.json({
       id: sub.id, plan: sub.plan, status: sub.status,
@@ -676,9 +683,21 @@ router.post("/platform-subscriptions", async (req, res): Promise<void> => {
     if (!txHash?.trim()) {
       res.status(400).json({ error: "txHash / reference is required" }); return;
     }
+    // Validate screenshotUrl scheme to prevent javascript: URLs
+    if (screenshotUrl?.trim() && !/^https?:\/\//i.test(screenshotUrl.trim())) {
+      res.status(400).json({ error: "screenshotUrl must be an http(s) URL" }); return;
+    }
 
-    // Look up plan price
-    const planRow = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.plan, plan)).limit(1).then((r) => r[0]);
+    // Look up plan price — also enforces that the plan is enabled
+    const planRow = await db.select().from(subscriptionPlansTable)
+      .where(and(eq(subscriptionPlansTable.plan, plan), eq(subscriptionPlansTable.enabled, true)))
+      .limit(1).then((r) => r[0]);
+    // If the table is empty (default plans), fallback to DEFAULT_PLANS for known plans;
+    // if plan is explicitly disabled, reject
+    const tableHasRows = await db.select({ count: sql`count(*)` }).from(subscriptionPlansTable).then((r) => Number(r[0]?.count ?? 0));
+    if (tableHasRows > 0 && !planRow) {
+      res.status(400).json({ error: "Selected plan is not available" }); return;
+    }
     const defaults = DEFAULT_PLANS.find((p) => p.plan === plan);
     const priceUsdt = planRow?.priceUsdt ?? defaults?.priceUsdt ?? "0";
     const priceFiat = planRow?.priceFiat ?? defaults?.priceFiat ?? "0";
@@ -708,18 +727,18 @@ router.post("/platform-subscriptions", async (req, res): Promise<void> => {
 /* ── Helper: gate copy trading behind an active platform subscription */
 async function requireActiveSub(clerkId: string): Promise<boolean> {
   const now = new Date();
-  const sub = await db.select().from(platformSubscriptionsTable)
+  // Find any active sub for this user
+  const subs = await db.select().from(platformSubscriptionsTable)
     .where(and(
       eq(platformSubscriptionsTable.userId, clerkId),
       eq(platformSubscriptionsTable.status, "active"),
-    ))
-    .limit(1).then((r) => r[0]);
-  if (!sub) return false;
-  if (sub.endDate && sub.endDate < now) {
+    ));
+  for (const sub of subs) {
+    if (!sub.endDate || sub.endDate >= now) return true;
+    // Expired — mark it
     await db.update(platformSubscriptionsTable).set({ status: "expired" }).where(eq(platformSubscriptionsTable.id, sub.id));
-    return false;
   }
-  return true;
+  return false;
 }
 
 export default router;

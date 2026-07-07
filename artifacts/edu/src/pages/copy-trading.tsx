@@ -679,7 +679,12 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
       fetch("/api/subscription-plans").then((r) => r.ok ? r.json() : []),
     ]);
     setSub(subRes as PlatformSubStatus);
-    setPlans((plansRes as SubPlan[]).filter((p) => p.enabled));
+    const enabledPlans = (plansRes as SubPlan[]).filter((p) => p.enabled);
+    setPlans(enabledPlans);
+    // Default to first enabled plan, or keep current if still valid
+    if (enabledPlans.length > 0) {
+      setSelectedPlan((prev) => enabledPlans.find((p) => p.plan === prev) ? prev : enabledPlans[0].plan);
+    }
     if ((subRes as PlatformSubStatus)?.status === "active") onActive();
   }, [onActive]);
 
