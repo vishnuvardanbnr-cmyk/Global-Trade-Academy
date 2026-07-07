@@ -3565,6 +3565,40 @@ function TradingTab() {
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<number | null>(null);
 
+  /* MetaAPI config */
+  const [metaapiToken, setMetaapiToken] = useState("");
+  const [metaapiStrategy, setMetaapiStrategy] = useState("");
+  const [showMetaapiToken, setShowMetaapiToken] = useState(false);
+  const [metaapiStatus, setMetaapiStatus] = useState<{ metaapiTokenSet: boolean; metaapiStrategySet: boolean; metaapiToken: string; metaapiStrategy: string } | null>(null);
+  const [metaapiSaving, setMetaapiSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/integration-settings")
+      .then((r) => r.json())
+      .then((d) => { setMetaapiStatus(d); if (d.metaapiStrategy) setMetaapiStrategy(d.metaapiStrategy); })
+      .catch(() => {});
+  }, []);
+
+  const saveMetaapiConfig = async () => {
+    setMetaapiSaving(true);
+    try {
+      const body: Record<string, string> = {};
+      if (metaapiToken.trim())    body.metaapiToken    = metaapiToken.trim();
+      if (metaapiStrategy.trim()) body.metaapiStrategy = metaapiStrategy.trim();
+      const r = await fetch("/api/admin/integration-settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!r.ok) { const d = await r.json() as { error: string }; throw new Error(d.error); }
+      const updated = await fetch("/api/admin/integration-settings").then((x) => x.json()) as typeof metaapiStatus;
+      setMetaapiStatus(updated);
+      if (updated?.metaapiStrategy) setMetaapiStrategy(updated.metaapiStrategy);
+      setMetaapiToken("");
+      toast({ title: "MetaAPI settings saved" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to save", variant: "destructive" });
+    } finally { setMetaapiSaving(false); }
+  };
+
   const loadSection = useCallback(async (s: typeof section) => {
     setLoading(true);
     try {
@@ -3947,6 +3981,57 @@ function TradingTab() {
           )}
         </>
       )}
+
+      {/* MetaAPI Config */}
+      <Card className="mt-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="text-purple-400 font-semibold">MetaAPI</span>
+            <span className="text-muted-foreground font-normal">— CopyFactory credentials</span>
+            <div className="ml-auto flex gap-2">
+              <Badge variant={metaapiStatus?.metaapiTokenSet ? "default" : "secondary"} className="text-xs">
+                {metaapiStatus?.metaapiTokenSet ? "Token set ✓" : "Token not set"}
+              </Badge>
+              <Badge variant={metaapiStatus?.metaapiStrategySet ? "default" : "secondary"} className="text-xs">
+                {metaapiStatus?.metaapiStrategySet ? "Strategy set ✓" : "Strategy not set"}
+              </Badge>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">API Token</label>
+              <div className="flex gap-1.5">
+                <Input
+                  type={showMetaapiToken ? "text" : "password"}
+                  placeholder={metaapiStatus?.metaapiTokenSet ? "Paste to replace…" : "app.metaapi.cloud → Account Settings → API Token"}
+                  value={metaapiToken}
+                  onChange={(e) => setMetaapiToken(e.target.value)}
+                  className="text-sm h-8"
+                />
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowMetaapiToken((v) => !v)}>
+                  {showMetaapiToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CopyFactory Strategy ID</label>
+              <Input
+                placeholder={metaapiStatus?.metaapiStrategySet ? metaapiStatus.metaapiStrategy : "app.metaapi.cloud → CopyFactory → Strategies → copy ID"}
+                value={metaapiStrategy}
+                onChange={(e) => setMetaapiStrategy(e.target.value)}
+                className="text-sm h-8"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={saveMetaapiConfig} disabled={metaapiSaving || (!metaapiToken.trim() && !metaapiStrategy.trim())}>
+              <Save className="h-3.5 w-3.5 mr-1.5" />{metaapiSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
