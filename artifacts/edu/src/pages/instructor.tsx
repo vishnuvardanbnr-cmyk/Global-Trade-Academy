@@ -1172,7 +1172,7 @@ function AnalyticsTab({ courses }: { courses?: { id: number; title: string }[] }
 /* ─── Enrollments Tab ─── */
 type Enrollment = { id: number; userId: string; courseId: number; status: string; enrolledAt: string; completedAt: string | null; userName: string; userEmail: string; courseTitle: string; groupName: string | null; };
 
-type EnrollmentRequest = { id: number; userId: string; courseId: number; status: string; enrolledAt: string | null; userName: string; userEmail: string; courseTitle: string };
+type EnrollmentRequest = { id: number; userId: string; courseId: number; status: string; enrolledAt: string | null; userName: string; userEmail: string; courseTitle: string; groupName: string | null };
 
 function EnrollmentsTab() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -1253,6 +1253,7 @@ function EnrollmentsTab() {
                   <tr className="border-b border-amber-100 text-amber-700 text-xs">
                     <th className="text-left px-4 py-2.5 font-medium">Student</th>
                     <th className="text-left px-4 py-2.5 font-medium">Course</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Group</th>
                     <th className="text-right px-4 py-2.5 font-medium">Requested</th>
                     <th className="px-4 py-2.5" />
                   </tr>
@@ -1265,6 +1266,13 @@ function EnrollmentsTab() {
                         <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{r.userEmail}</p>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground truncate max-w-[180px]">{r.courseTitle}</td>
+                      <td className="px-4 py-3">
+                        {r.groupName ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2 py-0.5 font-medium">{r.groupName}</span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right text-[11px] text-muted-foreground">{r.enrolledAt ? new Date(r.enrolledAt).toLocaleDateString() : "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
