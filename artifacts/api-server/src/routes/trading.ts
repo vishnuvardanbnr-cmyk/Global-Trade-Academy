@@ -8,7 +8,7 @@ import {
   platformSubscriptionsTable, subscriptionPlansTable,
   siteSettingsTable,
 } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
 import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe, metaapiCreateAccount } from "../lib/fan-out";
 
@@ -713,11 +713,24 @@ router.get("/my-platform-subscription", async (req, res): Promise<void> => {
     const priority = ["active","pending_payment","rejected","expired"];
     const sub = allSubs.sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status))[0];
 
+    // For pending payments, include the deposit address and expected amount
+    let depositAddress: string | null = null;
+    if (sub.status === "pending_payment") {
+      const settingsRow = await db.select().from(siteSettingsTable)
+        .where(eq(siteSettingsTable.key, "payment_settings")).limit(1).then((r) => r[0]);
+      const settings = settingsRow?.value ? (JSON.parse(settingsRow.value as string) as Record<string, string>) : {};
+      depositAddress = settings.usdtAddress?.trim() ?? null;
+    }
+
     res.json({
       id: sub.id, plan: sub.plan, status: sub.status,
       startDate: sub.startDate, endDate: sub.endDate,
-      paymentMethod: sub.paymentMethod, adminNote: sub.adminNote,
+      txHash: sub.txHash, adminNote: sub.adminNote,
       createdAt: sub.createdAt,
+      // payment initiation fields
+      expectedAmount: sub.status === "pending_payment" ? parseFloat(sub.priceUsdt as string) : undefined,
+      depositAddress: sub.status === "pending_payment" ? depositAddress : undefined,
+      expiresAt: sub.status === "pending_payment" ? new Date(new Date(sub.createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString() : undefined,
     });
   } catch (err) {
     req.log.error({ err }, "Error getting platform subscription");
@@ -725,59 +738,74 @@ router.get("/my-platform-subscription", async (req, res): Promise<void> => {
   }
 });
 
-/* ── POST /platform-subscriptions — submit payment proof ─────── */
+/* ── POST /platform-subscriptions — initiate automated USDT payment ── */
 router.post("/platform-subscriptions", async (req, res): Promise<void> => {
   try {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-    const { plan, paymentMethod, txHash, screenshotUrl } = req.body as Record<string, string>;
+    const { plan } = req.body as { plan?: string };
     if (!plan || !["1m","3m","6m","1y"].includes(plan)) {
       res.status(400).json({ error: "plan must be 1m, 3m, 6m, or 1y" }); return;
     }
-    if (!paymentMethod || !["usdt_bep20","bank_transfer"].includes(paymentMethod)) {
-      res.status(400).json({ error: "paymentMethod must be usdt_bep20 or bank_transfer" }); return;
-    }
-    if (!txHash?.trim()) {
-      res.status(400).json({ error: "txHash / reference is required" }); return;
-    }
-    // Validate screenshotUrl scheme to prevent javascript: URLs
-    if (screenshotUrl?.trim() && !/^https?:\/\//i.test(screenshotUrl.trim())) {
-      res.status(400).json({ error: "screenshotUrl must be an http(s) URL" }); return;
+
+    // Load deposit address — required for automated payment
+    const settingsRow = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "payment_settings")).limit(1).then((r) => r[0]);
+    const settings = settingsRow?.value ? (JSON.parse(settingsRow.value as string) as Record<string, string>) : {};
+    const depositAddress = settings.usdtAddress?.trim();
+    if (!depositAddress) {
+      res.status(503).json({ error: "Payment system not configured. Please contact support." }); return;
     }
 
     // Look up plan price — also enforces that the plan is enabled
     const planRow = await db.select().from(subscriptionPlansTable)
       .where(and(eq(subscriptionPlansTable.plan, plan), eq(subscriptionPlansTable.enabled, true)))
       .limit(1).then((r) => r[0]);
-    // If the table is empty (default plans), fallback to DEFAULT_PLANS for known plans;
-    // if plan is explicitly disabled, reject
     const tableHasRows = await db.select({ count: sql`count(*)` }).from(subscriptionPlansTable).then((r) => Number(r[0]?.count ?? 0));
     if (tableHasRows > 0 && !planRow) {
       res.status(400).json({ error: "Selected plan is not available" }); return;
     }
     const defaults = DEFAULT_PLANS.find((p) => p.plan === plan);
-    const priceUsdt = planRow?.priceUsdt ?? defaults?.priceUsdt ?? "0";
-    const priceFiat = planRow?.priceFiat ?? defaults?.priceFiat ?? "0";
+    const basePrice = parseFloat((planRow?.priceUsdt ?? defaults?.priceUsdt ?? "49").toString());
 
-    // Cancel any existing pending_payment for this user so they can resubmit
+    // Assign a unique expected amount (basePrice + small cents suffix) to distinguish concurrent payments
+    const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const existingAmounts = await db.select({ priceUsdt: platformSubscriptionsTable.priceUsdt })
+      .from(platformSubscriptionsTable)
+      .where(and(
+        eq(platformSubscriptionsTable.status, "pending_payment"),
+        gte(platformSubscriptionsTable.createdAt, windowStart),
+      ));
+    const usedAmounts = new Set(existingAmounts.map((r) => parseFloat(r.priceUsdt as string)));
+    let uniqueAmount = basePrice;
+    for (let i = 1; i <= 97; i++) {
+      const candidate = parseFloat((basePrice + i * 0.01).toFixed(2));
+      if (!usedAmounts.has(candidate)) { uniqueAmount = candidate; break; }
+    }
+
+    // Cancel any existing pending_payment for this user
     await db.update(platformSubscriptionsTable)
-      .set({ status: "rejected", adminNote: "Superseded by new submission" })
+      .set({ status: "cancelled", adminNote: "Superseded by new payment" })
       .where(and(
         eq(platformSubscriptionsTable.userId, clerkId),
         eq(platformSubscriptionsTable.status, "pending_payment"),
       ));
 
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const [inserted] = await db.insert(platformSubscriptionsTable).values({
       userId: clerkId, plan, status: "pending_payment",
-      priceUsdt: priceUsdt.toString(), priceFiat: priceFiat.toString(),
-      paymentMethod, txHash: txHash.trim(),
-      screenshotUrl: screenshotUrl?.trim() ?? null,
+      priceUsdt: uniqueAmount.toFixed(2),
+      priceFiat: (planRow?.priceFiat ?? defaults?.priceFiat ?? "0").toString(),
+      paymentMethod: "usdt_bep20",
     }).returning();
 
-    res.status(201).json({ id: inserted.id, status: inserted.status });
+    res.status(201).json({
+      id: inserted.id, status: "pending_payment",
+      depositAddress, expectedAmount: uniqueAmount, expiresAt,
+    });
   } catch (err) {
-    req.log.error({ err }, "Error submitting platform subscription");
+    req.log.error({ err }, "Error initiating platform subscription");
     res.status(500).json({ error: "Internal server error" });
   }
 });

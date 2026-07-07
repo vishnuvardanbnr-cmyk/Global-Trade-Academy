@@ -3079,9 +3079,9 @@ function GroupsTab() {
 type PlanRow = { plan: string; label: string; durationMonths: number; priceUsdt: number; priceFiat: number; enabled: boolean };
 type PlatformSub = {
   id: number; userId: string; userEmail: string; userName: string;
-  plan: string; status: string; paymentMethod: string | null; txHash: string | null;
-  screenshotUrl: string | null; adminNote: string | null;
-  priceUsdt: number | null; startDate: string | null; endDate: string | null; createdAt: string;
+  plan: string; status: string; txHash: string | null;
+  adminNote: string | null; priceUsdt: number | null;
+  startDate: string | null; endDate: string | null; createdAt: string;
 };
 
 function SubscriptionsTab() {
@@ -3095,6 +3095,18 @@ function SubscriptionsTab() {
   const [actingId, setActingId] = useState<number | null>(null);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+
+  const [paySettings, setPaySettings] = useState({ usdtAddress: "", bscscanApiKey: "" });
+  const [paySettingsEdits, setPaySettingsEdits] = useState({ usdtAddress: "", bscscanApiKey: "" });
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [savingPaySettings, setSavingPaySettings] = useState(false);
+
+  const loadPaySettings = async () => {
+    const r = await fetch("/api/admin/payment-settings");
+    const data = await r.json() as { usdtAddress: string; bscscanApiKey: string };
+    setPaySettings(data);
+    setPaySettingsEdits(data);
+  };
 
   const loadPlans = async () => {
     const r = await fetch("/api/admin/subscription-plans");
@@ -3112,10 +3124,25 @@ function SubscriptionsTab() {
   };
 
   useEffect(() => {
-    Promise.all([loadPlans(), loadSubs()]).finally(() => setLoading(false));
+    Promise.all([loadPaySettings(), loadPlans(), loadSubs()]).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { setLoading(true); loadSubs().finally(() => setLoading(false)); }, [statusFilter]);
+
+  const savePaySettings = async () => {
+    setSavingPaySettings(true);
+    try {
+      const r = await fetch("/api/admin/payment-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(paySettingsEdits),
+      });
+      if (!r.ok) throw new Error("Failed");
+      toast({ title: "Payment settings saved" });
+      await loadPaySettings();
+    } catch { toast({ title: "Failed to save", variant: "destructive" }); }
+    finally { setSavingPaySettings(false); }
+  };
 
   const savePlan = async (plan: string) => {
     setSavingPlan(plan);
@@ -3163,6 +3190,55 @@ function SubscriptionsTab() {
 
   return (
     <div className="space-y-6">
+      {/* Payment Settings */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <DollarSign className="h-4 w-4" />USDT Payment Settings
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">Configure the BEP-20 deposit address and BscScan API key for automated payment detection.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">USDT Deposit Address (BEP-20)</label>
+            <Input
+              placeholder="0x..."
+              value={paySettingsEdits.usdtAddress}
+              onChange={(e) => setPaySettingsEdits((p) => ({ ...p, usdtAddress: e.target.value }))}
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">All user payments will be sent to this address. Keep it secure.</p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">BscScan API Key</label>
+            <div className="relative">
+              <Input
+                type={showApiKey ? "text" : "password"}
+                placeholder="Get a free key at bscscan.com/apis"
+                value={paySettingsEdits.bscscanApiKey}
+                onChange={(e) => setPaySettingsEdits((p) => ({ ...p, bscscanApiKey: e.target.value }))}
+                className="pr-10 font-mono text-sm"
+              />
+              <button type="button" onClick={() => setShowApiKey((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">Used to verify incoming USDT transactions on BSC. Without this, the poller uses a shared rate-limited key.</p>
+          </div>
+          {paySettings.usdtAddress && (
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-500">
+              <CheckCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>Active deposit address: <code className="font-mono">{paySettings.usdtAddress.slice(0, 10)}…{paySettings.usdtAddress.slice(-6)}</code></span>
+            </div>
+          )}
+          <Button onClick={savePaySettings} disabled={savingPaySettings} className="w-full sm:w-auto">
+            {savingPaySettings ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            Save Payment Settings
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Plan pricing */}
       <Card>
         <CardHeader className="pb-3">
@@ -3256,10 +3332,10 @@ function SubscriptionsTab() {
                   <tr className="border-b border-border text-xs text-muted-foreground font-semibold uppercase tracking-wide">
                     <th className="text-left px-4 py-3">User</th>
                     <th className="text-left px-4 py-3">Plan</th>
+                    <th className="text-left px-4 py-3">Amount</th>
                     <th className="text-left px-4 py-3">Status</th>
-                    <th className="text-left px-4 py-3">Method</th>
-                    <th className="text-left px-4 py-3">TX / Ref</th>
-                    <th className="text-left px-4 py-3">Submitted</th>
+                    <th className="text-left px-4 py-3">TX Hash (auto-detected)</th>
+                    <th className="text-left px-4 py-3">Date</th>
                     <th className="text-right px-4 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -3271,22 +3347,26 @@ function SubscriptionsTab() {
                         <p className="text-xs text-muted-foreground">{sub.userEmail}</p>
                       </td>
                       <td className="px-4 py-3 font-medium">{PLAN_LABELS[sub.plan] ?? sub.plan}</td>
+                      <td className="px-4 py-3 font-mono text-sm">
+                        {sub.priceUsdt != null ? `$${Number(sub.priceUsdt).toFixed(2)}` : "—"}
+                      </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className={STATUS_COLORS[sub.status] ?? ""}>
                           {sub.status.replace("_", " ")}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs capitalize">
-                        {sub.paymentMethod?.replace("_", " ") ?? "—"}
-                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <code className="text-xs bg-secondary rounded px-1.5 py-0.5 max-w-[140px] truncate block">{sub.txHash ?? "—"}</code>
-                          {sub.screenshotUrl && /^https?:\/\//i.test(sub.screenshotUrl) && (
-                            <a href={sub.screenshotUrl} target="_blank" rel="noopener noreferrer"
-                              className="text-primary hover:underline text-xs shrink-0">
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
+                          {sub.txHash ? (
+                            <>
+                              <code className="text-xs bg-secondary rounded px-1.5 py-0.5 max-w-[140px] truncate block">{sub.txHash}</code>
+                              <a href={`https://bscscan.com/tx/${sub.txHash}`} target="_blank" rel="noopener noreferrer"
+                                className="text-primary hover:underline text-xs shrink-0">
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">awaiting detection…</span>
                           )}
                         </div>
                         {sub.adminNote && <p className="text-xs text-muted-foreground mt-0.5 italic">{sub.adminNote}</p>}

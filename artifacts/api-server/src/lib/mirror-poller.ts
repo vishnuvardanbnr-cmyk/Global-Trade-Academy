@@ -260,8 +260,8 @@ async function processMasterAccount(
     .from(masterPositionsTable)
     .where(eq(masterPositionsTable.masterAccountId, account.id));
 
-  const storedMap = new Map(stored.map((p) => [p.brokerPositionId, p]));
-  const liveMap   = new Map(live.map((p) => [p.brokerPositionId, p]));
+  const storedMap = new Map(stored.map((p) => [p.brokerPositionId ?? "", p]));
+  const liveMap   = new Map(live.map((p) => [p.brokerPositionId ?? "", p]));
 
   /* 3. NEW positions — not in stored snapshot */
   for (const [posId, lp] of liveMap) {

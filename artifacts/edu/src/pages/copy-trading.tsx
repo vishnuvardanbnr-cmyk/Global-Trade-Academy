@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -659,56 +659,116 @@ function QuickTradePanel({
 ════════════════════════════════════════════════════════════════════ */
 type PlatformSubStatus = {
   id: number; plan: string; status: string;
-  startDate: string | null; endDate: string | null; adminNote: string | null;
+  startDate: string | null; endDate: string | null;
+  txHash: string | null; adminNote: string | null; createdAt: string;
+  // pending_payment fields
+  expectedAmount?: number; depositAddress?: string; expiresAt?: string;
 } | null;
-type SubPlan = { plan: string; label: string; durationMonths: number; priceUsdt: number; priceFiat: number; enabled: boolean };
+type SubPlan = { plan: string; label: string; durationMonths: number; priceUsdt: number; enabled: boolean };
+
+const PLAN_LABELS: Record<string, string> = { "1m": "1 Month", "3m": "3 Months", "6m": "6 Months", "1y": "1 Year" };
+
+/* ── Countdown timer ── */
+function Countdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState("");
+  useEffect(() => {
+    const update = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      if (diff <= 0) { setRemaining("Expired"); return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setRemaining(`${h}h ${m.toString().padStart(2,"0")}m ${s.toString().padStart(2,"0")}s`);
+    };
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [expiresAt]);
+  return <span className="font-mono text-sm">{remaining}</span>;
+}
 
 function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
   const { toast } = useToast();
   const [sub, setSub] = useState<PlatformSubStatus | "loading">("loading");
   const [plans, setPlans] = useState<SubPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string>("3m");
-  const [paymentMethod, setPaymentMethod] = useState<"usdt_bep20" | "bank_transfer">("usdt_bep20");
-  const [txHash, setTxHash] = useState("");
-  const [screenshotUrl, setScreenshotUrl] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [initiating, setInitiating] = useState(false);
+  // pending_payment view: shown after API returns payment intent
+  const [paymentIntent, setPaymentIntent] = useState<{ depositAddress: string; expectedAmount: number; expiresAt: string } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const reload = useCallback(async () => {
-    const [subRes, plansRes] = await Promise.all([
-      fetch("/api/my-platform-subscription").then((r) => r.ok ? r.json() : null),
-      fetch("/api/subscription-plans").then((r) => r.ok ? r.json() : []),
-    ]);
-    setSub(subRes as PlatformSubStatus);
-    const enabledPlans = (plansRes as SubPlan[]).filter((p) => p.enabled);
-    setPlans(enabledPlans);
-    // Default to first enabled plan, or keep current if still valid
-    if (enabledPlans.length > 0) {
-      setSelectedPlan((prev) => enabledPlans.find((p) => p.plan === prev) ? prev : enabledPlans[0].plan);
+  const refreshSub = useCallback(async () => {
+    const r = await fetch("/api/my-platform-subscription");
+    const data = r.ok ? await r.json() as PlatformSubStatus : null;
+    setSub(data);
+    if (data?.status === "active") {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      onActive();
     }
-    if ((subRes as PlatformSubStatus)?.status === "active") onActive();
+    if (data?.status === "pending_payment" && data.depositAddress && data.expectedAmount) {
+      setPaymentIntent({ depositAddress: data.depositAddress, expectedAmount: data.expectedAmount, expiresAt: data.expiresAt! });
+    }
+    return data;
   }, [onActive]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const init = async () => {
+      const [subData, plansData] = await Promise.all([
+        fetch("/api/my-platform-subscription").then((r) => r.ok ? r.json() as Promise<PlatformSubStatus> : null),
+        fetch("/api/subscription-plans").then((r) => r.ok ? r.json() as Promise<SubPlan[]> : []),
+      ]);
+      const enabledPlans = (plansData as SubPlan[]).filter((p) => p.enabled);
+      setPlans(enabledPlans);
+      if (enabledPlans.length > 0) setSelectedPlan(enabledPlans[0].plan);
+      setSub(subData as PlatformSubStatus);
+      if ((subData as PlatformSubStatus)?.status === "active") { onActive(); return; }
+      if ((subData as PlatformSubStatus)?.status === "pending_payment") {
+        const s = subData as NonNullable<PlatformSubStatus>;
+        if (s.depositAddress && s.expectedAmount) {
+          setPaymentIntent({ depositAddress: s.depositAddress, expectedAmount: s.expectedAmount, expiresAt: s.expiresAt! });
+        }
+      }
+    };
+    void init();
+  }, [onActive]);
 
-  const handleSubmit = async () => {
-    if (!txHash.trim()) { toast({ title: "TX hash / reference required", variant: "destructive" }); return; }
-    setSubmitting(true);
+  // Auto-poll when in pending_payment state
+  useEffect(() => {
+    if (sub !== "loading" && sub?.status === "pending_payment") {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(() => { void refreshSub(); }, 10_000);
+    } else {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [sub, refreshSub]);
+
+  const initiatePay = async () => {
+    setInitiating(true);
     try {
       const r = await fetch("/api/platform-subscriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: selectedPlan, paymentMethod, txHash, screenshotUrl }),
+        body: JSON.stringify({ plan: selectedPlan }),
       });
-      if (!r.ok) { const d = await r.json() as { error: string }; throw new Error(d.error); }
-      toast({ title: "Payment submitted — awaiting admin approval" });
-      await reload();
+      const d = await r.json() as { error?: string; depositAddress?: string; expectedAmount?: number; expiresAt?: string; id?: number };
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      setPaymentIntent({ depositAddress: d.depositAddress!, expectedAmount: d.expectedAmount!, expiresAt: d.expiresAt! });
+      setSub((prev) => prev === "loading" ? prev : { ...(prev ?? {} as NonNullable<PlatformSubStatus>), status: "pending_payment", id: d.id ?? 0, plan: selectedPlan, startDate: null, endDate: null, txHash: null, adminNote: null, createdAt: new Date().toISOString(), expectedAmount: d.expectedAmount, depositAddress: d.depositAddress, expiresAt: d.expiresAt });
     } catch (e: unknown) {
-      toast({ title: e instanceof Error ? e.message : "Failed to submit", variant: "destructive" });
-    } finally { setSubmitting(false); }
+      toast({ title: e instanceof Error ? e.message : "Failed to initiate payment", variant: "destructive" });
+    } finally { setInitiating(false); }
   };
 
-  const PLAN_LABELS: Record<string, string> = { "1m": "1 Month", "3m": "3 Months", "6m": "6 Months", "1y": "1 Year" };
-  const USDT_ADDRESS = "0xYourWalletAddressHere"; // admin sets this from a site setting
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => toast({ title: `${label} copied!` })).catch(() => {});
+  };
+
+  const cancelPayment = async () => {
+    setPaymentIntent(null);
+    setSub(null);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
 
   if (sub === "loading") return (
     <div className="flex items-center justify-center gap-2 text-muted-foreground py-20">
@@ -716,66 +776,97 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
     </div>
   );
 
-  /* ── Active subscription — render the real UI ── */
-  if (sub?.status === "active") return null; // parent replaces with inner
+  /* ── Active → parent renders inner ── */
+  if (sub?.status === "active") return null;
 
-  /* ── Pending approval ── */
-  if (sub?.status === "pending_payment") return (
-    <div className="max-w-lg mx-auto py-16 space-y-4 text-center">
-      <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
-        <Clock className="h-8 w-8 text-amber-500" />
+  /* ── Pending payment → show payment screen ── */
+  if ((sub?.status === "pending_payment" || paymentIntent) && paymentIntent) return (
+    <div className="max-w-lg mx-auto py-10 px-4 space-y-5">
+      <div className="text-center space-y-2">
+        <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+          <Loader2 className="h-7 w-7 text-primary animate-spin" />
+        </div>
+        <h2 className="text-xl font-bold">Awaiting Payment</h2>
+        <p className="text-muted-foreground text-sm">Send the exact amount below — your access activates automatically once the transfer is detected on-chain.</p>
       </div>
-      <h2 className="text-xl font-bold">Payment Submitted</h2>
-      <p className="text-muted-foreground text-sm">
-        Your payment is awaiting admin review. This usually takes up to 24 hours.
-        Once approved, copy trading will unlock automatically.
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Plan: <strong>{PLAN_LABELS[sub.plan] ?? sub.plan}</strong> · Submitted {new Date(sub.endDate ?? Date.now()).toLocaleDateString()}
-      </p>
-      <div className="flex items-center justify-center gap-2 pt-2">
-        <Badge variant="outline" className="text-amber-400 border-amber-400/30">Pending Review</Badge>
+
+      {/* Amount to send */}
+      <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Send exactly</span>
+          <button onClick={() => copyToClipboard(paymentIntent.expectedAmount.toFixed(2), "Amount")}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <Sparkles className="h-3 w-3" />Copy amount
+          </button>
+        </div>
+        <p className="text-3xl font-black text-primary tabular-nums">${paymentIntent.expectedAmount.toFixed(2)} <span className="text-base font-semibold text-muted-foreground">USDT</span></p>
+        <p className="text-xs text-amber-500 font-medium">⚠ The exact amount matters — it's how your payment is matched automatically.</p>
       </div>
+
+      {/* Deposit address */}
+      <div className="rounded-xl border border-border bg-secondary/30 p-4 space-y-2">
+        <p className="text-sm font-medium">To this address (BEP-20 / BSC network only):</p>
+        <div className="flex items-center gap-2">
+          <code className="text-xs bg-background border border-border rounded px-3 py-2 flex-1 break-all select-all leading-relaxed">{paymentIntent.depositAddress}</code>
+          <button onClick={() => copyToClipboard(paymentIntent.depositAddress, "Address")}
+            className="shrink-0 p-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
+            <Sparkles className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">Network: BNB Smart Chain (BSC) · Token: USDT (BEP-20)</p>
+      </div>
+
+      {/* Status + timer */}
+      <div className="flex items-center justify-between text-sm px-1">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span>Checking for payment…</span>
+        </div>
+        <div className="flex items-center gap-1 text-muted-foreground">
+          <Clock className="h-3.5 w-3.5" />
+          <span>Expires in </span>
+          <Countdown expiresAt={paymentIntent.expiresAt} />
+        </div>
+      </div>
+
+      {/* Plan info */}
+      <p className="text-center text-xs text-muted-foreground">Plan: <strong className="text-foreground">{PLAN_LABELS[sub?.plan ?? selectedPlan] ?? selectedPlan}</strong></p>
+
+      <Button variant="ghost" size="sm" className="w-full text-muted-foreground text-xs" onClick={cancelPayment}>
+        ← Choose a different plan
+      </Button>
     </div>
   );
 
-  /* ── Rejected — allow re-submission ── */
-  const isRejected = sub?.status === "rejected";
-
-  /* ── No sub or expired ── */
+  /* ── Select plan ── */
   const selectedPlanData = plans.find((p) => p.plan === selectedPlan) ?? plans[0];
 
   return (
     <div className="max-w-2xl mx-auto py-8 space-y-6 px-4">
-      {/* Header */}
       <div className="text-center space-y-2">
         {sub?.status === "expired" && (
           <Badge variant="outline" className="text-muted-foreground mb-2">Subscription Expired</Badge>
         )}
-        {isRejected && sub?.adminNote && (
+        {sub?.status === "rejected" && sub.adminNote && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm text-left mb-4">
             <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-            <div><p className="font-medium text-destructive">Submission Rejected</p><p className="text-muted-foreground text-xs mt-0.5">{sub.adminNote}</p></div>
+            <div><p className="font-medium text-destructive">Payment Issue</p><p className="text-muted-foreground text-xs mt-0.5">{sub.adminNote}</p></div>
           </div>
         )}
         <Crown className="h-10 w-10 text-primary mx-auto" />
         <h2 className="text-2xl font-bold">Copy Trading Access</h2>
-        <p className="text-muted-foreground text-sm">Select a plan and submit your payment to activate copy trading.</p>
+        <p className="text-muted-foreground text-sm">Select a plan — you'll get a unique USDT amount to send. Access activates automatically.</p>
       </div>
 
-      {/* Plan cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {plans.map((p) => (
-          <button
-            key={p.plan}
-            onClick={() => setSelectedPlan(p.plan)}
+          <button key={p.plan} onClick={() => setSelectedPlan(p.plan)}
             className={cn(
               "rounded-xl border p-4 text-center transition-all space-y-1 relative",
               selectedPlan === p.plan
                 ? "border-primary bg-primary/10 ring-2 ring-primary/30"
                 : "border-border hover:border-primary/40 bg-secondary/20",
-            )}
-          >
+            )}>
             {p.plan === "1y" && (
               <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">BEST VALUE</span>
             )}
@@ -786,61 +877,22 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
         ))}
       </div>
 
-      {/* Payment form */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Pay &amp; Submit Proof</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Payment method toggle */}
-          <div className="flex rounded-lg border border-border overflow-hidden">
-            {(["usdt_bep20", "bank_transfer"] as const).map((m) => (
-              <button key={m}
-                onClick={() => setPaymentMethod(m)}
-                className={cn("flex-1 py-2 text-sm font-medium transition-all",
-                  paymentMethod === m ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"
-                )}>
-                {m === "usdt_bep20" ? "💎 USDT BEP-20" : "🏦 Bank Transfer"}
-              </button>
-            ))}
-          </div>
+      <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-2">
+        <p className="text-sm font-medium flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-green-500" />How it works
+        </p>
+        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+          <li>Click "Pay with USDT" to get your unique payment amount</li>
+          <li>Send exactly that amount in USDT (BEP-20) to our address</li>
+          <li>Your access activates automatically — no manual steps needed</li>
+        </ol>
+      </div>
 
-          {/* Payment instructions */}
-          {paymentMethod === "usdt_bep20" && selectedPlanData && (
-            <div className="rounded-lg bg-secondary/50 border border-border p-4 space-y-2">
-              <p className="text-sm font-semibold">Send exactly <span className="text-primary font-black">${selectedPlanData.priceUsdt} USDT</span> (BEP-20) to:</p>
-              <code className="text-xs bg-background border border-border rounded px-3 py-2 block break-all select-all">{USDT_ADDRESS}</code>
-              <p className="text-xs text-muted-foreground">Network: BNB Smart Chain (BSC) · Minimum confirmations: 1</p>
-            </div>
-          )}
-          {paymentMethod === "bank_transfer" && selectedPlanData && (
-            <div className="rounded-lg bg-secondary/50 border border-border p-4 space-y-1 text-sm">
-              <p className="font-semibold">Transfer <span className="text-primary font-black">${selectedPlanData.priceFiat} USD</span> to:</p>
-              <p className="text-muted-foreground text-xs">Contact support for bank details. Include your email in the reference.</p>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">
-              {paymentMethod === "usdt_bep20" ? "TX Hash (transaction ID)" : "Bank Reference / Transfer ID"}
-            </label>
-            <Input
-              placeholder={paymentMethod === "usdt_bep20" ? "0x..." : "Transfer reference…"}
-              value={txHash} onChange={(e) => setTxHash(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Screenshot URL <span className="text-muted-foreground font-normal">(optional)</span></label>
-            <Input placeholder="https://…" value={screenshotUrl} onChange={(e) => setScreenshotUrl(e.target.value)} />
-          </div>
-
-          <Button className="w-full" onClick={handleSubmit} disabled={submitting || !txHash.trim()}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            Submit Payment — {selectedPlanData ? PLAN_LABELS[selectedPlanData.plan] : ""} for ${selectedPlanData?.priceUsdt ?? "…"} USDT
-          </Button>
-        </CardContent>
-      </Card>
+      <Button className="w-full h-12 text-base font-semibold" onClick={initiatePay}
+        disabled={initiating || !selectedPlanData || plans.length === 0}>
+        {initiating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />}
+        Pay with USDT — {selectedPlanData ? `$${selectedPlanData.priceUsdt}` : "…"}
+      </Button>
     </div>
   );
 }
@@ -1187,7 +1239,7 @@ function CopyTradingInner() {
                   <Card key={trader.id} className="relative overflow-hidden">
                     {trader.verified && (
                       <div className="absolute top-3 right-3">
-                        <ShieldCheck className="h-4 w-4 text-primary" title="Verified" />
+                        <ShieldCheck className="h-4 w-4 text-primary" aria-label="Verified" />
                       </div>
                     )}
                     <CardHeader className="pb-3">
