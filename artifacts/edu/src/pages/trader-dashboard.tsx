@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -239,24 +238,20 @@ export default function TraderDashboard() {
     }));
 
   if (loading) return (
-    <DashboardLayout>
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    </DashboardLayout>
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+      <Skeleton className="h-10 w-64" />
+      <Skeleton className="h-64 w-full" />
+    </div>
   );
 
   if (notTrader) return (
-    <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-          <TrendingUp className="h-8 w-8 text-primary" />
-        </div>
-        <h1 className="text-2xl font-bold">Trader Access Required</h1>
-        <p className="text-muted-foreground">You haven't been granted trader access yet. Contact an admin to have your account promoted to a trader profile.</p>
+    <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-4">
+      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+        <TrendingUp className="h-8 w-8 text-primary" />
       </div>
-    </DashboardLayout>
+      <h1 className="text-2xl font-bold">Trader Access Required</h1>
+      <p className="text-muted-foreground">You haven't been granted trader access yet. Contact an admin to have your account promoted to a trader profile.</p>
+    </div>
   );
 
   const tabs = [
@@ -267,8 +262,7 @@ export default function TraderDashboard() {
   ];
 
   return (
-    <DashboardLayout>
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
 
         {/* Header */}
         <div className="flex items-center gap-4">
@@ -662,6 +656,5 @@ export default function TraderDashboard() {
           </div>
         )}
       </div>
-    </DashboardLayout>
   );
 }
