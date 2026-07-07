@@ -3712,6 +3712,18 @@ function TradingTab() {
     finally { setActingId(null); }
   };
 
+  const removeTrader = async (id: number, name: string) => {
+    if (!confirm(`Remove trader profile for "${name}"? They will lose access to the Trader Panel.`)) return;
+    setActingId(id);
+    try {
+      const r = await fetch(`/api/admin/trading/traders/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Failed");
+      toast({ title: `${name} removed as trader` });
+      await loadSection("traders");
+    } catch { toast({ title: "Failed to remove trader", variant: "destructive" }); }
+    finally { setActingId(null); }
+  };
+
   const SECTIONS = [
     { key: "traders" as const, label: "Traders" },
     { key: "signals" as const, label: "Signals" },
@@ -3849,6 +3861,13 @@ function TradingTab() {
                                   <option value="inactive">Inactive</option>
                                   <option value="suspended">Suspended</option>
                                 </select>
+                                <Button size="sm" variant="ghost"
+                                  className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  title="Remove trader profile"
+                                  disabled={actingId === t.id}
+                                  onClick={() => removeTrader(t.id, t.displayName ?? "Trader")}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             </td>
                           </tr>
