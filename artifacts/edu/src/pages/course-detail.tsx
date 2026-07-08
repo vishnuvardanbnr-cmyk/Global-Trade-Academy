@@ -1462,10 +1462,22 @@ export default function CourseDetail() {
     return false;
   }
 
+  // Prerequisites are keyed per-course-id, so we can't know in advance which
+  // other courses point at this one as a requirement — invalidate any cached
+  // prerequisites query by URL match instead. Without this, completing a
+  // course leaves the *next* course's "enroll" button stuck disabled because
+  // its cached prerequisites list still shows the old (unmet) state.
+  const invalidatePrerequisites = () =>
+    qc.invalidateQueries({
+      predicate: (query) =>
+        typeof query.queryKey[0] === "string" && query.queryKey[0].includes("/prerequisites"),
+    });
+
   const invalidateProgress = async () => {
     await qc.invalidateQueries({ queryKey: getGetCourseProgressQueryKey(courseId) });
     await qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
     if (cur) await qc.invalidateQueries({ queryKey: getGetLessonGateQueryKey(cur.id) });
+    await invalidatePrerequisites();
   };
 
   const doEnroll = async () => {
@@ -1489,6 +1501,7 @@ export default function CourseDetail() {
         await qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
         await qc.invalidateQueries({ queryKey: getGetLessonGateQueryKey(cur.id) });
         if (res.courseCompleted) {
+          await invalidatePrerequisites();
           confetti({ particleCount: 180, spread: 100, origin: { y: 0.55 }, colors: ["#2563eb","#10b981","#f59e0b","#8b5cf6","#ef4444"] });
           toast({ title: "Course complete! 🎓", description: `+${res.xpAwarded} XP earned · Certificate issued.` });
           return;
