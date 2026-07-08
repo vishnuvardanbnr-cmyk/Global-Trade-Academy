@@ -129,13 +129,16 @@ function saveWatchedPos(lessonId: number | undefined, secs: number) {
 }
 
 /* ─── Seek guard: track max-watched, expose duration for custom controls ─ */
-function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string, lessonId?: number) {
+function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string, lessonId?: number, onEnded?: () => void) {
   const maxWatchedRef = useRef(loadWatchedPos(lessonId));
   const [maxWatched, setMaxWatched] = useState(loadWatchedPos(lessonId));
   const [duration, setDuration] = useState(0);
   const [blocked, setBlocked] = useState(false);
   const blockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaveRef = useRef(0);
+  const endedFiredRef = useRef(false);
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
 
   // Reset to saved position when switching lessons
   useEffect(() => {
@@ -143,11 +146,18 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
     maxWatchedRef.current = saved;
     setMaxWatched(saved);
     setDuration(0);
+    endedFiredRef.current = false;
   }, [url, lessonId]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    const fireEnded = () => {
+      if (endedFiredRef.current) return;
+      endedFiredRef.current = true;
+      onEndedRef.current?.();
+    };
 
     const onMeta = () => {
       if (video.duration) setDuration(video.duration);
@@ -169,6 +179,17 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
           lastSaveRef.current = now;
         }
       }
+      // Fallback for the native `ended` event, which some HLS/MP4 streams never
+      // fire (buffering rounding, segment-length mismatch, micro-stalls right
+      // at the tail end) — this was causing "I watched it but it won't complete"
+      // reports. Treat being within 0.75s of the reported duration as finished.
+      if (
+        Number.isFinite(video.duration) &&
+        video.duration > 0 &&
+        video.duration - video.currentTime <= 0.75
+      ) {
+        fireEnded();
+      }
     };
 
     // `seeking` fires mid-seek. After correction currentTime === maxWatched,
@@ -186,11 +207,13 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
     video.addEventListener("durationchange", onDuration);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("seeking", onSeeking);
+    video.addEventListener("ended", fireEnded);
     return () => {
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("durationchange", onDuration);
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("seeking", onSeeking);
+      video.removeEventListener("ended", fireEnded);
       if (blockTimerRef.current) clearTimeout(blockTimerRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -405,7 +428,7 @@ function SeekBlockedOverlay({ visible }: { visible: boolean }) {
 
 function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId);
+  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId, onEnded);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -465,7 +488,7 @@ function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?
 
   return (
     <div className="w-full aspect-video bg-black relative overflow-hidden">
-      <video ref={videoRef} className="w-full h-full" onEnded={onEnded} />
+      <video ref={videoRef} className="w-full h-full" />
       <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} lessonId={lessonId} />
     </div>
   );
@@ -474,11 +497,11 @@ function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?
 /* ─── Direct MP4 / blob player with seek guard ───────────────────── */
 function DirectVideoPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId);
+  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId, onEnded);
 
   return (
     <div className="w-full aspect-video bg-black relative overflow-hidden">
-      <video ref={videoRef} src={url} className="w-full h-full" onEnded={onEnded}>
+      <video ref={videoRef} src={url} className="w-full h-full">
         <source src={url} />
       </video>
       <VideoControls videoRef={videoRef} maxWatched={maxWatched} maxWatchedRef={maxWatchedRef} duration={duration} blocked={blocked} playable={playable} lessonId={lessonId} />
@@ -731,6 +754,7 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
   const playerRef = useRef<any>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+  const endedFiredRef = useRef(false);
 
   const maxWatchedRef = useRef(loadWatchedPos(lessonId));
   const durationRef = useRef(0);
@@ -744,6 +768,7 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
     const saved = loadWatchedPos(lessonId);
     maxWatchedRef.current = saved;
     durationRef.current = 0;
+    endedFiredRef.current = false;
     setMaxWatched(saved);
     setDuration(0);
     setBlocked(false);
@@ -779,7 +804,10 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
               if (dur > 0 && durationRef.current === 0) { durationRef.current = dur; setDuration(dur); }
             } else if (e.data === 0) {
               // ENDED
-              onEndedRef.current?.();
+              if (!endedFiredRef.current) {
+                endedFiredRef.current = true;
+                onEndedRef.current?.();
+              }
             }
           },
         },
@@ -806,6 +834,13 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
               saveWatchedPos(lessonId, maxWatchedRef.current);
               lastYtSaveRef.current = now;
             }
+          }
+          // Fallback for the ENDED state (data === 0), which the YouTube IFrame
+          // API can occasionally miss to report — treat reaching the tail end
+          // of the video as complete too.
+          if (dur > 0 && dur - cur <= 0.75 && !endedFiredRef.current) {
+            endedFiredRef.current = true;
+            onEndedRef.current?.();
           }
         } catch { /* ignore */ }
       }, 500);
