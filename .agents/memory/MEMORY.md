@@ -17,3 +17,4 @@
 - [VPS frontend deploy path](vps-deploy-path.md) — nginx root is /opt/brightinsight/artifacts/edu/dist/public; extract tarball at /opt/brightinsight/artifacts/edu/ not /opt/brightinsight/ or files land in the wrong place silently.
 - [Mirror trading poller architecture](mirror-trading-arch.md) — poller in mirror-poller.ts, fan-out extracted to fan-out.ts, master_positions table, VPS deploy steps (scp → SQL → build → pm2 restart).
 - [DB package type resolution](db-type-resolution.md) — api-server uses TS project references; after any schema change run `cd lib/db && npx tsc -p tsconfig.json` to regenerate dist/*.d.ts or new columns won't exist in types.
+- [Video watch-progress persistence](video-watch-progress.md) — watchedSeconds heartbeat every 5s, monotonic on client AND server independently; completed must stay optional so heartbeats can't downgrade it.

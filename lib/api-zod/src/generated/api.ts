@@ -413,7 +413,7 @@ export const UpdateLessonProgressParams = zod.object({
 })
 
 export const UpdateLessonProgressBody = zod.object({
-  "completed": zod.boolean(),
+  "completed": zod.boolean().optional(),
   "watchedSeconds": zod.number().optional()
 })
 

@@ -2307,7 +2307,6 @@ components:
 
     LessonProgressUpdate:
       type: object
-      required: [completed]
       properties:
         completed: { type: boolean }
         watchedSeconds: { type: integer }

@@ -194,7 +194,7 @@ export interface LessonUpdate {
 }
 
 export interface LessonProgressUpdate {
-  completed: boolean;
+  completed?: boolean;
   watchedSeconds?: number;
 }
 

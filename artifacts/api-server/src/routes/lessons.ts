@@ -243,11 +243,19 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
 
     const wasCompleted = existing?.completed ?? false;
 
+    // watchedSeconds is a monotonic "furthest point reached" marker used to
+    // gate seeking and drive the progress bar — it must never move backwards,
+    // even if a stale/out-of-order heartbeat arrives from the client.
+    const newWatchedSeconds =
+      typeof watchedSeconds === "number"
+        ? Math.max(watchedSeconds, existing?.watchedSeconds ?? 0)
+        : existing?.watchedSeconds ?? null;
+
     let result;
     if (existing) {
       const updated = await db.update(lessonProgressTable).set({
         completed: completed ?? existing.completed,
-        watchedSeconds: watchedSeconds ?? existing.watchedSeconds,
+        watchedSeconds: newWatchedSeconds,
       }).where(and(eq(lessonProgressTable.lessonId, lessonId), eq(lessonProgressTable.userId, clerkId))).returning();
       result = updated[0];
     } else {
@@ -255,7 +263,7 @@ router.patch("/lessons/:lessonId/progress", async (req, res): Promise<void> => {
         lessonId,
         userId: clerkId,
         completed: completed ?? false,
-        watchedSeconds,
+        watchedSeconds: newWatchedSeconds,
       }).returning();
       result = inserted[0];
     }

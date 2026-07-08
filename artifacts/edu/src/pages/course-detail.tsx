@@ -127,11 +127,27 @@ function saveWatchedPos(lessonId: number | undefined, secs: number) {
   if (!lessonId) return;
   localStorage.setItem(watchedKey(lessonId), String(Math.floor(secs)));
 }
+// Reconcile the local cache with the server's record of how far the student
+// has watched. We always take the max of the two and never let the resolved
+// value fall below either source — server data survives across devices/
+// browsers, localStorage gives an instant value before the network responds.
+function resolveInitialWatched(lessonId: number | undefined, serverSeconds?: number | null): number {
+  const resolved = Math.max(loadWatchedPos(lessonId), serverSeconds ?? 0);
+  if (resolved > 0) saveWatchedPos(lessonId, resolved);
+  return resolved;
+}
 
 /* ─── Seek guard: track max-watched, expose duration for custom controls ─ */
-function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: string, lessonId?: number, onEnded?: () => void) {
-  const maxWatchedRef = useRef(loadWatchedPos(lessonId));
-  const [maxWatched, setMaxWatched] = useState(loadWatchedPos(lessonId));
+function useSeekGuard(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  url: string,
+  lessonId?: number,
+  onEnded?: () => void,
+  initialWatchedSeconds?: number | null,
+  onHeartbeat?: (seconds: number) => void,
+) {
+  const maxWatchedRef = useRef(resolveInitialWatched(lessonId, initialWatchedSeconds));
+  const [maxWatched, setMaxWatched] = useState(maxWatchedRef.current);
   const [duration, setDuration] = useState(0);
   const [blocked, setBlocked] = useState(false);
   const blockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,14 +155,19 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
   const endedFiredRef = useRef(false);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+  const onHeartbeatRef = useRef(onHeartbeat);
+  useEffect(() => { onHeartbeatRef.current = onHeartbeat; }, [onHeartbeat]);
 
-  // Reset to saved position when switching lessons
+  // Reset to saved position when switching lessons — reconcile against the
+  // server's furthest-watched value too, so it's never lower than what's
+  // already been recorded there (e.g. resuming on a different device).
   useEffect(() => {
-    const saved = loadWatchedPos(lessonId);
+    const saved = resolveInitialWatched(lessonId, initialWatchedSeconds);
     maxWatchedRef.current = saved;
     setMaxWatched(saved);
     setDuration(0);
     endedFiredRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, lessonId]);
 
   useEffect(() => {
@@ -161,7 +182,7 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
 
     const onMeta = () => {
       if (video.duration) setDuration(video.duration);
-      const saved = loadWatchedPos(lessonId);
+      const saved = maxWatchedRef.current;
       if (saved > 1 && video.duration && saved < video.duration - 2) {
         video.currentTime = saved;
       }
@@ -174,9 +195,12 @@ function useSeekGuard(videoRef: React.RefObject<HTMLVideoElement | null>, url: s
         maxWatchedRef.current = video.currentTime;
         setMaxWatched(video.currentTime);
         const now = Date.now();
+        // Persist locally + push a heartbeat to the server every 5s so the
+        // furthest-watched point is live-synced, not just cached on-device.
         if (now - lastSaveRef.current > 5000) {
           saveWatchedPos(lessonId, maxWatchedRef.current);
           lastSaveRef.current = now;
+          onHeartbeatRef.current?.(maxWatchedRef.current);
         }
       }
       // Fallback for the native `ended` event, which some HLS/MP4 streams never
@@ -426,9 +450,9 @@ function SeekBlockedOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
+function HlsPlayer({ url, onEnded, lessonId, playable, initialWatchedSeconds, onHeartbeat }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean; initialWatchedSeconds?: number | null; onHeartbeat?: (seconds: number) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId, onEnded);
+  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId, onEnded, initialWatchedSeconds, onHeartbeat);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -495,9 +519,9 @@ function HlsPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?
 }
 
 /* ─── Direct MP4 / blob player with seek guard ───────────────────── */
-function DirectVideoPlayer({ url, onEnded, lessonId, playable }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
+function DirectVideoPlayer({ url, onEnded, lessonId, playable, initialWatchedSeconds, onHeartbeat }: { url: string; onEnded?: () => void; lessonId?: number; playable?: boolean; initialWatchedSeconds?: number | null; onHeartbeat?: (seconds: number) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId, onEnded);
+  const { blocked, maxWatched, maxWatchedRef, duration } = useSeekGuard(videoRef, url, lessonId, onEnded, initialWatchedSeconds, onHeartbeat);
 
   return (
     <div className="w-full aspect-video bg-black relative overflow-hidden">
@@ -748,15 +772,17 @@ function LiveChatPanel({ classId, userId, sessionTitle, onClose }: {
 }
 
 /* ─── YouTube sub-player (IFrame API + anti-skip + progress bar) ── */
-function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: string; onEnded?: () => void; lessonId?: number; playable?: boolean }) {
+function YtPlayer({ videoId, onEnded, lessonId, playable = true, initialWatchedSeconds, onHeartbeat }: { videoId: string; onEnded?: () => void; lessonId?: number; playable?: boolean; initialWatchedSeconds?: number | null; onHeartbeat?: (seconds: number) => void }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
   const endedFiredRef = useRef(false);
+  const onHeartbeatRef = useRef(onHeartbeat);
+  useEffect(() => { onHeartbeatRef.current = onHeartbeat; }, [onHeartbeat]);
 
-  const maxWatchedRef = useRef(loadWatchedPos(lessonId));
+  const maxWatchedRef = useRef(resolveInitialWatched(lessonId, initialWatchedSeconds));
   const durationRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [maxWatched, setMaxWatched] = useState(0);
@@ -765,13 +791,14 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
 
   // Reset on lesson change
   useEffect(() => {
-    const saved = loadWatchedPos(lessonId);
+    const saved = resolveInitialWatched(lessonId, initialWatchedSeconds);
     maxWatchedRef.current = saved;
     durationRef.current = 0;
     endedFiredRef.current = false;
     setMaxWatched(saved);
     setDuration(0);
     setBlocked(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId, lessonId]);
 
   const lastYtSaveRef = useRef(0);
@@ -792,7 +819,7 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
             const dur = e.target.getDuration() ?? 0;
             if (dur > 0) { durationRef.current = dur; setDuration(dur); }
             // Resume from saved position
-            const saved = loadWatchedPos(lessonId);
+            const saved = maxWatchedRef.current;
             if (saved > 1 && dur > 0 && saved < dur - 2) {
               e.target.seekTo(saved, true);
             }
@@ -833,6 +860,7 @@ function YtPlayer({ videoId, onEnded, lessonId, playable = true }: { videoId: st
             if (now - lastYtSaveRef.current > 5000) {
               saveWatchedPos(lessonId, maxWatchedRef.current);
               lastYtSaveRef.current = now;
+              onHeartbeatRef.current?.(maxWatchedRef.current);
             }
           }
           // Fallback for the ENDED state (data === 0), which the YouTube IFrame
@@ -920,9 +948,9 @@ function VimeoPlayer({ videoId, onEnded, playable = true }: { videoId: string; o
 
 /* ─── Master smart VideoPlayer ─────────────────────────────────── */
 function VideoPlayer({
-  url, title, lessonType, duration, onEnded, lessonId, playable = true,
+  url, title, lessonType, duration, onEnded, lessonId, playable = true, initialWatchedSeconds, onHeartbeat,
 }: {
-  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void; lessonId?: number; playable?: boolean;
+  url?: string | null; title?: string; lessonType?: string; duration?: number | null; onEnded?: () => void; lessonId?: number; playable?: boolean; initialWatchedSeconds?: number | null; onHeartbeat?: (seconds: number) => void;
 }) {
   if (!url) {
     const isArticle = lessonType === "article";
@@ -981,15 +1009,15 @@ function VideoPlayer({
   }
 
   const ytId = extractYtId(url);
-  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} />;
+  if (ytId) return <YtPlayer videoId={ytId} onEnded={onEnded} lessonId={lessonId} initialWatchedSeconds={initialWatchedSeconds} onHeartbeat={onHeartbeat} />;
 
   const vimeoId = extractVimeoId(url);
   if (vimeoId) return <VimeoPlayer videoId={vimeoId} onEnded={onEnded} />;
 
-  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
+  if (isHlsUrl(url)) return <HlsPlayer url={url} onEnded={onEnded} lessonId={lessonId} initialWatchedSeconds={initialWatchedSeconds} onHeartbeat={onHeartbeat} />;
 
   if (isDirectVideo(url)) {
-    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} />;
+    return <DirectVideoPlayer url={url} onEnded={onEnded} lessonId={lessonId} initialWatchedSeconds={initialWatchedSeconds} onHeartbeat={onHeartbeat} />;
   }
 
   const bunnyUrl = extractBunnyEmbedUrl(url);
@@ -1518,6 +1546,18 @@ export default function CourseDetail() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cur?.id, curDone, isEnrolled, activeIdx, totalL, courseId]);
 
+  // Live watch-position heartbeat — fired at most every 5s from the player
+  // while playing. Persists the furthest-watched point server-side (never
+  // decreases, enforced both here and on the backend) without touching
+  // `completed`, so it can't accidentally un-complete an already-finished
+  // lesson. Fire-and-forget: a dropped heartbeat just means a slightly
+  // shorter resume point next time, not a broken experience.
+  const onWatchHeartbeat = useCallback((seconds: number) => {
+    if (!cur || curDone) return;
+    updateProgress({ lessonId: cur.id, data: { watchedSeconds: Math.floor(seconds) } }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur?.id, curDone]);
+
   if (isLoading) return (
     <div className="space-y-0 -mx-4 -mt-4 md:-mx-6 md:-mt-6 lg:-mx-8 lg:-mt-8">
       <Skeleton className="h-14 w-full rounded-none" />
@@ -1610,6 +1650,10 @@ export default function CourseDetail() {
               onEnded={isEnrolled ? onVideoEnded : undefined}
               lessonId={cur?.id}
               playable={learningStarted}
+              initialWatchedSeconds={
+                cur ? progress?.lessons?.find((p) => p.lessonId === cur.id)?.watchedSeconds : undefined
+              }
+              onHeartbeat={isEnrolled && cur ? onWatchHeartbeat : undefined}
             />
           </div>
 
