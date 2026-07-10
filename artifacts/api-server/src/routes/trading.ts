@@ -762,9 +762,13 @@ router.get("/my-platform-subscription", async (req, res): Promise<void> => {
       }
     }
 
+    // Exclude cancelled — they convey no entitlement and must never shadow active/pending
+    const meaningful = allSubs.filter((s) => s.status !== "cancelled");
+    if (!meaningful.length) { res.json(null); return; }
+
     // Priority: active > pending_payment > rejected > expired
-    const priority = ["active","pending_payment","rejected","expired"];
-    const sub = allSubs.sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status))[0];
+    const priority = ["active", "pending_payment", "rejected", "expired"];
+    const sub = meaningful.sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status))[0];
 
     // For pending payments, include the deposit address and expected amount
     let depositAddress: string | null = null;
