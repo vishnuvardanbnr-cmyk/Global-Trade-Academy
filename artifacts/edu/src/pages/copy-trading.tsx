@@ -732,16 +732,14 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
     void init();
   }, [onActive]);
 
-  // Auto-poll when in pending_payment state
+  // Always poll while paywall is mounted — parent will unmount us the moment active is detected.
+  // This keeps payment details (deposit address, expiry) refreshed and handles edge cases.
   useEffect(() => {
-    if (sub !== "loading" && sub?.status === "pending_payment") {
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(() => { void refreshSub(); }, 3_000);
-    } else {
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    }
+    if (sub === "loading") return;
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => { void refreshSub(); }, 3_000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [sub, refreshSub]);
+  }, [sub === "loading", refreshSub]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const initiatePay = async () => {
     setInitiating(true);
@@ -1002,13 +1000,33 @@ export default function CopyTrading() {
   // "checking" → spinner while we verify; "active" → show inner; "none" → show paywall
   const [subState, setSubState] = useState<"checking" | "active" | "none">("checking");
 
+  // Poll every 3 s from the parent — works regardless of which child view is displayed.
+  // Stops automatically once active (cancelled = true).
   useEffect(() => {
     if (isInstructor) { setSubState("active"); return; }
-    fetch("/api/my-platform-subscription")
-      .then((r) => r.ok ? r.json() as Promise<PlatformSubStatus> : null)
-      .then((data) => { setSubState(data?.status === "active" ? "active" : "none"); })
-      .catch(() => setSubState("none"));
-  }, [isInstructor]);
+
+    let cancelled = false;
+    const check = async () => {
+      if (cancelled) return;
+      try {
+        const r = await fetch("/api/my-platform-subscription");
+        const data = r.ok ? await r.json() as PlatformSubStatus : null;
+        if (cancelled) return;
+        if (data?.status === "active") {
+          cancelled = true;
+          setSubState("active");
+        } else {
+          setSubState((prev) => prev === "checking" ? "none" : prev);
+        }
+      } catch {
+        if (!cancelled) setSubState((prev) => prev === "checking" ? "none" : prev);
+      }
+    };
+
+    void check();
+    const interval = setInterval(check, 3_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [isInstructor]); // intentionally omits subState — poll runs until cancelled internally
 
   if (subState === "checking") {
     return (
