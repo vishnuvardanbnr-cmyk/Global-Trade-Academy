@@ -736,7 +736,7 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
   useEffect(() => {
     if (sub !== "loading" && sub?.status === "pending_payment") {
       if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(() => { void refreshSub(); }, 10_000);
+      pollRef.current = setInterval(() => { void refreshSub(); }, 3_000);
     } else {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     }
@@ -816,21 +816,20 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
         <p className="text-xs text-muted-foreground">Network: BNB Smart Chain (BSC) · Token: USDT (BEP-20)</p>
       </div>
 
-      {/* Status + timer */}
-      <div className="flex items-center justify-between text-sm px-1">
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      {/* Status + timer + plan */}
+      <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+        <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
           <span>Checking for payment…</span>
         </div>
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <Clock className="h-3.5 w-3.5" />
-          <span>Expires in </span>
-          <Countdown expiresAt={paymentIntent.expiresAt} />
+        <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          <span>Expires in&nbsp;<Countdown expiresAt={paymentIntent.expiresAt} /></span>
         </div>
+        <p className="text-center text-xs text-muted-foreground pt-0.5">
+          Plan: <strong className="text-foreground">{PLAN_LABELS[sub?.plan ?? selectedPlan] ?? selectedPlan}</strong>
+        </p>
       </div>
-
-      {/* Plan info */}
-      <p className="text-center text-xs text-muted-foreground">Plan: <strong className="text-foreground">{PLAN_LABELS[sub?.plan ?? selectedPlan] ?? selectedPlan}</strong></p>
 
       <Button variant="ghost" size="sm" className="w-full text-muted-foreground text-xs" onClick={cancelPayment}>
         ← Choose a different plan
@@ -1000,12 +999,29 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
 export default function CopyTrading() {
   const { user } = useAuthContext();
   const isInstructor = user?.role === "instructor" || user?.role === "admin";
-  const [hasActiveSub, setHasActiveSub] = useState(false);
+  // "checking" → spinner while we verify; "active" → show inner; "none" → show paywall
+  const [subState, setSubState] = useState<"checking" | "active" | "none">("checking");
 
-  if (!isInstructor && !hasActiveSub) {
+  useEffect(() => {
+    if (isInstructor) { setSubState("active"); return; }
+    fetch("/api/my-platform-subscription")
+      .then((r) => r.ok ? r.json() as Promise<PlatformSubStatus> : null)
+      .then((data) => { setSubState(data?.status === "active" ? "active" : "none"); })
+      .catch(() => setSubState("none"));
+  }, [isInstructor]);
+
+  if (subState === "checking") {
+    return (
+      <div className="flex items-center justify-center py-24 text-muted-foreground gap-2">
+        <Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span>
+      </div>
+    );
+  }
+
+  if (subState !== "active") {
     return (
       <div className="space-y-8">
-        <CopyTradingPaywall onActive={() => setHasActiveSub(true)} />
+        <CopyTradingPaywall onActive={() => setSubState("active")} />
       </div>
     );
   }
