@@ -13,7 +13,7 @@ import {
   siteSettingsTable,
   tradersTable,
 } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 import { decrypt } from "./encrypt";
 import { logger } from "./logger";
 
@@ -183,15 +183,16 @@ async function executeBybit(
   return json.result?.orderId ?? "unknown";
 }
 
-/* ── MetaAPI CopyFactory external signal ───────────────────────── */
+/* ── MetaAPI direct trading API ────────────────────────────────── */
 
+const METAAPI_PROVISION_BASE =
+  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
+
+/** CopyFactory URLs kept for reference / future re-enablement */
 const METAAPI_HISTORY_BASE =
   "https://copyfactory-application-history-master-v1.agiliumtrade.agiliumtrade.ai";
 const METAAPI_CONFIG_BASE =
   "https://copyfactory-application-configuration-v2.agiliumtrade.agiliumtrade.ai";
-
-const METAAPI_PROVISION_BASE =
-  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 
 /** Read MetaAPI platform token from DB (integration_settings) with env-var fallback */
 async function getMetaapiToken(): Promise<string> {
@@ -206,6 +207,127 @@ async function getMetaapiToken(): Promise<string> {
   const token = stored.metaapiToken ?? process.env.METAAPI_TOKEN ?? "";
   if (!token) throw new Error("METAAPI_TOKEN not configured — set it in Admin → Trading");
   return token;
+}
+
+/**
+ * Resolve the correct MetaAPI client API base URL for an account.
+ * Queries the provisioning API for the account's region (cached per call).
+ */
+async function getMetaApiClientBase(metaapiAccountId: string, token: string): Promise<string> {
+  try {
+    const res = await fetchWithTimeout(
+      `${METAAPI_PROVISION_BASE}/users/current/accounts/${metaapiAccountId}`,
+      { headers: { "auth-token": token } },
+    );
+    if (res.ok) {
+      const data = await res.json() as { region?: string };
+      const region = data.region ?? "london";
+      return `https://mt-client-api-v1.${region}.agiliumtrade.ai`;
+    }
+  } catch { /* fall through */ }
+  return "https://mt-client-api-v1.london.agiliumtrade.ai";
+}
+
+/**
+ * Execute a trade signal directly on a MetaAPI account via the trading REST API.
+ * Replaces the CopyFactory path — works per-copier, fully parallel.
+ */
+async function executeMetaApiDirect(
+  signal: typeof tradeSignalsTable.$inferSelect,
+  metaapiAccountId: string,
+  copyAccountId: number,
+  lotMultiplier: number,
+  token: string,
+): Promise<string> {
+  const clientBase = await getMetaApiClientBase(metaapiAccountId, token);
+  const tradeUrl = `${clientBase}/users/current/accounts/${metaapiAccountId}/trade`;
+
+  const rawVol = parseFloat(signal.quantity as string) * lotMultiplier;
+  const volume = Math.round(rawVol * 100) / 100;
+  if (volume <= 0) throw new Error(`MetaAPI: computed volume ${volume} too small (min 0.01)`);
+
+  /* ── MODIFY ─────────────────────────────────────────────────── */
+  if (signal.action === "modify") {
+    const openTrade = await db
+      .select({ brokerOrderId: copyTradesTable.brokerOrderId })
+      .from(copyTradesTable)
+      .innerJoin(tradeSignalsTable, eq(copyTradesTable.signalId, tradeSignalsTable.id))
+      .where(
+        and(
+          eq(copyTradesTable.copyAccountId, copyAccountId),
+          eq(tradeSignalsTable.traderId, signal.traderId),
+          eq(tradeSignalsTable.symbol, signal.symbol),
+          eq(copyTradesTable.status, "executed"),
+          inArray(tradeSignalsTable.action, ["buy", "sell"]),
+        ),
+      )
+      .orderBy(desc(copyTradesTable.id))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!openTrade?.brokerOrderId) return "modify-noop";
+
+    const body: Record<string, unknown> = {
+      actionType: "POSITION_MODIFY",
+      positionId: openTrade.brokerOrderId,
+    };
+    if (signal.stopLoss)   body.stopLoss   = parseFloat(signal.stopLoss   as string);
+    if (signal.takeProfit) body.takeProfit = parseFloat(signal.takeProfit as string);
+
+    const res = await fetchWithTimeout(tradeUrl, {
+      method: "POST",
+      headers: { "auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { const t = await res.text(); throw new Error(`MetaAPI modify ${res.status}: ${t}`); }
+    return openTrade.brokerOrderId;
+  }
+
+  /* ── CLOSE ──────────────────────────────────────────────────── */
+  if (signal.action === "close") {
+    const openTrade = await db
+      .select({ brokerOrderId: copyTradesTable.brokerOrderId })
+      .from(copyTradesTable)
+      .innerJoin(tradeSignalsTable, eq(copyTradesTable.signalId, tradeSignalsTable.id))
+      .where(
+        and(
+          eq(copyTradesTable.copyAccountId, copyAccountId),
+          eq(tradeSignalsTable.traderId, signal.traderId),
+          eq(tradeSignalsTable.symbol, signal.symbol),
+          eq(copyTradesTable.status, "executed"),
+          inArray(tradeSignalsTable.action, ["buy", "sell"]),
+        ),
+      )
+      .orderBy(desc(copyTradesTable.id))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!openTrade?.brokerOrderId) throw new Error(`MetaAPI: no open position found to close for account ${copyAccountId}`);
+
+    const res = await fetchWithTimeout(tradeUrl, {
+      method: "POST",
+      headers: { "auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ actionType: "POSITION_CLOSE_ID", positionId: openTrade.brokerOrderId }),
+    });
+    if (!res.ok) { const t = await res.text(); throw new Error(`MetaAPI close ${res.status}: ${t}`); }
+    return openTrade.brokerOrderId;
+  }
+
+  /* ── BUY / SELL ─────────────────────────────────────────────── */
+  const actionType = signal.action === "buy" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
+  const body: Record<string, unknown> = { actionType, symbol: signal.symbol, volume };
+  if (signal.stopLoss)   body.stopLoss   = parseFloat(signal.stopLoss   as string);
+  if (signal.takeProfit) body.takeProfit = parseFloat(signal.takeProfit as string);
+  if (signal.price && signal.orderType !== "market") body.openPrice = parseFloat(signal.price as string);
+
+  const res = await fetchWithTimeout(tradeUrl, {
+    method: "POST",
+    headers: { "auth-token": token, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(`MetaAPI trade ${res.status}: ${t}`); }
+  const data = await res.json() as { positionId?: string; orderId?: string };
+  return data.positionId ?? data.orderId ?? "unknown";
 }
 
 /**
@@ -485,104 +607,20 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
   let successCount = 0;
   let failCount = 0;
 
-  // ── MetaAPI: fire ONE external signal covering all MetaAPI subscribers ──
-  // MetaAPI's CopyFactory handles fan-out to all subscribers automatically,
-  // so we only need one API call regardless of how many MetaAPI copiers exist.
-  const metaapiSubs = activeSubs.filter(
+  // Fetch MetaAPI token once — reused for all metaapi-type copiers
+  let metaapiToken: string | null = null;
+  const hasMetaapiSubs = activeSubs.some(
     (s) => accountMap[s.copyAccountId!]?.type === "metaapi",
   );
-  const nonMetaapiSubs = activeSubs.filter(
-    (s) => accountMap[s.copyAccountId!]?.type !== "metaapi",
-  );
-
-  // Look up this trader's per-trader CopyFactory strategy ID
-  const traderRow = await db
-    .select({ metaapiStrategyId: tradersTable.metaapiStrategyId })
-    .from(tradersTable)
-    .where(eq(tradersTable.id, signal.traderId))
-    .limit(1)
-    .then((r) => r[0]);
-  const traderStrategyId = traderRow?.metaapiStrategyId ?? null;
-
-  if (metaapiSubs.length > 0) {
-    if (!traderStrategyId) {
-      // Trader has no CopyFactory strategy — log and skip MetaAPI fan-out
-      logger.warn({ traderId: signal.traderId }, "MetaAPI signal skipped — trader has no CopyFactory strategy configured");
-      const msg = "Trader has no CopyFactory strategy. Admin must promote the trader after setting METAAPI_TOKEN.";
-      await Promise.all(
-        metaapiSubs.map((sub) =>
-          db.insert(copyTradesTable).values({
-            signalId: signal.id, subscriptionId: sub.id, userId: sub.userId,
-            copyAccountId: sub.copyAccountId!, status: "failed",
-            quantity: signal.quantity ? String(signal.quantity) : null,
-            errorMessage: msg,
-          }),
-        ),
-      );
-      failCount += metaapiSubs.length;
-    } else {
-    // Insert copy_trade rows for all MetaAPI subscribers (pending), then resolve them together
-    const metaaTrades = await Promise.all(
-      metaapiSubs.map((sub) =>
-        db
-          .insert(copyTradesTable)
-          .values({
-            signalId: signal.id,
-            subscriptionId: sub.id,
-            userId: sub.userId,
-            copyAccountId: sub.copyAccountId!,
-            status: "pending",
-            quantity: signal.quantity ? String(signal.quantity) : null,
-          })
-          .returning()
-          .then((r) => ({ trade: r[0], sub })),
-      ),
-    );
-
-    try {
-      const brokerOrderId = await executeMetaApi(signal, traderStrategyId);
-      // Mark all MetaAPI copy_trades as executed
-      await Promise.all(
-        metaaTrades.map(({ trade, sub }) =>
-          Promise.all([
-            db
-              .update(copyTradesTable)
-              .set({ status: "executed", brokerOrderId, executedPrice: signal.price ?? null })
-              .where(eq(copyTradesTable.id, trade.id)),
-            db
-              .update(copyAccountsTable)
-              .set({ status: "active", lastError: null })
-              .where(eq(copyAccountsTable.id, sub.copyAccountId!)),
-          ]),
-        ),
-      );
-      successCount += metaapiSubs.length;
-      logger.info({ signalId: signal.id, brokerOrderId }, "MetaAPI signal dispatched");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "MetaAPI unknown error";
-      logger.error({ err: msg }, "MetaAPI fan-out error");
-      await Promise.all(
-        metaaTrades.map(({ trade, sub }) =>
-          Promise.all([
-            db
-              .update(copyTradesTable)
-              .set({ status: "failed", errorMessage: msg })
-              .where(eq(copyTradesTable.id, trade.id)),
-            db
-              .update(copyAccountsTable)
-              .set({ status: "error", lastError: msg })
-              .where(eq(copyAccountsTable.id, sub.copyAccountId!)),
-          ]),
-        ),
-      );
-      failCount += metaapiSubs.length;
+  if (hasMetaapiSubs) {
+    try { metaapiToken = await getMetaapiToken(); } catch {
+      metaapiToken = null;
     }
-    } // end else (traderStrategyId exists)
   }
 
-  // ── Per-copier fan-out for Binance / Bybit / MT5 ────────────────────────
+  // ── Per-copier fan-out: Binance / Bybit / MT5 / MetaAPI (all parallel) ──
   await Promise.allSettled(
-    nonMetaapiSubs.map(async (sub) => {
+    activeSubs.map(async (sub) => {
       const account = accountMap[sub.copyAccountId!];
       if (!account) return;
       if (account.role === "master") return;
@@ -604,7 +642,17 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
       try {
         let brokerOrderId = "";
 
-        if (account.type === "binance") {
+        if (account.type === "metaapi") {
+          if (!metaapiToken) throw new Error("MetaAPI token not configured — set it in Admin → Trading");
+          if (!account.metaapiAccountId) throw new Error("MetaAPI account ID missing on copier account");
+          brokerOrderId = await executeMetaApiDirect(
+            signal,
+            account.metaapiAccountId,
+            account.id,
+            multiplier,
+            metaapiToken,
+          );
+        } else if (account.type === "binance") {
           brokerOrderId = await executeBinance(
             decrypt(account.apiKey!),
             decrypt(account.apiSecret!),
