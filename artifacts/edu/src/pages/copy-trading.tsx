@@ -244,7 +244,7 @@ function SubscribeModal({ trader, accounts, open, onClose, onSubscribed }: {
   onClose: () => void; onSubscribed: () => void;
 }) {
   const { toast } = useToast();
-  const [accountId, setAccountId] = useState<string>("");
+  const [accountId, setAccountId] = useState<string>("none");
   const [lotMultiplier, setLotMultiplier] = useState("1.00");
   const [saving, setSaving] = useState(false);
 
@@ -257,7 +257,7 @@ function SubscribeModal({ trader, accounts, open, onClose, onSubscribed }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           traderId: trader.id,
-          copyAccountId: accountId ? parseInt(accountId) : undefined,
+          copyAccountId: (accountId && accountId !== "none") ? parseInt(accountId) : undefined,
           lotMultiplier: parseFloat(lotMultiplier) || 1,
         }),
       });
@@ -296,7 +296,7 @@ function SubscribeModal({ trader, accounts, open, onClose, onSubscribed }: {
                 <SelectValue placeholder="Select a connected account (optional)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Signal only (no auto-execution)</SelectItem>
+                <SelectItem value="none">Signal only (no auto-execution)</SelectItem>
                 {accounts.map((a) => (
                   <SelectItem key={a.id} value={String(a.id)}>
                     {a.type.toUpperCase()} — {a.label}
@@ -1432,7 +1432,14 @@ function CopyTradingInner() {
                           </Button>
                         ) : (
                           <Button size="sm" className="ml-auto"
-                            onClick={() => setSubscribeTrader(trader)} disabled={actingId === trader.id}>
+                            onClick={() => {
+                              if (accounts.length === 0) {
+                                toast({ title: "Connect a broker account first", description: "Add your MT5 or MetaAPI account to enable copy trading." });
+                                setShowConnectModal(true);
+                                return;
+                              }
+                              setSubscribeTrader(trader);
+                            }} disabled={actingId === trader.id}>
                             Copy Trader
                           </Button>
                         )}
