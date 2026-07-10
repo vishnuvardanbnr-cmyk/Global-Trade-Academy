@@ -62,6 +62,7 @@ router.get("/courses/:courseId/quizzes", async (req, res): Promise<void> => {
           id: q.id,
           courseId: q.courseId,
           lessonId: q.lessonId,
+          isGate: q.isGate,
           title: q.title,
           description: q.description,
           passingScore: q.passingScore,
@@ -90,7 +91,7 @@ router.post("/courses/:courseId/quizzes", async (req, res): Promise<void> => {
     if (isNaN(courseId)) { res.status(400).json({ error: "Invalid id" }); return; }
     if (!(await ownsCourse(clerkId, courseId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-    const { lessonId, title, description, passingScore, xpReward, order, questions } = req.body;
+    const { lessonId, isGate, title, description, passingScore, xpReward, order, questions } = req.body;
     if (!title || !Array.isArray(questions) || questions.length === 0) {
       res.status(400).json({ error: "title and questions required" });
       return;
@@ -99,6 +100,7 @@ router.post("/courses/:courseId/quizzes", async (req, res): Promise<void> => {
     const quiz = await db.insert(quizzesTable).values({
       courseId,
       lessonId: lessonId ?? null,
+      isGate: isGate === true,
       title,
       description,
       ...(passingScore !== undefined && { passingScore }),
@@ -121,6 +123,7 @@ router.post("/courses/:courseId/quizzes", async (req, res): Promise<void> => {
       id: quiz.id,
       courseId: quiz.courseId,
       lessonId: quiz.lessonId,
+      isGate: quiz.isGate,
       title: quiz.title,
       description: quiz.description,
       passingScore: quiz.passingScore,
@@ -171,6 +174,7 @@ router.get("/quizzes/:quizId", async (req, res): Promise<void> => {
       id: quiz.id,
       courseId: quiz.courseId,
       lessonId: quiz.lessonId,
+      isGate: quiz.isGate,
       title: quiz.title,
       description: quiz.description,
       passingScore: quiz.passingScore,

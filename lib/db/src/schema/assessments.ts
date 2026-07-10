@@ -8,6 +8,7 @@ export const quizzesTable = pgTable("quizzes", {
   courseId: integer("course_id").notNull(),
   lessonId: integer("lesson_id"), // null = course/chapter-level quiz
   assignedUserId: text("assigned_user_id"), // null = standard; set = per-student replacement quiz on rejection
+  isGate: boolean("is_gate").notNull().default(false), // true = blocks lesson/course progression until approved
   title: text("title").notNull(),
   description: text("description"),
   passingScore: integer("passing_score").notNull().default(70), // percent

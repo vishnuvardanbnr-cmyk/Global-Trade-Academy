@@ -145,7 +145,7 @@ export async function syncCourseCompletion(userId: string, courseId: number): Pr
     return { completed: false, certificateSerial: null, xpAwarded: 0 };
   }
 
-  // All required gates (lessons with a linked public quiz) must be approved.
+  // All required gates (lessons with a linked gate quiz) must be approved.
   const gatedQuizzes = await db
     .select({ lessonId: quizzesTable.lessonId })
     .from(quizzesTable)
@@ -153,6 +153,7 @@ export async function syncCourseCompletion(userId: string, courseId: number): Pr
       and(
         inArray(quizzesTable.lessonId, lessonIds),
         isNull(quizzesTable.assignedUserId),
+        eq(quizzesTable.isGate, true),
       ),
     );
   const gatedLessonIds = gatedQuizzes.map((q) => q.lessonId).filter(Boolean) as number[];
@@ -257,7 +258,7 @@ export async function getUnlockedLessonIds(
 
   const lessonIds = lessons.map((l) => l.id);
 
-  // Step 2: Which lessons have a linked public quiz (i.e. require a gate)?
+  // Step 2: Which lessons have a linked gate quiz (is_gate=true, i.e. require instructor approval)?
   const gatedQuizzes = await db
     .select({ lessonId: quizzesTable.lessonId })
     .from(quizzesTable)
@@ -265,6 +266,7 @@ export async function getUnlockedLessonIds(
       and(
         inArray(quizzesTable.lessonId, lessonIds),
         isNull(quizzesTable.assignedUserId),
+        eq(quizzesTable.isGate, true),
       ),
     );
   const gatedLessonIds = new Set(gatedQuizzes.map((q) => q.lessonId).filter(Boolean) as number[]);
@@ -316,7 +318,7 @@ export async function upsertLessonGate(
   courseId: number,
   lessonId: number,
 ): Promise<typeof lessonGatesTable.$inferSelect | null> {
-  // Find the standard (non-student-specific) quiz for this lesson
+  // Find the standard (non-student-specific) gate quiz for this lesson
   const quiz = await db
     .select({ id: quizzesTable.id })
     .from(quizzesTable)
@@ -324,6 +326,7 @@ export async function upsertLessonGate(
       and(
         eq(quizzesTable.lessonId, lessonId),
         isNull(quizzesTable.assignedUserId),
+        eq(quizzesTable.isGate, true),
       ),
     )
     .limit(1)
