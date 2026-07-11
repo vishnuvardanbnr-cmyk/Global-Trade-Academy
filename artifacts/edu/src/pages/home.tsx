@@ -19,6 +19,7 @@ interface LandingContent {
     cta1: string;
     cta2: string;
     trustBadges: string[];
+    demoVideoUrl?: string;
   };
   stats: StatItem[];
   features: {
@@ -84,6 +85,16 @@ const DEFAULT_CONTENT: LandingContent = {
     buttonText: "Start Learning Free",
   },
 };
+
+function getEmbedUrl(url: string): { type: "iframe" | "video"; src: string } | null {
+  if (!url || !url.trim()) return null;
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (ytMatch) return { type: "iframe", src: `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1` };
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeoMatch) return { type: "iframe", src: `https://player.vimeo.com/video/${vimeoMatch[1]}` };
+  if (/\.(mp4|webm|ogg)(\?.*)?$/i.test(url)) return { type: "video", src: url };
+  return { type: "iframe", src: url };
+}
 
 const FEATURE_ICONS = [BookOpen, Globe2, ShieldCheck, TrendingUp, Users, Award];
 const FEATURE_COLORS = [
@@ -174,6 +185,27 @@ export default function Home() {
               {hero.badge}
             </div>
 
+            {/* Demo Video — shown above heading when set by admin */}
+            {hero.demoVideoUrl && (() => {
+              const embed = getEmbedUrl(hero.demoVideoUrl!);
+              if (!embed) return null;
+              return (
+                <div id="demo-video" className="mb-10 rounded-2xl overflow-hidden shadow-2xl border border-border/60 max-w-3xl mx-auto aspect-video bg-black">
+                  {embed.type === "video" ? (
+                    <video src={embed.src} controls className="w-full h-full object-contain" />
+                  ) : (
+                    <iframe
+                      src={embed.src}
+                      className="w-full h-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      title="Demo Video"
+                    />
+                  )}
+                </div>
+              );
+            })()}
+
             <h1 className="text-5xl md:text-[68px] font-extrabold tracking-tight text-foreground mb-6 leading-[1.05]">
               {hero.headline1}<br />
               <span className="text-primary">{hero.headline2}</span>
@@ -188,7 +220,13 @@ export default function Home() {
                   {hero.cta1} <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
-              <button className="flex items-center gap-2 h-12 px-6 text-base font-medium text-muted-foreground hover:text-foreground transition-colors">
+              <button
+                className="flex items-center gap-2 h-12 px-6 text-base font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => {
+                  const el = document.getElementById("demo-video");
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
+              >
                 <PlayCircle className="h-5 w-5 text-primary" />
                 {hero.cta2}
               </button>

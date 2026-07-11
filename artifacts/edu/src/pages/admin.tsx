@@ -2011,7 +2011,7 @@ interface StatItem { value: string; label: string; }
 interface FeatureItem { title: string; desc: string; }
 interface TestimonialItem { name: string; role: string; text: string; }
 interface LandingContent {
-  hero: { badge: string; headline1: string; headline2: string; subheadline: string; cta1: string; cta2: string; trustBadges: string[]; };
+  hero: { badge: string; headline1: string; headline2: string; subheadline: string; cta1: string; cta2: string; trustBadges: string[]; demoVideoUrl?: string; };
   stats: StatItem[];
   features: { badge: string; title: string; subtitle: string; items: FeatureItem[]; };
   testimonials: { title: string; subtitle: string; items: TestimonialItem[]; };
@@ -2209,6 +2209,27 @@ function LandingPageTab() {
                   }} />
                 </div>
               ))}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Demo Video</CardTitle>
+              <p className="text-xs text-muted-foreground">Paste a YouTube, Vimeo, or direct MP4 URL. The video will appear above the heading on the landing page. Leave blank to hide it.</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Video URL</label>
+                <Input
+                  value={content.hero.demoVideoUrl ?? ""}
+                  onChange={(e) => setHero({ demoVideoUrl: e.target.value || undefined })}
+                  placeholder="https://www.youtube.com/watch?v=... or https://vimeo.com/..."
+                />
+              </div>
+              {content.hero.demoVideoUrl && (
+                <p className="text-xs text-emerald-600 flex items-center gap-1">
+                  ✓ Video set — will appear above the heading on the live page
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
