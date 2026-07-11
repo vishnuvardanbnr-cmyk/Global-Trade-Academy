@@ -9,6 +9,7 @@ import {
 interface StatItem { value: string; label: string; }
 interface FeatureItem { title: string; desc: string; }
 interface TestimonialItem { name: string; role: string; text: string; }
+interface MarketTab { id: string; label: string; content: string; imageUrl: string; }
 
 interface LandingContent {
   hero: {
@@ -21,6 +22,7 @@ interface LandingContent {
     trustBadges: string[];
     demoVideoUrl?: string;
   };
+  markets: { tabs: MarketTab[] };
   stats: StatItem[];
   features: {
     badge: string;
@@ -50,6 +52,28 @@ const DEFAULT_CONTENT: LandingContent = {
     cta1: "Start Learning Free",
     cta2: "Watch Demo",
     trustBadges: ["No credit card required", "Free 14-day trial", "Cancel anytime"],
+  },
+  markets: {
+    tabs: [
+      {
+        id: "forex",
+        label: "Forex",
+        content: "The world's largest financial market with over $6.6 trillion traded daily. Learn currency pairs, chart reading, risk management, and how to profit in both rising and falling markets with guidance from professional traders.",
+        imageUrl: "",
+      },
+      {
+        id: "stocks",
+        label: "Stocks",
+        content: "Master equity markets with institutional-grade strategies. Understand fundamental analysis, technical setups, sector rotation, and how to build a diversified portfolio that consistently outperforms the market.",
+        imageUrl: "",
+      },
+      {
+        id: "crypto",
+        label: "Crypto",
+        content: "Navigate the 24/7 digital asset market with confidence. From blockchain fundamentals to DeFi protocols, futures trading, and on-chain analysis — stay ahead of every market cycle with expert education.",
+        imageUrl: "",
+      },
+    ],
   },
   stats: [
     { value: "50,000+", label: "Active Students" },
@@ -130,6 +154,7 @@ function deepMerge<T>(defaults: T, overrides: Partial<T>): T {
 
 export default function Home() {
   const [lp, setLp] = useState<LandingContent>(DEFAULT_CONTENT);
+  const [marketTab, setMarketTab] = useState<string>("forex");
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -141,6 +166,7 @@ export default function Home() {
   }, []);
 
   const hero = lp.hero;
+  const markets = lp.markets ?? DEFAULT_CONTENT.markets;
   const stats = lp.stats;
   const features = lp.features;
   const testimonials = lp.testimonials;
@@ -241,6 +267,43 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Markets tabs */}
+        <section className="py-14 bg-white">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-center gap-2 mb-10">
+              {markets.tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setMarketTab(tab.id)}
+                  className={`px-7 py-2.5 rounded-full text-sm font-semibold transition-all ${
+                    marketTab === tab.id
+                      ? "bg-primary text-white shadow-md"
+                      : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {markets.tabs.filter((t) => t.id === marketTab).map((tab) => (
+              <div key={tab.id} className="grid md:grid-cols-2 gap-10 items-center">
+                <div>
+                  <p className="text-lg text-muted-foreground leading-relaxed">{tab.content}</p>
+                </div>
+                {tab.imageUrl ? (
+                  <div className="rounded-2xl overflow-hidden border border-border shadow-lg">
+                    <img src={tab.imageUrl} alt={tab.label} className="w-full h-auto object-cover" />
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border-2 border-dashed border-border h-56 flex items-center justify-center text-muted-foreground text-sm">
+                    {tab.label} image
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 

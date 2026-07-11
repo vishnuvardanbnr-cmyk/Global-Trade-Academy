@@ -2010,8 +2010,10 @@ function BroadcastTab() {
 interface StatItem { value: string; label: string; }
 interface FeatureItem { title: string; desc: string; }
 interface TestimonialItem { name: string; role: string; text: string; }
+interface MarketTab { id: string; label: string; content: string; imageUrl: string; }
 interface LandingContent {
   hero: { badge: string; headline1: string; headline2: string; subheadline: string; cta1: string; cta2: string; trustBadges: string[]; demoVideoUrl?: string; };
+  markets: { tabs: MarketTab[] };
   stats: StatItem[];
   features: { badge: string; title: string; subtitle: string; items: FeatureItem[]; };
   testimonials: { title: string; subtitle: string; items: TestimonialItem[]; };
@@ -2054,6 +2056,13 @@ const LANDING_DEFAULT: LandingContent = {
       { name: "Sarah Chen", role: "Forex Trader", text: "The structured curriculum took me from zero to consistently profitable in 6 months. The live sessions are invaluable." },
       { name: "Marcus Adeyemi", role: "Crypto Analyst", text: "Copy trading helped me understand risk management hands-on. The transparency of trader metrics is unmatched." },
       { name: "Elena Petrova", role: "Options Trader", text: "Best investment education platform I've used. The community is incredibly supportive and knowledge-rich." },
+    ],
+  },
+  markets: {
+    tabs: [
+      { id: "forex", label: "Forex", content: "The world's largest financial market with over $6.6 trillion traded daily. Learn currency pairs, chart reading, risk management, and how to profit in both rising and falling markets with guidance from professional traders.", imageUrl: "" },
+      { id: "stocks", label: "Stocks", content: "Master equity markets with institutional-grade strategies. Understand fundamental analysis, technical setups, sector rotation, and how to build a diversified portfolio that consistently outperforms the market.", imageUrl: "" },
+      { id: "crypto", label: "Crypto", content: "Navigate the 24/7 digital asset market with confidence. From blockchain fundamentals to DeFi protocols, futures trading, and on-chain analysis — stay ahead of every market cycle with expert education.", imageUrl: "" },
     ],
   },
   cta: {
@@ -2116,9 +2125,15 @@ function LandingPageTab() {
     setContent((c) => ({ ...c, testimonials: { ...c.testimonials, ...patch } }));
   const setCta = (patch: Partial<LandingContent["cta"]>) =>
     setContent((c) => ({ ...c, cta: { ...c.cta, ...patch } }));
+  const updateMarketTab = (idx: number, patch: Partial<MarketTab>) =>
+    setContent((c) => {
+      const tabs = [...(c.markets?.tabs ?? LANDING_DEFAULT.markets.tabs)];
+      tabs[idx] = { ...tabs[idx], ...patch };
+      return { ...c, markets: { tabs } };
+    });
 
-  const sections = ["hero", "stats", "features", "testimonials", "cta"];
-  const sectionLabel: Record<string, string> = { hero: "Hero", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section" };
+  const sections = ["hero", "markets", "stats", "features", "testimonials", "cta"];
+  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section" };
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>;
 
@@ -2232,6 +2247,38 @@ function LandingPageTab() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ── Market Tabs ── */}
+      {activeSection === "markets" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">These three tabs appear below the hero section on the landing page. Each tab shows content text and an image side by side.</p>
+          {(content.markets?.tabs ?? LANDING_DEFAULT.markets.tabs).map((tab, i) => (
+            <Card key={tab.id}>
+              <CardHeader><CardTitle className="text-sm">{tab.label} Tab</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Tab Label</label>
+                  <Input value={tab.label} onChange={(e) => updateMarketTab(i, { label: e.target.value })} placeholder="Forex" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Content</label>
+                  <Textarea rows={4} value={tab.content} onChange={(e) => updateMarketTab(i, { content: e.target.value })} placeholder="Describe this market…" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Image URL</label>
+                  <Input value={tab.imageUrl} onChange={(e) => updateMarketTab(i, { imageUrl: e.target.value })} placeholder="https://example.com/forex-chart.jpg" />
+                  <p className="text-[11px] text-muted-foreground">Paste any public image URL (JPG, PNG, WebP). Leave blank to show a placeholder.</p>
+                </div>
+                {tab.imageUrl && (
+                  <div className="rounded-xl overflow-hidden border border-border max-h-40">
+                    <img src={tab.imageUrl} alt={tab.label} className="w-full h-40 object-cover" />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
