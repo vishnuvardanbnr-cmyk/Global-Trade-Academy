@@ -2011,6 +2011,8 @@ interface StatItem { value: string; label: string; }
 interface FeatureItem { title: string; desc: string; }
 interface TestimonialItem { name: string; role: string; text: string; }
 interface MarketTab { id: string; label: string; content: string; imageUrl: string; }
+type SocialPlatform = "facebook" | "instagram" | "youtube" | "twitter" | "linkedin" | "tiktok" | "whatsapp";
+interface SocialLink { platform: SocialPlatform; enabled: boolean; url: string; }
 interface LandingContent {
   hero: { badge: string; headline1: string; headline2: string; subheadline: string; cta1: string; cta2: string; trustBadges: string[]; demoVideoUrl?: string; };
   markets: { tabs: MarketTab[] };
@@ -2018,7 +2020,23 @@ interface LandingContent {
   features: { badge: string; title: string; subtitle: string; items: FeatureItem[]; };
   testimonials: { title: string; subtitle: string; items: TestimonialItem[]; };
   cta: { headline: string; subtitle: string; buttonText: string; };
+  social: { links: SocialLink[] };
 }
+
+const DEFAULT_SOCIAL_LINKS: SocialLink[] = [
+  { platform: "facebook",  enabled: false, url: "" },
+  { platform: "instagram", enabled: false, url: "" },
+  { platform: "youtube",   enabled: false, url: "" },
+  { platform: "twitter",   enabled: false, url: "" },
+  { platform: "linkedin",  enabled: false, url: "" },
+  { platform: "tiktok",   enabled: false, url: "" },
+  { platform: "whatsapp", enabled: false, url: "" },
+];
+
+const SOCIAL_PLATFORM_LABEL: Record<SocialPlatform, string> = {
+  facebook: "Facebook", instagram: "Instagram", youtube: "YouTube",
+  twitter: "Twitter / X", linkedin: "LinkedIn", tiktok: "TikTok", whatsapp: "WhatsApp",
+};
 
 const LANDING_DEFAULT: LandingContent = {
   hero: {
@@ -2070,6 +2088,7 @@ const LANDING_DEFAULT: LandingContent = {
     subtitle: "Join thousands of traders already using Bright Insight to sharpen their edge. Start free today.",
     buttonText: "Start Learning Free",
   },
+  social: { links: DEFAULT_SOCIAL_LINKS },
 };
 
 function deepMergeLanding(defaults: LandingContent, overrides: Partial<LandingContent>): LandingContent {
@@ -2222,8 +2241,8 @@ function LandingPageTab() {
       return { ...c, markets: { tabs } };
     });
 
-  const sections = ["hero", "markets", "stats", "features", "testimonials", "cta"];
-  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section" };
+  const sections = ["hero", "markets", "stats", "features", "testimonials", "cta", "social"];
+  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section", social: "Social Media" };
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>;
 
@@ -2517,6 +2536,48 @@ function LandingPageTab() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Social Media ── */}
+      {activeSection === "social" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Toggle each platform on to show its icon in the footer. Add the full URL for that platform first.</p>
+          {(content.social?.links ?? DEFAULT_SOCIAL_LINKS).map((link, i) => (
+            <Card key={link.platform}>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-4">
+                  {/* Enable toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const links = [...(content.social?.links ?? DEFAULT_SOCIAL_LINKS)];
+                      links[i] = { ...links[i], enabled: !links[i].enabled };
+                      setContent((c) => ({ ...c, social: { links } }));
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                      link.enabled ? "bg-primary" : "bg-muted"
+                    }`}
+                    aria-label={`Toggle ${SOCIAL_PLATFORM_LABEL[link.platform]}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform ${link.enabled ? "translate-x-5" : "translate-x-0"}`} />
+                  </button>
+                  <span className="text-sm font-medium w-28 shrink-0">{SOCIAL_PLATFORM_LABEL[link.platform]}</span>
+                  <Input
+                    className="flex-1"
+                    placeholder={`https://${link.platform}.com/yourpage`}
+                    value={link.url}
+                    disabled={!link.enabled}
+                    onChange={(e) => {
+                      const links = [...(content.social?.links ?? DEFAULT_SOCIAL_LINKS)];
+                      links[i] = { ...links[i], url: e.target.value };
+                      setContent((c) => ({ ...c, social: { links } }));
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
       {/* Bottom save */}
