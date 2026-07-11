@@ -413,11 +413,35 @@ router.post("/copy-subscriptions", async (req, res): Promise<void> => {
       }
     }
 
+    // Duplicate trader check — user already has an active sub for this trader
+    const dupTrader = await db.select({ id: copySubscriptionsTable.id }).from(copySubscriptionsTable)
+      .where(and(
+        eq(copySubscriptionsTable.userId, clerkId),
+        eq(copySubscriptionsTable.traderId, traderId),
+        eq(copySubscriptionsTable.status, "active"),
+      )).limit(1);
+    if (dupTrader.length > 0) {
+      res.status(409).json({ error: "You are already copying this trader. Unfollow first to re-subscribe." });
+      return;
+    }
+
     // Verify the copy account belongs to this user if provided
     let copyAccount: typeof copyAccountsTable.$inferSelect | undefined;
     if (copyAccountId) {
       copyAccount = await db.select().from(copyAccountsTable).where(eq(copyAccountsTable.id, copyAccountId)).limit(1).then((r) => r[0]);
       if (!copyAccount || copyAccount.userId !== clerkId) { res.status(403).json({ error: "Invalid copy account" }); return; }
+
+      // Account already linked check — same broker account can't be active on another trader
+      const dupAccount = await db.select({ id: copySubscriptionsTable.id, traderId: copySubscriptionsTable.traderId })
+        .from(copySubscriptionsTable)
+        .where(and(
+          eq(copySubscriptionsTable.copyAccountId, copyAccountId),
+          eq(copySubscriptionsTable.status, "active"),
+        )).limit(1);
+      if (dupAccount.length > 0 && dupAccount[0].traderId !== traderId) {
+        res.status(409).json({ error: "This broker account is already linked to another trader. Unlink it first before connecting to a new one." });
+        return;
+      }
     }
 
     const [inserted] = await db.insert(copySubscriptionsTable).values({
