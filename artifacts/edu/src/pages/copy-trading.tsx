@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { BrokerServerSearch } from "@/components/ui/broker-server-search";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -199,7 +200,7 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
               </div>
               <div className="space-y-1">
                 <Label>Broker Server</Label>
-                <Input placeholder="e.g. ICMarkets-Live01 or Deriv-Server" value={mt5Server} onChange={(e) => setMt5Server(e.target.value)} />
+                <BrokerServerSearch value={mt5Server} onChange={setMt5Server} placeholder="Search broker server…" />
               </div>
               <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
                 Your credentials are transmitted securely to MetaAPI's encrypted cloud infrastructure. We store only your login number and server name for display — never your password.

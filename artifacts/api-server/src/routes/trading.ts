@@ -908,4 +908,81 @@ async function requireActiveSub(clerkId: string): Promise<boolean> {
   return false;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   BROKER SERVER SEARCH
+════════════════════════════════════════════════════════════════════ */
+
+const BROKER_SERVERS: { name: string; platform: "mt4" | "mt5" | "both" }[] = [
+  { name: "OctaFX-Demo", platform: "mt5" },
+  { name: "OctaFX-Real", platform: "mt5" },
+  { name: "ICMarkets-Demo", platform: "both" },
+  { name: "ICMarkets-Live01", platform: "both" },
+  { name: "ICMarkets-Live02", platform: "both" },
+  { name: "ICMarkets-Live03", platform: "both" },
+  { name: "Exness-Trial1", platform: "mt5" },
+  { name: "Exness-Real3", platform: "mt5" },
+  { name: "Exness-Real4", platform: "mt5" },
+  { name: "Exness-Real5", platform: "mt5" },
+  { name: "ExnessTech-Real", platform: "mt5" },
+  { name: "XMGlobal-Demo 3", platform: "mt5" },
+  { name: "XMGlobal-Demo 4", platform: "mt5" },
+  { name: "XMGlobal-Real 3", platform: "mt5" },
+  { name: "XMGlobal-Real 4", platform: "mt5" },
+  { name: "XMGlobal-Real 10", platform: "mt5" },
+  { name: "Deriv-Demo", platform: "mt5" },
+  { name: "Deriv-Server", platform: "mt5" },
+  { name: "Pepperstone-Demo", platform: "both" },
+  { name: "Pepperstone-Edge-Demo", platform: "both" },
+  { name: "Pepperstone-Edge01", platform: "both" },
+  { name: "Pepperstone-Edge02", platform: "both" },
+  { name: "Pepperstone-Edge03", platform: "both" },
+  { name: "FBS-Demo", platform: "both" },
+  { name: "FBS-Real", platform: "both" },
+  { name: "FXTM-Demo", platform: "both" },
+  { name: "FXTM-ECN", platform: "both" },
+  { name: "FXTM-Real", platform: "both" },
+  { name: "HotForex-Demo", platform: "both" },
+  { name: "HotForex-Live04", platform: "both" },
+  { name: "HotForex-Live05", platform: "both" },
+  { name: "Alpari-Demo", platform: "both" },
+  { name: "Alpari-MT5-Demo", platform: "mt5" },
+  { name: "Alpari-MT5-Real2", platform: "mt5" },
+  { name: "AxiTrader-Demo MT5", platform: "mt5" },
+  { name: "AxiTrader-Live MT5", platform: "mt5" },
+  { name: "FxPro-Demo", platform: "both" },
+  { name: "FxPro-MT5 Real4", platform: "mt5" },
+  { name: "ThinkMarkets-Demo", platform: "both" },
+  { name: "ThinkMarkets-Live", platform: "both" },
+  { name: "EasyMarkets-Demo", platform: "both" },
+  { name: "EasyMarkets-Live", platform: "both" },
+  { name: "Tickmill-Demo", platform: "both" },
+  { name: "Tickmill-Live", platform: "both" },
+  { name: "RoboForex-Demo", platform: "both" },
+  { name: "RoboForex-ECN", platform: "both" },
+  { name: "VantageFX-Demo", platform: "both" },
+  { name: "VantageFX-Live", platform: "both" },
+  { name: "Admiral-Demo", platform: "both" },
+  { name: "Admiral-Live", platform: "both" },
+  { name: "TMGM-Demo", platform: "mt5" },
+  { name: "TMGM-Live", platform: "mt5" },
+  { name: "Swissquote-Demo", platform: "both" },
+  { name: "Swissquote-Live", platform: "both" },
+  { name: "LiteFinance-MT5-Demo", platform: "mt5" },
+  { name: "LiteFinance-MT5-Real", platform: "mt5" },
+  { name: "FP Markets-Demo", platform: "both" },
+  { name: "FP Markets-Live", platform: "both" },
+  { name: "GBE-Demo", platform: "mt5" },
+  { name: "GBE-Live", platform: "mt5" },
+];
+
+router.get("/broker-servers", (req, res): void => {
+  const q = String(req.query.q ?? "").trim().toLowerCase();
+  if (!q || q.length < 2) { res.json([]); return; }
+  const results = BROKER_SERVERS
+    .filter((s) => s.name.toLowerCase().includes(q))
+    .slice(0, 10)
+    .map((s) => s.name);
+  res.json(results);
+});
+
 export default router;

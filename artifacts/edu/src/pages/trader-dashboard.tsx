@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { BrokerServerSearch } from "@/components/ui/broker-server-search";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -467,7 +468,7 @@ export default function TraderDashboard() {
                         <Input type="password" value={masterForm.mt5Password} onChange={(e) => setMasterForm((f) => ({ ...f, mt5Password: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5"><Label>Server</Label>
-                        <Input value={masterForm.mt5Server} onChange={(e) => setMasterForm((f) => ({ ...f, mt5Server: e.target.value }))} placeholder="BrokerName-Live" />
+                        <BrokerServerSearch value={masterForm.mt5Server} onChange={(v) => setMasterForm((f) => ({ ...f, mt5Server: v }))} placeholder="Search broker server…" />
                       </div>
                     </div>
                   ) : (
