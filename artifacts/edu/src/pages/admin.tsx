@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useGetAdminStats, useListUsers, getGetAdminStatsQueryKey, useListLiveClasses, useCreateLiveClass, getListLiveClassesQueryKey, useListChannels, useCreateChannel, useUpdateChannel, useDeleteChannel, getListChannelsQueryKey, useListCourses, type CommunityChannel } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import {
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
   Hash, Pencil, Plus, Search, AlertTriangle, Loader2, Check, X,
   Layout, ExternalLink, Save, Server, Eye, EyeOff, Wifi, WifiOff,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Upload,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -2085,6 +2085,96 @@ function deepMergeLanding(defaults: LandingContent, overrides: Partial<LandingCo
   return result as unknown as LandingContent;
 }
 
+function MarketTabImageUpload({
+  imageUrl, label, onUploaded, onRemove,
+}: { imageUrl: string; label: string; onUploaded: (url: string) => void; onRemove: () => void }) {
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    const MAX_MB = 5;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      toast({ title: `Image must be under ${MAX_MB} MB`, variant: "destructive" });
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Only image files are allowed", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("image", file);
+      const res = await fetch("/api/upload/image", { method: "POST", body: form });
+      if (!res.ok) { const e = await res.json() as { error: string }; throw new Error(e.error); }
+      const { url } = await res.json() as { url: string };
+      onUploaded(url);
+      toast({ title: "Image uploaded!" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+      />
+      {imageUrl ? (
+        <div className="relative rounded-xl overflow-hidden border border-border">
+          <img src={imageUrl} alt={label} className="w-full h-44 object-cover" />
+          <div className="absolute top-2 right-2 flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="bg-black/60 hover:bg-black/80 text-white text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+            >
+              Replace
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="bg-red-600/80 hover:bg-red-700 text-white text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border hover:border-primary/50 bg-secondary/30 hover:bg-secondary/50 transition-colors h-36 text-muted-foreground hover:text-foreground"
+        >
+          {uploading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <>
+              <Upload className="h-5 w-5" />
+              <span className="text-sm font-medium">Click to upload image</span>
+              <span className="text-xs">JPG, PNG, WebP — max 5 MB</span>
+            </>
+          )}
+        </button>
+      )}
+      {uploading && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin" />Uploading…
+        </p>
+      )}
+    </div>
+  );
+}
+
 function LandingPageTab() {
   const { toast } = useToast();
   const [content, setContent] = useState<LandingContent>(LANDING_DEFAULT);
@@ -2267,15 +2357,14 @@ function LandingPageTab() {
                   <Textarea rows={4} value={tab.content} onChange={(e) => updateMarketTab(i, { content: e.target.value })} placeholder="Describe this market…" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Image URL</label>
-                  <Input value={tab.imageUrl} onChange={(e) => updateMarketTab(i, { imageUrl: e.target.value })} placeholder="https://example.com/forex-chart.jpg" />
-                  <p className="text-[11px] text-muted-foreground">Paste any public image URL (JPG, PNG, WebP). Leave blank to show a placeholder.</p>
+                  <label className="text-sm font-medium">Tab Image</label>
+                  <MarketTabImageUpload
+                    imageUrl={tab.imageUrl}
+                    label={tab.label}
+                    onUploaded={(url) => updateMarketTab(i, { imageUrl: url })}
+                    onRemove={() => updateMarketTab(i, { imageUrl: "" })}
+                  />
                 </div>
-                {tab.imageUrl && (
-                  <div className="rounded-xl overflow-hidden border border-border max-h-40">
-                    <img src={tab.imageUrl} alt={tab.label} className="w-full h-40 object-cover" />
-                  </div>
-                )}
               </CardContent>
             </Card>
           ))}
