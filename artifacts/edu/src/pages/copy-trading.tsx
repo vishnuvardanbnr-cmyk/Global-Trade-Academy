@@ -71,7 +71,7 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   open: boolean; onClose: () => void; onCreated: (a: CopyAccount) => void;
 }) {
   const { toast } = useToast();
-  const [type, setType] = useState<"binance" | "bybit" | "mt5" | "metaapi">("binance");
+  const [type, setType] = useState<"binance" | "bybit" | "metaapi">("metaapi");
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
@@ -83,7 +83,7 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setType("binance"); setLabel(""); setApiKey(""); setApiSecret("");
+    setType("metaapi"); setLabel(""); setApiKey(""); setApiSecret("");
     setMt5Login(""); setMt5Password(""); setMt5Server(""); setMetaapiAccountId("");
     setMt5Platform("mt5");
   };
@@ -119,7 +119,6 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   const typeMeta = {
     binance:  { label: "Binance",  color: "text-yellow-500" },
     bybit:    { label: "Bybit",    color: "text-orange-500" },
-    mt5:      { label: "MT5",      color: "text-blue-500" },
     metaapi:  { label: "MetaAPI",  color: "text-purple-500" },
   };
 
@@ -131,8 +130,8 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
         </DialogHeader>
         <div className="space-y-4 pt-1">
           {/* Type selector */}
-          <div className="grid grid-cols-4 gap-2">
-            {(["binance", "bybit", "mt5", "metaapi"] as const).map((t) => (
+          <div className="grid grid-cols-3 gap-2">
+            {(["binance", "bybit", "metaapi"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setType(t)}
@@ -162,26 +161,6 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
               </div>
               <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
                 Use a <strong>read + trade</strong> key. Disable withdrawal permissions. Your credentials are stored AES-256 encrypted.
-              </p>
-            </>
-          )}
-
-          {type === "mt5" && (
-            <>
-              <div className="space-y-1">
-                <Label>MT5 Login Number</Label>
-                <Input placeholder="e.g. 12345678" value={mt5Login} onChange={(e) => setMt5Login(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label>MT5 Password</Label>
-                <Input type="password" placeholder="Your MT5 password" value={mt5Password} onChange={(e) => setMt5Password(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label>Server</Label>
-                <Input placeholder="e.g. Deriv-Server or ICMarkets-Live01" value={mt5Server} onChange={(e) => setMt5Server(e.target.value)} />
-              </div>
-              <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
-                Your password is encrypted. Make sure your server name matches exactly what appears in MT5.
               </p>
             </>
           )}
