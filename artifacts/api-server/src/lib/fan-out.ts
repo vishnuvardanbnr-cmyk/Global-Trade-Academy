@@ -19,10 +19,10 @@ import { logger } from "./logger";
 
 /* ── Helpers ───────────────────────────────────────────────────── */
 
-/** Shared fetch with a hard 10-second timeout so a hung exchange never stalls fan-out */
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+/** Shared fetch with a configurable timeout (default 10s) so a hung exchange never stalls fan-out */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 10_000): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
@@ -384,6 +384,7 @@ export async function metaapiCreateAccount(opts: {
         application: "MetaApi",
       }),
     },
+    60_000, // MetaAPI provisioning can take up to ~30s
   );
 
   if (!res.ok) {
