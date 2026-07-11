@@ -233,6 +233,9 @@ async function processMasterAccount(
         decrypt(account.apiSecret!),
       );
     } else if (account.type === "mt5") {
+      // MT5 position polling requires an MT5 bridge service (MT5_BRIDGE_URL).
+      // If not configured, skip silently — manual signals still work fine.
+      if (!process.env.MT5_BRIDGE_URL) return;
       live = await fetchMt5Positions(
         account.mt5Login!,
         decrypt(account.mt5Password!),
