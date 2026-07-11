@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
@@ -155,6 +155,11 @@ function deepMerge<T>(defaults: T, overrides: Partial<T>): T {
 export default function Home() {
   const [lp, setLp] = useState<LandingContent>(DEFAULT_CONTENT);
   const [marketTab, setMarketTab] = useState<string>("forex");
+  const [progress, setProgress] = useState(0);
+  const sectionRef = useRef<HTMLElement>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inViewRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -164,6 +169,48 @@ export default function Home() {
       })
       .catch(() => {});
   }, []);
+
+  const startCycle = useCallback((tabs: string[]) => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (progressRef.current) clearInterval(progressRef.current);
+    setProgress(0);
+
+    let prog = 0;
+    progressRef.current = setInterval(() => {
+      prog += 1;
+      setProgress(prog);
+      if (prog >= 100) prog = 0;
+    }, 30); // ~3 seconds total
+
+    intervalRef.current = setInterval(() => {
+      setMarketTab((cur) => {
+        const idx = tabs.indexOf(cur);
+        return tabs[(idx + 1) % tabs.length];
+      });
+      prog = 0;
+      setProgress(0);
+    }, 3000);
+  }, []);
+
+  const stopCycle = useCallback(() => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (progressRef.current) { clearInterval(progressRef.current); progressRef.current = null; }
+    setProgress(0);
+  }, []);
+
+  useEffect(() => {
+    const tabs = (lp.markets ?? DEFAULT_CONTENT.markets).tabs.map((t) => t.id);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        inViewRef.current = entry.isIntersecting;
+        if (entry.isIntersecting) startCycle(tabs);
+        else stopCycle();
+      },
+      { threshold: 0.3 },
+    );
+    if (sectionRef.current) observer.observe(sectionRef.current);
+    return () => { observer.disconnect(); stopCycle(); };
+  }, [lp.markets, startCycle, stopCycle]);
 
   const hero = lp.hero;
   const markets = lp.markets ?? DEFAULT_CONTENT.markets;
@@ -271,25 +318,37 @@ export default function Home() {
         </section>
 
         {/* Markets tabs */}
-        <section className="py-14 bg-white">
+        <section ref={sectionRef} className="py-14 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6">
             <div className="flex justify-center gap-2 mb-10">
-              {markets.tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setMarketTab(tab.id)}
-                  className={`px-7 py-2.5 rounded-full text-sm font-semibold transition-all ${
-                    marketTab === tab.id
-                      ? "bg-primary text-white shadow-md"
-                      : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              {markets.tabs.map((tab) => {
+                const isActive = marketTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setMarketTab(tab.id);
+                      if (inViewRef.current) startCycle(markets.tabs.map((t) => t.id));
+                    }}
+                    className={`relative px-7 py-2.5 rounded-full text-sm font-semibold transition-all overflow-hidden ${
+                      isActive
+                        ? "bg-primary text-white shadow-md"
+                        : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
+                    }`}
+                  >
+                    {tab.label}
+                    {isActive && (
+                      <span
+                        className="absolute bottom-0 left-0 h-[3px] bg-white/40 transition-none"
+                        style={{ width: `${progress}%` }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
             </div>
             {markets.tabs.filter((t) => t.id === marketTab).map((tab) => (
-              <div key={tab.id} className="grid md:grid-cols-2 gap-10 items-center">
+              <div key={tab.id} className="grid md:grid-cols-2 gap-10 items-center animate-in fade-in duration-500">
                 <div>
                   <p className="text-lg text-muted-foreground leading-relaxed">{tab.content}</p>
                 </div>
