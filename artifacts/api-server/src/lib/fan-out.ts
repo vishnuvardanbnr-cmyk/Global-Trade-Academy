@@ -359,6 +359,44 @@ export async function metaapiCreateStrategy(name: string): Promise<string> {
  * Fully handled server-side — copier never visits app.metaapi.cloud.
  * Returns the MetaAPI account ID.
  */
+const METAAPI_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Poll GET /accounts until an account with matching login+server appears.
+ * MetaAPI validates credentials asynchronously and may return AcceptedError
+ * on the POST — we must poll for the resulting UUID.
+ */
+async function pollForMetaApiAccount(login: string, server: string, token: string): Promise<string> {
+  const maxAttempts = 8;
+  const intervalMs = 15_000; // 15s between polls, up to 120s total
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+
+    try {
+      const res = await fetchWithTimeout(
+        `${METAAPI_PROVISION_BASE}/users/current/accounts?limit=100`,
+        { headers: { "auth-token": token } },
+        15_000,
+      );
+      if (!res.ok) continue;
+
+      const accounts = await res.json() as Array<{ id?: string; login?: string | number; server?: string }>;
+      const match = accounts.find(
+        (a) => String(a.login) === String(login) && a.server === server && a.id && METAAPI_UUID_RE.test(a.id),
+      );
+      if (match) return match.id!;
+    } catch {
+      // network hiccup — keep polling
+    }
+  }
+
+  throw new Error(
+    `MetaAPI account validation timed out after ${maxAttempts * intervalMs / 1000}s. ` +
+    `The account for login ${login} on ${server} may still be provisioning — try connecting again in a minute.`,
+  );
+}
+
 export async function metaapiCreateAccount(opts: {
   login: string;
   password: string;
@@ -384,20 +422,23 @@ export async function metaapiCreateAccount(opts: {
         application: "MetaApi",
       }),
     },
-    60_000, // MetaAPI provisioning can take up to ~30s
+    60_000,
   );
 
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`MetaAPI account creation error ${res.status}: ${txt}`);
+  // Non-2xx that isn't an AcceptedError means a real failure
+  const body = await res.json() as { id?: string | number; error?: string };
+
+  // MetaAPI async validation: account submitted but credentials not yet verified.
+  // Poll for the account to appear in the account list.
+  if (!res.ok || (body.error === "AcceptedError") || !METAAPI_UUID_RE.test(String(body.id ?? ""))) {
+    if (body.error && body.error !== "AcceptedError") {
+      throw new Error(`MetaAPI account creation error ${res.status}: ${JSON.stringify(body)}`);
+    }
+    // Either AcceptedError or non-UUID id — poll for the real account
+    return await pollForMetaApiAccount(opts.login, opts.server, token);
   }
 
-  const data = await res.json() as { id: string };
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!data.id || !UUID_RE.test(String(data.id))) {
-    throw new Error(`MetaAPI returned invalid account ID: ${JSON.stringify(data.id)} — full response: ${JSON.stringify(data)}`);
-  }
-  return String(data.id);
+  return String(body.id);
 }
 
 /**
