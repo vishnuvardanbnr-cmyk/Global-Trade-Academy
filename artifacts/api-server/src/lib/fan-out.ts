@@ -393,8 +393,11 @@ export async function metaapiCreateAccount(opts: {
   }
 
   const data = await res.json() as { id: string };
-  if (!data.id) throw new Error("MetaAPI did not return an account ID");
-  return data.id;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!data.id || !UUID_RE.test(String(data.id))) {
+    throw new Error(`MetaAPI returned invalid account ID: ${JSON.stringify(data.id)} — full response: ${JSON.stringify(data)}`);
+  }
+  return String(data.id);
 }
 
 /**
