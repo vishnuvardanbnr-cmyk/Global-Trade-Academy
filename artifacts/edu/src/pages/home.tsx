@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ArrowRight, BarChart3, BookOpen, Globe2, ShieldCheck,
   TrendingUp, Star, Users, CheckCircle2, PlayCircle, Award,
@@ -44,6 +45,11 @@ interface LandingContent {
     buttonText: string;
   };
   social: { links: SocialLink[] };
+  legal: {
+    privacy: { title: string; content: string };
+    terms:   { title: string; content: string };
+    support: { title: string; content: string };
+  };
 }
 
 const SOCIAL_ICON: Record<SocialPlatform, React.ReactNode> = {
@@ -141,6 +147,11 @@ const DEFAULT_CONTENT: LandingContent = {
     buttonText: "Start Learning Free",
   },
   social: { links: DEFAULT_SOCIAL },
+  legal: {
+    privacy: { title: "Privacy Policy",    content: "" },
+    terms:   { title: "Terms of Service",  content: "" },
+    support: { title: "Support",           content: "" },
+  },
 };
 
 function getEmbedUrl(url: string): { type: "iframe" | "video"; src: string } | null {
@@ -188,6 +199,7 @@ function deepMerge<T>(defaults: T, overrides: Partial<T>): T {
 export default function Home() {
   const [lp, setLp] = useState<LandingContent>(DEFAULT_CONTENT);
   const [marketTab, setMarketTab] = useState<string>("forex");
+  const [legalModal, setLegalModal] = useState<"privacy" | "terms" | "support" | null>(null);
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -481,13 +493,45 @@ export default function Home() {
             </div>
             <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Bright Insight. All rights reserved.</p>
             <div className="flex gap-5 text-sm text-muted-foreground">
-              <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
-              <a href="#" className="hover:text-foreground transition-colors">Terms</a>
-              <a href="#" className="hover:text-foreground transition-colors">Support</a>
+              {(["privacy", "terms", "support"] as const).map((key) => {
+                const item = lp.legal?.[key];
+                const label = key.charAt(0).toUpperCase() + key.slice(1);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setLegalModal(key)}
+                    className="hover:text-foreground transition-colors"
+                  >
+                    {item?.title || label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
       </footer>
+
+      {/* Legal modals */}
+      {(["privacy", "terms", "support"] as const).map((key) => {
+        const item = lp.legal?.[key];
+        const label = key.charAt(0).toUpperCase() + key.slice(1);
+        return (
+          <Dialog key={key} open={legalModal === key} onOpenChange={(o) => { if (!o) setLegalModal(null); }}>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{item?.title || label}</DialogTitle>
+              </DialogHeader>
+              {item?.content ? (
+                <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap text-sm leading-relaxed">
+                  {item.content}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-6 text-center">No content set yet. Add it in Admin → Landing Page → Legal.</p>
+              )}
+            </DialogContent>
+          </Dialog>
+        );
+      })}
     </div>
   );
 }

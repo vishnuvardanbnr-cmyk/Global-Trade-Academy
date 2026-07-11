@@ -2021,6 +2021,11 @@ interface LandingContent {
   testimonials: { title: string; subtitle: string; items: TestimonialItem[]; };
   cta: { headline: string; subtitle: string; buttonText: string; };
   social: { links: SocialLink[] };
+  legal: {
+    privacy: { title: string; content: string };
+    terms:   { title: string; content: string };
+    support: { title: string; content: string };
+  };
 }
 
 const DEFAULT_SOCIAL_LINKS: SocialLink[] = [
@@ -2089,6 +2094,11 @@ const LANDING_DEFAULT: LandingContent = {
     buttonText: "Start Learning Free",
   },
   social: { links: DEFAULT_SOCIAL_LINKS },
+  legal: {
+    privacy: { title: "Privacy Policy",   content: "" },
+    terms:   { title: "Terms of Service", content: "" },
+    support: { title: "Support",          content: "" },
+  },
 };
 
 function deepMergeLanding(defaults: LandingContent, overrides: Partial<LandingContent>): LandingContent {
@@ -2241,8 +2251,8 @@ function LandingPageTab() {
       return { ...c, markets: { tabs } };
     });
 
-  const sections = ["hero", "markets", "stats", "features", "testimonials", "cta", "social"];
-  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section", social: "Social Media" };
+  const sections = ["hero", "markets", "stats", "features", "testimonials", "cta", "social", "legal"];
+  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section", social: "Social Media", legal: "Legal" };
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>;
 
@@ -2577,6 +2587,43 @@ function LandingPageTab() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* ── Legal ── */}
+      {activeSection === "legal" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Content shown in the popup when users click Privacy, Terms, or Support in the footer. Supports plain text and line breaks.</p>
+          {(["privacy", "terms", "support"] as const).map((key) => {
+            const item = content.legal?.[key] ?? { title: "", content: "" };
+            const defaultTitle = key === "privacy" ? "Privacy Policy" : key === "terms" ? "Terms of Service" : "Support";
+            return (
+              <Card key={key}>
+                <CardHeader><CardTitle className="text-sm capitalize">{defaultTitle}</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Popup Title</label>
+                    <Input
+                      value={item.title}
+                      onChange={(e) => setContent((c) => ({ ...c, legal: { ...c.legal, [key]: { ...item, title: e.target.value } } }))}
+                      placeholder={defaultTitle}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Content</label>
+                    <Textarea
+                      rows={10}
+                      value={item.content}
+                      onChange={(e) => setContent((c) => ({ ...c, legal: { ...c.legal, [key]: { ...item, content: e.target.value } } }))}
+                      placeholder={`Write your ${defaultTitle} here…`}
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Plain text — line breaks are preserved in the popup.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
