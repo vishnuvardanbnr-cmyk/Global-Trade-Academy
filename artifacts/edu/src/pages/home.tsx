@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
@@ -155,7 +155,6 @@ function deepMerge<T>(defaults: T, overrides: Partial<T>): T {
 export default function Home() {
   const [lp, setLp] = useState<LandingContent>(DEFAULT_CONTENT);
   const [marketTab, setMarketTab] = useState<string>("forex");
-  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -165,22 +164,6 @@ export default function Home() {
       })
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    const tabs = (lp.markets ?? DEFAULT_CONTENT.markets).tabs.map((t) => t.id);
-    const onScroll = () => {
-      const el = sectionRef.current;
-      if (!el) return;
-      const { top, height } = el.getBoundingClientRect();
-      const scrolled = -top; // how many px past the top of the section
-      if (scrolled < 0 || scrolled > height) return;
-      const progress = scrolled / height; // 0 → 1 through the section
-      const idx = Math.min(Math.floor(progress * tabs.length), tabs.length - 1);
-      setMarketTab(tabs[idx]);
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [lp.markets]);
 
   const hero = lp.hero;
   const markets = lp.markets ?? DEFAULT_CONTENT.markets;
@@ -287,61 +270,47 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Markets tabs — tall section so scroll drives the tab */}
-        <section ref={sectionRef} style={{ height: `${markets.tabs.length * 100}vh` }} className="relative bg-white">
-          <div className="sticky top-0 h-screen flex items-center">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 w-full py-14">
-              {/* Tab pills */}
-              <div className="flex justify-center gap-2 mb-10">
-                {markets.tabs.map((tab) => {
-                  const isActive = marketTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setMarketTab(tab.id)}
-                      className={`px-7 py-2.5 rounded-full text-sm font-semibold transition-all ${
-                        isActive
-                          ? "bg-primary text-white shadow-md"
-                          : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Active tab content */}
-              {markets.tabs.filter((t) => t.id === marketTab).map((tab) => (
-                <div key={tab.id} className="grid md:grid-cols-2 gap-10 items-center">
-                  <div>
-                    <h3 className="text-2xl font-bold text-foreground mb-4">{tab.label}</h3>
-                    <p className="text-lg text-muted-foreground leading-relaxed">{tab.content}</p>
-                  </div>
-                  {tab.imageUrl ? (
-                    <div className="rounded-2xl overflow-hidden border border-border shadow-lg">
-                      <img src={tab.imageUrl} alt={tab.label} className="w-full h-auto object-cover" />
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border-2 border-dashed border-border h-64 flex items-center justify-center text-muted-foreground text-sm">
-                      {tab.label} image
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {/* Scroll hint dots */}
-              <div className="flex justify-center gap-2 mt-10">
-                {markets.tabs.map((tab) => (
-                  <span
+        {/* Markets tabs */}
+        <section className="bg-white py-16">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6">
+            {/* Tab pills */}
+            <div className="flex justify-center gap-2 mb-10">
+              {markets.tabs.map((tab) => {
+                const isActive = marketTab === tab.id;
+                return (
+                  <button
                     key={tab.id}
-                    className={`block w-2 h-2 rounded-full transition-all ${
-                      marketTab === tab.id ? "bg-primary w-6" : "bg-border"
+                    onClick={() => setMarketTab(tab.id)}
+                    className={`px-7 py-2.5 rounded-full text-sm font-semibold transition-all ${
+                      isActive
+                        ? "bg-primary text-white shadow-md"
+                        : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
                     }`}
-                  />
-                ))}
-              </div>
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Active tab content */}
+            {markets.tabs.filter((t) => t.id === marketTab).map((tab) => (
+              <div key={tab.id} className="grid md:grid-cols-2 gap-10 items-center">
+                <div>
+                  <h3 className="text-2xl font-bold text-foreground mb-4">{tab.label}</h3>
+                  <p className="text-lg text-muted-foreground leading-relaxed">{tab.content}</p>
+                </div>
+                {tab.imageUrl ? (
+                  <div className="rounded-2xl overflow-hidden border border-border shadow-lg">
+                    <img src={tab.imageUrl} alt={tab.label} className="w-full h-auto object-cover" />
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border-2 border-dashed border-border h-64 flex items-center justify-center text-muted-foreground text-sm">
+                    {tab.label} image
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 
