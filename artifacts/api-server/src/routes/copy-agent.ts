@@ -354,4 +354,35 @@ async function poll() {
 `;
 }
 
+/* ── GET /api/copy-agent/vps-status ──────────────────────────────
+   Returns VPS status for all agent-mode accounts belonging to the
+   authenticated user (no agent token needed — uses session auth).  */
+router.get("/copy-agent/vps-status", async (req, res): Promise<void> => {
+  try {
+    const { getAuth } = await import("../lib/auth");
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const { managedVpsTable } = await import("@workspace/db");
+    const rows = await db
+      .select({
+        copyAccountId: managedVpsTable.copyAccountId,
+        status:        managedVpsTable.status,
+        ipAddress:     managedVpsTable.ipAddress,
+      })
+      .from(managedVpsTable)
+      .where(eq(managedVpsTable.userId, clerkId));
+
+    // keyed by copyAccountId for easy lookup
+    const map: Record<number, { status: string; ipAddress: string | null }> = {};
+    for (const row of rows) {
+      map[row.copyAccountId] = { status: row.status, ipAddress: row.ipAddress };
+    }
+    res.json(map);
+  } catch (err) {
+    req.log.error({ err }, "vps-status error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export default router;

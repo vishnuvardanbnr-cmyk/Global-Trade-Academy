@@ -195,6 +195,19 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       agentToken,
     }).returning();
 
+    // If agent mode, auto-provision a managed VPS in the background
+    if (resolvedMode === "agent" && inserted.agentToken) {
+      import("../lib/vps-manager").then(({ provisionVps }) => {
+        provisionVps({
+          copyAccountId: inserted.id,
+          userId: clerkId,
+          agentToken: inserted.agentToken!,
+        }).catch((err: unknown) => {
+          req.log.error({ err }, "VPS provision failed (background)");
+        });
+      }).catch(() => {});
+    }
+
     res.status(201).json(maskAccount(inserted));
   } catch (err) {
     req.log.error({ err }, "Error creating copy account");
@@ -210,6 +223,12 @@ router.delete("/copy-accounts/:id", async (req, res): Promise<void> => {
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     const account = await db.select().from(copyAccountsTable).where(eq(copyAccountsTable.id, id)).limit(1).then((r) => r[0]);
     if (!account || account.userId !== clerkId) { res.status(404).json({ error: "Not found" }); return; }
+    // Destroy managed VPS if one exists
+    if (account.executionMode === "agent") {
+      import("../lib/vps-manager").then(({ destroyVps }) => {
+        destroyVps(id).catch(() => {});
+      }).catch(() => {});
+    }
     // Also clean up any stored positions for master accounts
     if (account.role === "master") {
       await db.delete(masterPositionsTable).where(eq(masterPositionsTable.masterAccountId, id));

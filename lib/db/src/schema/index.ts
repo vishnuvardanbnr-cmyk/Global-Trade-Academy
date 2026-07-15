@@ -21,3 +21,4 @@ export * from "./site-settings";
 export * from "./livekit-accounts";
 export * from "./groups";
 export * from "./push-subscriptions";
+export * from "./managed-vps";

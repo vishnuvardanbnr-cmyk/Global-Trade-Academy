@@ -54,67 +54,63 @@ type CopyTrade = {
   createdAt: string;
 };
 
-/* ─── Agent Setup Card ───────────────────────────────────────────── */
-function AgentSetupCard({ account }: { account: CopyAccount }) {
-  const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
-
-  const isOnline = account.agentLastSeen
+/* ─── Managed VPS Status Card ────────────────────────────────────── */
+function ManagedVpsCard({ account }: { account: CopyAccount & { vpsStatus?: string; vpsIp?: string } }) {
+  const isAgentOnline = account.agentLastSeen
     ? (Date.now() - new Date(account.agentLastSeen).getTime()) < 15_000
     : false;
 
-  const copyToken = () => {
-    if (!account.agentToken) return;
-    navigator.clipboard.writeText(account.agentToken).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const vpsStatus = account.vpsStatus ?? "provisioning";
 
-  const downloadScript = () => {
-    window.open(`/api/copy-agent/script?token=${account.agentToken}`, "_blank");
+  const statusUI: Record<string, { label: string; color: string; pulse: boolean }> = {
+    provisioning: { label: "Provisioning VPS in Malaysia… (~2 min)", color: "text-yellow-600", pulse: true },
+    running:      { label: "VPS Running", color: "text-green-600", pulse: false },
+    error:        { label: "VPS Error", color: "text-red-600", pulse: false },
+    stopped:      { label: "VPS Stopped", color: "text-gray-500", pulse: false },
   };
-
-  const setupCmd = `BRIGHT_TOKEN=${account.agentToken} BRIGHT_URL=https://brightinsight.app node bright-agent.js`;
+  const ui = statusUI[vpsStatus] ?? statusUI.provisioning;
 
   return (
-    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3 w-full">
-      <div className="flex items-center justify-between">
+    <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 w-full">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Server className="h-4 w-4 text-emerald-500" />
-          <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Agent Mode — VPS Setup</span>
+          <Server className="h-4 w-4 text-blue-500" />
+          <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+            Managed VPS — {account.label}
+          </span>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+            🇲🇾 KUL
+          </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          {isOnline
-            ? <><Wifi className="h-3.5 w-3.5 text-green-500" /><span className="text-[11px] text-green-600 font-medium">Online</span></>
-            : <><WifiOff className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-[11px] text-muted-foreground">{account.agentLastSeen ? "Offline" : "Not connected"}</span></>
-          }
-        </div>
-      </div>
-
-      <div className="space-y-2 text-[12px]">
-        <p className="text-muted-foreground font-medium">1. Download the agent script</p>
-        <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={downloadScript}>
-          <Download className="h-3 w-3" /> Download bright-agent.js
-        </Button>
-
-        <p className="text-muted-foreground font-medium mt-2">2. Run on your VPS (Node.js 18+)</p>
-        <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2 font-mono text-[11px] overflow-x-auto">
-          <span className="flex-1 text-foreground whitespace-nowrap">{setupCmd}</span>
-          <button onClick={() => { navigator.clipboard.writeText(setupCmd); toast({ title: "Copied!" }); }}
-            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <p className="text-muted-foreground font-medium mt-2">3. Agent token (keep secret)</p>
-        <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2 font-mono text-[11px]">
-          <span className="flex-1 truncate text-foreground">{account.agentToken}</span>
-          <button onClick={copyToken} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-            {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
+        <div className="flex items-center gap-3 text-[12px]">
+          <span className={`flex items-center gap-1 font-medium ${ui.color} ${ui.pulse ? "animate-pulse" : ""}`}>
+            {vpsStatus === "running" ? "🟢" : vpsStatus === "error" ? "🔴" : "🟡"} {ui.label}
+          </span>
+          {account.vpsIp && (
+            <span className="font-mono text-muted-foreground text-[11px]">{account.vpsIp}</span>
+          )}
         </div>
       </div>
+
+      {vpsStatus === "running" && (
+        <div className="mt-3 flex items-center gap-2 text-[12px] text-muted-foreground">
+          <div className={`flex items-center gap-1 ${isAgentOnline ? "text-green-600" : "text-gray-500"}`}>
+            {isAgentOnline
+              ? <><Wifi className="h-3.5 w-3.5" /><span>Agent online</span></>
+              : <><WifiOff className="h-3.5 w-3.5" /><span>Agent offline</span></>}
+          </div>
+          <span>·</span>
+          <span>Trades execute from your dedicated Malaysian IP</span>
+          <span>·</span>
+          <span className="text-muted-foreground">$6/month</span>
+        </div>
+      )}
+
+      {vpsStatus === "provisioning" && (
+        <p className="mt-2 text-[12px] text-muted-foreground">
+          Your dedicated VPS is being set up. It will automatically start executing trades once ready — no action needed.
+        </p>
+      )}
     </div>
   );
 }
@@ -1127,6 +1123,7 @@ function CopyTradingInner() {
   const [myTrader, setMyTrader] = useState<Trader | null>(null);
   const [subscriptions, setSubs] = useState<Subscription[]>([]);
   const [accounts, setAccounts] = useState<CopyAccount[]>([]);
+  const [vpsStatusMap, setVpsStatusMap] = useState<Record<number, { status: string; ipAddress: string | null }>>({});
   const [signals, setSignals] = useState<Signal[]>([]);
   const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1139,18 +1136,20 @@ function CopyTradingInner() {
   const load = async () => {
     setLoading(true);
     try {
-      const [t, s, a, sig, ct] = await Promise.all([
+      const [t, s, a, sig, ct, vps] = await Promise.all([
         fetch("/api/traders").then((r) => r.ok ? r.json() : []),
         fetch("/api/copy-subscriptions").then((r) => r.ok ? r.json() : []),
         fetch("/api/copy-accounts").then((r) => r.ok ? r.json() : []),
         fetch("/api/trade-signals").then((r) => r.ok ? r.json() : []),
         fetch("/api/copy-trades").then((r) => r.ok ? r.json() : []),
+        fetch("/api/copy-agent/vps-status").then((r) => r.ok ? r.json() : {}),
       ]);
       setTraders(t as Trader[]);
       setSubs(s as Subscription[]);
       setAccounts(a as CopyAccount[]);
       setSignals(sig as Signal[]);
       setCopyTrades(ct as CopyTrade[]);
+      setVpsStatusMap(vps as Record<number, { status: string; ipAddress: string | null }>);
     } finally { setLoading(false); }
   };
 
@@ -1269,9 +1268,16 @@ function CopyTradingInner() {
                 );
               })}
             </div>
-            {/* Agent setup cards */}
+            {/* Managed VPS status cards */}
             {accounts.filter((a) => a.executionMode === "agent").map((a) => (
-              <AgentSetupCard key={`agent-${a.id}`} account={a} />
+              <ManagedVpsCard
+                key={`vps-${a.id}`}
+                account={{
+                  ...a,
+                  vpsStatus: vpsStatusMap[a.id]?.status,
+                  vpsIp:     vpsStatusMap[a.id]?.ipAddress ?? undefined,
+                }}
+              />
             ))}
           </div>
         )}

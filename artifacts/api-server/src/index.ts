@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { initWSS } from "./lib/ws";
 import { startMirrorPoller } from "./lib/mirror-poller";
 import { startPaymentPoller } from "./lib/payment-poller";
+import { startVpsPoller } from "./lib/vps-poller";
 
 const rawPort = process.env["PORT"];
 
@@ -26,4 +27,5 @@ server.listen(port, () => {
   logger.info({ port }, "Server listening");
   startMirrorPoller();
   startPaymentPoller();
+  startVpsPoller();
 });

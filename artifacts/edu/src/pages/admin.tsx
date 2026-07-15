@@ -4037,18 +4037,46 @@ function TradingTab() {
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<number | null>(null);
 
-  /* MetaAPI config */
+  /* Integration config */
+  type IntegrationStatus = {
+    metaapiTokenSet: boolean; metaapiStrategySet: boolean;
+    metaapiToken: string; metaapiStrategy: string;
+    vultrApiKeySet: boolean; vultrApiKeyHint: string;
+  };
   const [metaapiToken, setMetaapiToken] = useState("");
   const [metaapiStrategy, setMetaapiStrategy] = useState("");
   const [showMetaapiToken, setShowMetaapiToken] = useState(false);
-  const [metaapiStatus, setMetaapiStatus] = useState<{ metaapiTokenSet: boolean; metaapiStrategySet: boolean; metaapiToken: string; metaapiStrategy: string } | null>(null);
+  const [metaapiStatus, setMetaapiStatus] = useState<IntegrationStatus | null>(null);
   const [metaapiSaving, setMetaapiSaving] = useState(false);
+  const [vultrKey, setVultrKey] = useState("");
+  const [showVultrKey, setShowVultrKey] = useState(false);
+  const [vultrSaving, setVultrSaving] = useState(false);
+
+  /* VPS management */
+  type ManagedVps = {
+    id: number; copyAccountId: number; userId: string;
+    instanceId: string | null; ipAddress: string | null; status: string;
+    region: string; plan: string; monthlyCost: string | null;
+    errorMessage: string | null; createdAt: string;
+    accountLabel: string | null; accountType: string | null;
+  };
+  const [vpsList, setVpsList] = useState<ManagedVps[]>([]);
+  const [vpsLoading, setVpsLoading] = useState(false);
+
+  const loadVps = async () => {
+    setVpsLoading(true);
+    try {
+      const r = await fetch("/api/admin/vps");
+      if (r.ok) setVpsList(await r.json() as ManagedVps[]);
+    } catch { /* ignore */ } finally { setVpsLoading(false); }
+  };
 
   useEffect(() => {
     fetch("/api/admin/integration-settings")
       .then((r) => r.json())
-      .then((d) => { setMetaapiStatus(d); if (d.metaapiStrategy) setMetaapiStrategy(d.metaapiStrategy); })
+      .then((d: IntegrationStatus) => { setMetaapiStatus(d); if (d.metaapiStrategy) setMetaapiStrategy(d.metaapiStrategy); })
       .catch(() => {});
+    void loadVps();
   }, []);
 
   const saveMetaapiConfig = async () => {
@@ -4061,7 +4089,7 @@ function TradingTab() {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (!r.ok) { const d = await r.json() as { error: string }; throw new Error(d.error); }
-      const updated = await fetch("/api/admin/integration-settings").then((x) => x.json()) as typeof metaapiStatus;
+      const updated = await fetch("/api/admin/integration-settings").then((x) => x.json()) as IntegrationStatus;
       setMetaapiStatus(updated);
       if (updated?.metaapiStrategy) setMetaapiStrategy(updated.metaapiStrategy);
       setMetaapiToken("");
@@ -4069,6 +4097,40 @@ function TradingTab() {
     } catch (e: unknown) {
       toast({ title: e instanceof Error ? e.message : "Failed to save", variant: "destructive" });
     } finally { setMetaapiSaving(false); }
+  };
+
+  const saveVultrKey = async () => {
+    if (!vultrKey.trim()) return;
+    setVultrSaving(true);
+    try {
+      const r = await fetch("/api/admin/integration-settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vultrApiKey: vultrKey.trim() }),
+      });
+      if (!r.ok) { const d = await r.json() as { error: string }; throw new Error(d.error); }
+      const updated = await fetch("/api/admin/integration-settings").then((x) => x.json()) as IntegrationStatus;
+      setMetaapiStatus(updated);
+      setVultrKey("");
+      toast({ title: "Vultr API key saved" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to save", variant: "destructive" });
+    } finally { setVultrSaving(false); }
+  };
+
+  const rebootVps = async (id: number) => {
+    try {
+      await fetch(`/api/admin/vps/${id}/reboot`, { method: "POST" });
+      toast({ title: "Reboot sent" });
+    } catch { toast({ title: "Reboot failed", variant: "destructive" }); }
+  };
+
+  const destroyVps = async (id: number) => {
+    if (!confirm("Destroy this VPS? The copier's trades will stop executing.")) return;
+    try {
+      await fetch(`/api/admin/vps/${id}`, { method: "DELETE" });
+      toast({ title: "VPS destroyed" });
+      await loadVps();
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
   };
 
   const loadSection = useCallback(async (s: typeof section) => {
@@ -4494,6 +4556,107 @@ function TradingTab() {
               <Save className="h-3.5 w-3.5 mr-1.5" />{metaapiSaving ? "Saving…" : "Save"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Vultr Config */}
+      <Card className="mt-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="text-blue-400 font-semibold">Vultr</span>
+            <span className="text-muted-foreground font-normal">— Managed VPS (Malaysia, Kuala Lumpur)</span>
+            <div className="ml-auto">
+              <Badge variant={metaapiStatus?.vultrApiKeySet ? "default" : "secondary"} className="text-xs">
+                {metaapiStatus?.vultrApiKeySet
+                  ? `Key set ✓ (…${metaapiStatus.vultrApiKeyHint.slice(-6)})`
+                  : "API key not set"}
+              </Badge>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            When a copier connects an account in <strong>Agent mode</strong>, a $6/month Vultr VPS is auto-provisioned in Kuala Lumpur.
+            Trades execute from that copier's dedicated IP — no setup needed from them.
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">API Key</label>
+            <div className="flex gap-1.5">
+              <Input
+                type={showVultrKey ? "text" : "password"}
+                placeholder={metaapiStatus?.vultrApiKeySet ? "Paste to replace…" : "my.vultr.com → Account → API → Personal Access Token"}
+                value={vultrKey}
+                onChange={(e) => setVultrKey(e.target.value)}
+                className="text-sm h-8"
+              />
+              <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowVultrKey((v) => !v)}>
+                {showVultrKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={saveVultrKey} disabled={vultrSaving || !vultrKey.trim()}>
+              <Save className="h-3.5 w-3.5 mr-1.5" />{vultrSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Managed VPS Instances */}
+      <Card className="mt-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            🖥️ Managed VPS Instances
+            <Badge variant="secondary" className="text-xs ml-1">{vpsList.filter((v) => v.status !== "destroyed").length} active</Badge>
+            <span className="text-xs text-muted-foreground font-normal ml-1">
+              ~${(vpsList.filter((v) => v.status !== "destroyed").length * 6).toFixed(0)}/month
+            </span>
+            <Button variant="outline" size="sm" className="ml-auto h-7 text-xs" onClick={loadVps} disabled={vpsLoading}>
+              {vpsLoading ? "Loading…" : "Refresh"}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {vpsList.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">
+              No managed VPS instances yet. Copiers will auto-provision when they connect in Agent mode.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {vpsList.filter((v) => v.status !== "destroyed").map((vps) => (
+                <div key={vps.id} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-sm">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium truncate">{vps.accountLabel ?? `Account #${vps.copyAccountId}`}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        vps.status === "running"      ? "bg-green-100 text-green-700" :
+                        vps.status === "provisioning" ? "bg-yellow-100 text-yellow-700 animate-pulse" :
+                        vps.status === "error"        ? "bg-red-100 text-red-700" :
+                        "bg-gray-100 text-gray-600"
+                      }`}>
+                        {vps.status === "provisioning" ? "⏳ Provisioning…" : vps.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-2">
+                      {vps.ipAddress && <span className="font-mono">{vps.ipAddress}</span>}
+                      <span>🇲🇾 {vps.region.toUpperCase()} · {vps.plan} · ${vps.monthlyCost ?? "6.00"}/mo</span>
+                      {vps.errorMessage && <span className="text-red-500">{vps.errorMessage}</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    {vps.instanceId && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => rebootVps(vps.id)}>
+                        Reboot
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => destroyVps(vps.id)}>
+                      Destroy
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

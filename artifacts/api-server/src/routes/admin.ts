@@ -10,6 +10,7 @@ import {
   platformSubscriptionsTable, subscriptionPlansTable,
   tradersTable, copyAccountsTable, tradeSignalsTable,
   copySubscriptionsTable, masterPositionsTable, copyTradesTable,
+  managedVpsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not, asc } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
@@ -771,11 +772,14 @@ router.get("/admin/integration-settings", async (req, res): Promise<void> => {
     const metaapiToken    = stored.metaapiToken    ?? process.env.METAAPI_TOKEN    ?? "";
     const metaapiStrategy = stored.metaapiStrategy ?? process.env.METAAPI_STRATEGY_ID ?? "";
 
+    const vultrApiKey = stored.vultrApiKey ?? process.env.VULTR_API_KEY ?? "";
     res.json({
       metaapiToken:    metaapiToken    ? `****${metaapiToken.slice(-6)}`    : "",
       metaapiStrategy: metaapiStrategy ? metaapiStrategy : "",
       metaapiTokenSet:    metaapiToken    !== "",
       metaapiStrategySet: metaapiStrategy !== "",
+      vultrApiKeySet: vultrApiKey !== "",
+      vultrApiKeyHint: vultrApiKey ? `****${vultrApiKey.slice(-6)}` : "",
     });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
@@ -788,7 +792,7 @@ router.put("/admin/integration-settings", async (req, res): Promise<void> => {
     const { userId: clerkId } = getAuth(req);
     if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-    const { metaapiToken, metaapiStrategy } = req.body as Record<string, string>;
+    const { metaapiToken, metaapiStrategy, vultrApiKey } = req.body as Record<string, string>;
 
     // Read existing to merge (so partial updates don't wipe other keys)
     const existing = await db
@@ -801,6 +805,7 @@ router.put("/admin/integration-settings", async (req, res): Promise<void> => {
 
     if (metaapiToken    !== undefined) current.metaapiToken    = metaapiToken;
     if (metaapiStrategy !== undefined) current.metaapiStrategy = metaapiStrategy;
+    if (vultrApiKey     !== undefined) current.vultrApiKey     = vultrApiKey;
 
     await db
       .insert(siteSettingsTable)
@@ -813,6 +818,73 @@ router.put("/admin/integration-settings", async (req, res): Promise<void> => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── GET /api/admin/vps ─────────────────────────────────────────── */
+router.get("/admin/vps", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const rows = await db
+      .select({
+        id: managedVpsTable.id,
+        copyAccountId: managedVpsTable.copyAccountId,
+        userId: managedVpsTable.userId,
+        instanceId: managedVpsTable.instanceId,
+        ipAddress: managedVpsTable.ipAddress,
+        status: managedVpsTable.status,
+        region: managedVpsTable.region,
+        plan: managedVpsTable.plan,
+        monthlyCost: managedVpsTable.monthlyCost,
+        errorMessage: managedVpsTable.errorMessage,
+        createdAt: managedVpsTable.createdAt,
+        accountLabel: copyAccountsTable.label,
+        accountType: copyAccountsTable.type,
+      })
+      .from(managedVpsTable)
+      .leftJoin(copyAccountsTable, eq(managedVpsTable.copyAccountId, copyAccountsTable.id))
+      .orderBy(desc(managedVpsTable.createdAt));
+    res.json(rows);
+  } catch (err) {
+    req.log.error({ err }, "admin vps list error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── POST /api/admin/vps/:id/reboot ─────────────────────────────── */
+router.post("/admin/vps/:id/reboot", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const vps = await db.select().from(managedVpsTable)
+      .where(eq(managedVpsTable.id, parseInt(req.params.id)))
+      .limit(1).then((r) => r[0]);
+    if (!vps?.instanceId) { res.status(404).json({ error: "VPS not found" }); return; }
+    const { rebootVps } = await import("../lib/vps-manager");
+    await rebootVps(vps.instanceId);
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "admin vps reboot error");
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+  }
+});
+
+/* ── DELETE /api/admin/vps/:id ──────────────────────────────────── */
+router.delete("/admin/vps/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const vps = await db.select().from(managedVpsTable)
+      .where(eq(managedVpsTable.id, parseInt(req.params.id)))
+      .limit(1).then((r) => r[0]);
+    if (!vps) { res.status(404).json({ error: "VPS not found" }); return; }
+    const { destroyVps } = await import("../lib/vps-manager");
+    await destroyVps(vps.copyAccountId);
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "admin vps destroy error");
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
   }
 });
 
