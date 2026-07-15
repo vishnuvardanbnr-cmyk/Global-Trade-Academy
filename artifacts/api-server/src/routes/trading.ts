@@ -9,13 +9,32 @@ import {
   platformSubscriptionsTable, subscriptionPlansTable,
   siteSettingsTable,
 } from "@workspace/db";
-import { eq, and, desc, sql, gte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, count } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
 import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe, metaapiCreateAccount } from "../lib/fan-out";
 
 const router = Router();
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
+
+/** Recompute totalTrades + followers from live DB counts and persist them. */
+async function recalcTraderStats(traderId: number): Promise<void> {
+  try {
+    const [[sigRow], [subRow]] = await Promise.all([
+      db.select({ n: count() }).from(tradeSignalsTable)
+        .where(eq(tradeSignalsTable.traderId, traderId)),
+      db.select({ n: count() }).from(copySubscriptionsTable)
+        .where(and(
+          eq(copySubscriptionsTable.traderId, traderId),
+          eq(copySubscriptionsTable.status, "active"),
+        )),
+    ]);
+    await db.update(tradersTable).set({
+      totalTrades: sigRow?.n ?? 0,
+      followers:   subRow?.n ?? 0,
+    }).where(eq(tradersTable.id, traderId));
+  } catch { /* non-critical — never let a stat failure break a request */ }
+}
 
 function buildTraderResponse(t: typeof tradersTable.$inferSelect) {
   return {
@@ -518,7 +537,7 @@ router.post("/copy-subscriptions", async (req, res): Promise<void> => {
     }
 
     // Increment follower count
-    await db.update(tradersTable).set({ followers: (await db.select({ f: tradersTable.followers }).from(tradersTable).where(eq(tradersTable.id, traderId)).limit(1).then((r) => (r[0]?.f ?? 0) + 1)) }).where(eq(tradersTable.id, traderId));
+    setImmediate(() => recalcTraderStats(traderId).catch(() => {}));
 
     res.status(201).json({
       id: inserted.id, userId: inserted.userId, traderId: inserted.traderId,
@@ -551,6 +570,7 @@ router.patch("/copy-subscriptions/:subscriptionId", async (req, res): Promise<vo
     }).where(eq(copySubscriptionsTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Subscription not found" }); return; }
     res.json({ id: updated.id, status: updated.status });
+    setImmediate(() => recalcTraderStats(updated.traderId).catch(() => {}));
   } catch (err) {
     req.log.error({ err }, "Error updating copy subscription");
     res.status(500).json({ error: "Internal server error" });
@@ -574,8 +594,10 @@ router.delete("/copy-subscriptions/:subscriptionId", async (req, res): Promise<v
       }
     }
 
+    const traderId = sub?.traderId;
     await db.delete(copySubscriptionsTable).where(eq(copySubscriptionsTable.id, id));
     res.status(204).send();
+    if (traderId) setImmediate(() => recalcTraderStats(traderId).catch(() => {}));
   } catch (err) {
     req.log.error({ err }, "Error deleting copy subscription");
     res.status(500).json({ error: "Internal server error" });
@@ -634,8 +656,11 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
       quantity: signal.quantity ? parseFloat(signal.quantity as string) : null,
     });
 
-    // Fan-out asynchronously — don't block the response
-    setImmediate(() => fanOutSignal(signal).catch((e) => console.error("Fan-out error:", e)));
+    // Fan-out + stat recalc asynchronously — don't block the response
+    setImmediate(() => {
+      fanOutSignal(signal).catch((e) => console.error("Fan-out error:", e));
+      recalcTraderStats(signal.traderId).catch(() => {});
+    });
   } catch (err) {
     req.log.error({ err }, "Error creating trade signal");
     res.status(500).json({ error: "Internal server error" });
