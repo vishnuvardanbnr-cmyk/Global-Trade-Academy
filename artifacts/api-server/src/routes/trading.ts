@@ -211,6 +211,15 @@ router.get("/copy-trading-disclaimer", async (_req, res): Promise<void> => {
   } catch { res.json({ text: "" }); }
 });
 
+/* GET /gallery — public gallery images for the landing page */
+router.get("/gallery", async (_req, res): Promise<void> => {
+  try {
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "landing_gallery")).limit(1).then((r) => r[0]);
+    res.json(row ? JSON.parse(row.value) : []);
+  } catch { res.json([]); }
+});
+
 /* GET /trading-pairs — public list of admin-configured pairs for the trade form */
 router.get("/trading-pairs", async (_req, res): Promise<void> => {
   try {

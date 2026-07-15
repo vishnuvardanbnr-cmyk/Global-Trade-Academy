@@ -2293,6 +2293,125 @@ function MarketTabImageUpload({
   );
 }
 
+/* ── Gallery Admin Section (self-contained) ── */
+function GalleryAdminSection() {
+  const { toast } = useToast();
+  const [images, setImages] = useState<{ url: string; caption: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/gallery")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: { url: string; caption: string }[]) => setImages(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async (imgs: { url: string; caption: string }[]) => {
+    setSaving(true);
+    try {
+      const r = await fetch("/api/admin/gallery", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(imgs),
+      });
+      if (r.ok) { setImages(await r.json()); toast({ title: "Gallery saved" }); }
+      else toast({ title: "Save failed", variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const uploadImage = async (file: File) => {
+    if (!file.type.startsWith("image/")) { toast({ title: "Only image files allowed", variant: "destructive" }); return; }
+    if (file.size > 10 * 1024 * 1024) { toast({ title: "Image must be under 10 MB", variant: "destructive" }); return; }
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("image", file);
+      const r = await fetch("/api/upload/image", { method: "POST", body: form });
+      if (!r.ok) throw new Error("Upload failed");
+      const { url } = await r.json() as { url: string };
+      const updated = [...images, { url, caption: "" }];
+      setImages(updated);
+      toast({ title: "Image uploaded — remember to Save" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Upload failed", variant: "destructive" });
+    } finally { setUploading(false); }
+  };
+
+  const removeImage = (idx: number) => setImages((prev) => prev.filter((_, i) => i !== idx));
+  const updateCaption = (idx: number, caption: string) =>
+    setImages((prev) => prev.map((img, i) => i === idx ? { ...img, caption } : img));
+
+  if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-8"><Loader2 className="h-4 w-4 animate-spin" />Loading gallery…</div>;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Gallery Images</CardTitle>
+          <p className="text-xs text-muted-foreground">These images appear in the Gallery section on the landing page. Upload images and add optional captions.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Upload area */}
+          <label className={cn(
+            "flex flex-col items-center justify-center gap-2 border-2 border-dashed border-border rounded-xl py-8 cursor-pointer transition-colors hover:border-primary/50 hover:bg-primary/5",
+            uploading && "opacity-60 pointer-events-none",
+          )}>
+            <input type="file" accept="image/*" multiple className="hidden"
+              onChange={(e) => { Array.from(e.target.files ?? []).forEach(uploadImage); e.target.value = ""; }} />
+            {uploading
+              ? <><Loader2 className="h-6 w-6 animate-spin text-primary" /><span className="text-sm text-muted-foreground">Uploading…</span></>
+              : <><Upload className="h-6 w-6 text-muted-foreground" /><span className="text-sm font-medium">Click to upload images</span><span className="text-xs text-muted-foreground">PNG, JPG, WEBP — up to 10 MB each</span></>
+            }
+          </label>
+
+          {/* Image grid */}
+          {images.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {images.map((img, idx) => (
+                <div key={idx} className="relative rounded-xl border border-border overflow-hidden group">
+                  <img src={img.url} alt={img.caption || `Gallery ${idx + 1}`}
+                    className="w-full h-36 object-cover" />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2">
+                    <button
+                      onClick={() => removeImage(idx)}
+                      className="bg-red-600 hover:bg-red-700 text-white rounded-lg p-1.5 transition-colors"
+                    >
+                      <Trash2Icon className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="p-2 bg-secondary/30">
+                    <input
+                      type="text"
+                      value={img.caption}
+                      onChange={(e) => updateCaption(idx, e.target.value)}
+                      placeholder="Caption (optional)"
+                      className="w-full text-xs bg-transparent border-none outline-none placeholder:text-muted-foreground/60 text-foreground"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {images.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-4">No images yet. Upload some above.</p>
+          )}
+
+          <div className="flex justify-between items-center pt-2">
+            <span className="text-xs text-muted-foreground">{images.length} image{images.length !== 1 ? "s" : ""}</span>
+            <Button size="sm" onClick={() => void save(images)} disabled={saving}>
+              <Save className="h-3.5 w-3.5 mr-1.5" />{saving ? "Saving…" : "Save Gallery"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function LandingPageTab() {
   const { toast } = useToast();
   const [content, setContent] = useState<LandingContent>(LANDING_DEFAULT);
@@ -2340,8 +2459,8 @@ function LandingPageTab() {
       return { ...c, markets: { tabs } };
     });
 
-  const sections = ["hero", "markets", "stats", "features", "testimonials", "cta", "social", "legal"];
-  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", cta: "CTA Section", social: "Social Media", legal: "Legal" };
+  const sections = ["hero", "markets", "stats", "features", "testimonials", "gallery", "cta", "social", "legal"];
+  const sectionLabel: Record<string, string> = { hero: "Hero", markets: "Market Tabs", stats: "Stats Bar", features: "Features", testimonials: "Testimonials", gallery: "Gallery", cta: "CTA Section", social: "Social Media", legal: "Legal" };
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>;
 
@@ -2680,6 +2799,8 @@ function LandingPageTab() {
       )}
 
       {/* ── Legal ── */}
+      {activeSection === "gallery" && <GalleryAdminSection />}
+
       {activeSection === "legal" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">Content shown in the popup when users click Privacy, Terms, or Support in the footer. Supports plain text and line breaks.</p>

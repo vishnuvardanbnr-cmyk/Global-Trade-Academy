@@ -5,8 +5,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   ArrowRight, BarChart3, BookOpen, Globe2, ShieldCheck,
   TrendingUp, Star, Users, CheckCircle2, PlayCircle, Award,
-  Facebook, Instagram, Youtube, Twitter, Linkedin,
+  Facebook, Instagram, Youtube, Twitter, Linkedin, X,
 } from "lucide-react";
+
+type GalleryItem = { url: string; caption: string };
 
 interface StatItem { value: string; label: string; }
 interface FeatureItem { title: string; desc: string; }
@@ -200,6 +202,8 @@ export default function Home() {
   const [lp, setLp] = useState<LandingContent>(DEFAULT_CONTENT);
   const [marketTab, setMarketTab] = useState<string>("forex");
   const [legalModal, setLegalModal] = useState<"privacy" | "terms" | "support" | null>(null);
+  const [gallery, setGallery] = useState<GalleryItem[]>([]);
+  const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -207,6 +211,10 @@ export default function Home() {
       .then((data) => {
         if (data.value) setLp(deepMerge(DEFAULT_CONTENT, data.value));
       })
+      .catch(() => {});
+    fetch("/api/gallery")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: GalleryItem[]) => setGallery(data))
       .catch(() => {});
   }, []);
 
@@ -441,6 +449,63 @@ export default function Home() {
         </section>
 
 
+
+        {/* Gallery */}
+        {gallery.length > 0 && (
+          <section className="py-24 bg-white">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6">
+              <div className="text-center mb-12">
+                <h2 className="text-4xl font-extrabold text-foreground mb-3">Gallery</h2>
+                <p className="text-lg text-muted-foreground">A glimpse into our trading community and events.</p>
+              </div>
+              <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 space-y-4">
+                {gallery.map((img, i) => (
+                  <div
+                    key={i}
+                    className="break-inside-avoid rounded-2xl overflow-hidden border border-border shadow-sm cursor-pointer group relative"
+                    onClick={() => setLightbox(img)}
+                  >
+                    <img
+                      src={img.url}
+                      alt={img.caption || `Gallery ${i + 1}`}
+                      className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    {img.caption && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                        <p className="text-white text-sm font-medium">{img.caption}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Lightbox */}
+        {lightbox && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+            onClick={() => setLightbox(null)}
+          >
+            <button
+              className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
+              onClick={() => setLightbox(null)}
+            >
+              <X className="h-7 w-7" />
+            </button>
+            <div className="max-w-5xl max-h-[90vh] flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+              <img
+                src={lightbox.url}
+                alt={lightbox.caption}
+                className="max-h-[80vh] max-w-full rounded-xl object-contain shadow-2xl"
+              />
+              {lightbox.caption && (
+                <p className="text-white/80 text-sm text-center">{lightbox.caption}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* CTA */}
         <section className="py-24 bg-primary">

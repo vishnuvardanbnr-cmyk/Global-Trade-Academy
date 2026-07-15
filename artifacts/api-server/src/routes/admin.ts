@@ -878,6 +878,34 @@ router.put("/admin/trading-pairs", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/admin/gallery ─────────────────────────────────────── */
+router.get("/admin/gallery", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "landing_gallery")).limit(1).then((r) => r[0]);
+    res.json(row ? JSON.parse(row.value) : []);
+  } catch { res.json([]); }
+});
+
+/* ── PUT /api/admin/gallery ─────────────────────────────────────── */
+router.put("/admin/gallery", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const images = req.body as { url: string; caption: string }[];
+    if (!Array.isArray(images)) { res.status(400).json({ error: "Expected array" }); return; }
+    const sanitised = images
+      .filter((i) => i.url)
+      .map((i) => ({ url: i.url.trim(), caption: (i.caption ?? "").trim() }));
+    await db.insert(siteSettingsTable)
+      .values({ key: "landing_gallery", value: JSON.stringify(sanitised) })
+      .onConflictDoUpdate({ target: siteSettingsTable.key, set: { value: JSON.stringify(sanitised), updatedAt: new Date() } });
+    res.json(sanitised);
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
 /* ── GET /api/admin/vps ─────────────────────────────────────────── */
 router.get("/admin/vps", async (req, res): Promise<void> => {
   try {
