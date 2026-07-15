@@ -386,6 +386,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [userId]);
 
+  // Ask for push permission right after the user installs the PWA
+  useEffect(() => {
+    if (!userId) return;
+    const onInstalled = () => {
+      // Small delay so the install UI settles first
+      setTimeout(async () => {
+        if (!("Notification" in window)) return;
+        if (Notification.permission === "granted") {
+          subscribeToPush(userId);
+        } else if (Notification.permission === "default") {
+          const permission = await Notification.requestPermission();
+          if (permission === "granted") subscribeToPush(userId);
+        }
+      }, 1500);
+    };
+    window.addEventListener("appinstalled", onInstalled);
+    return () => window.removeEventListener("appinstalled", onInstalled);
+  }, [userId]);
+
   const handleEnablePush = async () => {
     setPushPrompt(false);
     const permission = await Notification.requestPermission();
