@@ -219,6 +219,7 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
           mt5Login,
           mt5Password,   // raw password from request body (before encryption)
           mt5Server,
+          platform:      (mt5Platform === "mt4" ? "mt4" : "mt5") as "mt4" | "mt5",
         }).catch((err: unknown) => req.log.error({ err }, "Windows VPS provision failed"));
       }).catch(() => {});
     }

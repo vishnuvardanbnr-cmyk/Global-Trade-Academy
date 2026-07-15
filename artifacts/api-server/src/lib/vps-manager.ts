@@ -58,8 +58,13 @@ function buildWindowsUserData(opts: {
   mt5Login: string;
   mt5Password: string;
   mt5Server: string;
+  platform?: "mt4" | "mt5";
 }): string {
-  const { agentToken, mt5Login, mt5Password, mt5Server } = opts;
+  const { agentToken, mt5Login, mt5Password, mt5Server, platform = "mt5" } = opts;
+  const terminalUrl = platform === "mt4"
+    ? "https://download.mql5.com/cdn/web/metaquotes.ltd/mt4/mt4setup.exe"
+    : "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe";
+  const terminalExe = platform === "mt4" ? "mt4setup.exe" : "mt5setup.exe";
   const script = `#ps1_sysnative
 $ErrorActionPreference = "Continue"
 $ProgressPreference    = "SilentlyContinue"
@@ -75,9 +80,9 @@ Start-Process "C:\\bright-bridge\\py-installer.exe" -ArgumentList "/quiet Instal
 # 3. Install MetaTrader5 Python package
 & "C:\\Program Files\\Python311\\Scripts\\pip.exe" install --quiet MetaTrader5
 
-# 4. MT5 terminal (silent install)
-$wc.DownloadFile("https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe", "C:\\bright-bridge\\mt5setup.exe")
-Start-Process "C:\\bright-bridge\\mt5setup.exe" -ArgumentList "/auto" -Wait
+# 4. MT terminal (silent install — ${platform.toUpperCase()})
+$wc.DownloadFile("${terminalUrl}", "C:\\bright-bridge\\${terminalExe}")
+Start-Process "C:\\bright-bridge\\${terminalExe}" -ArgumentList "/auto" -Wait
 
 # 5. Download Python bridge from platform
 $wc.DownloadFile("${PLATFORM_URL}/api/copy-agent/bridge-script", "C:\\bright-bridge\\bridge.py")
@@ -190,6 +195,7 @@ export async function provisionSafeVps(opts: {
   mt5Login: string;
   mt5Password: string;   // raw (decrypted) password
   mt5Server: string;
+  platform?: "mt4" | "mt5";
 }): Promise<void> {
   const [vpsRecord] = await db.insert(managedVpsTable).values({
     copyAccountId: opts.copyAccountId,
@@ -211,6 +217,7 @@ export async function provisionSafeVps(opts: {
         mt5Login:     opts.mt5Login,
         mt5Password:  opts.mt5Password,
         mt5Server:    opts.mt5Server,
+        platform:     opts.platform,
       }),
       monthlyCost:   "24.00",
     });
