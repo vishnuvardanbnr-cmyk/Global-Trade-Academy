@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -94,6 +95,74 @@ type TraderDashboard = {
   copierPnl: CopierPnl[];
   subscribers: Subscriber[];
 };
+
+/* ─── Risk Disclaimer Modal ──────────────────────────────────────── */
+function DisclaimerModal({ onAccept, onDecline }: { onAccept: () => void; onDecline: () => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/copy-trading-disclaimer")
+      .then((r) => r.ok ? r.json() : { text: "" })
+      .then((d: { text: string }) => setText(d.text))
+      .catch(() => setText(""));
+  }, []);
+
+  // If no disclaimer is configured, skip the modal entirely
+  useEffect(() => {
+    if (text !== null && text.trim() === "") onAccept();
+  }, [text, onAccept]);
+
+  if (text === null) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  );
+
+  if (text.trim() === "") return null;
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onDecline(); }}>
+      <DialogContent className="max-w-lg w-full" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <div className="flex items-center gap-2.5 mb-1">
+            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+              <AlertCircle className="h-5 w-5 text-amber-600" />
+            </div>
+            <DialogTitle className="text-base leading-snug">Risk Disclaimer</DialogTitle>
+          </div>
+          <DialogDescription className="sr-only">Copy Trading Risk Disclaimer — please read before proceeding</DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="max-h-64 pr-1">
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{text}</p>
+        </ScrollArea>
+
+        <div className="flex items-start gap-2.5 pt-2 pb-1">
+          <input
+            id="disclaimer-check"
+            type="checkbox"
+            checked={accepted}
+            onChange={(e) => setAccepted(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border accent-primary cursor-pointer"
+          />
+          <label htmlFor="disclaimer-check" className="text-sm text-muted-foreground cursor-pointer leading-snug">
+            I have read and understood the risk disclaimer above.
+          </label>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <Button variant="outline" className="flex-1" onClick={onDecline}>
+            Go Back
+          </Button>
+          <Button className="flex-1" disabled={!accepted} onClick={onAccept}>
+            I Understand &amp; Accept
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 /* ─── Managed VPS Status Card ────────────────────────────────────── */
 function ManagedVpsCard({ account }: { account: CopyAccount & { vpsStatus?: string; vpsIp?: string } }) {
@@ -1139,6 +1208,8 @@ function CopyTradingPaywall({ onActive }: { onActive: () => void }) {
 export default function CopyTrading() {
   const { user } = useAuthContext();
   const isInstructor = user?.role === "instructor" || user?.role === "admin";
+  // "pending" → disclaimer not yet accepted; "accepted" → show page; "declined" → go back
+  const [disclaimerState, setDisclaimerState] = useState<"pending" | "accepted">("pending");
   // "checking" → spinner while we verify; "active" → show inner; "none" → show paywall
   const [subState, setSubState] = useState<"checking" | "active" | "none">("checking");
 
@@ -1185,6 +1256,16 @@ export default function CopyTrading() {
       </div>
     );
   }
+
+  if (disclaimerState === "pending") {
+    return (
+      <DisclaimerModal
+        onAccept={() => setDisclaimerState("accepted")}
+        onDecline={() => window.history.back()}
+      />
+    );
+  }
+
   return <CopyTradingInner />;
 }
 

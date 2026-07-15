@@ -4052,6 +4052,30 @@ function TradingTab() {
   const [showVultrKey, setShowVultrKey] = useState(false);
   const [vultrSaving, setVultrSaving] = useState(false);
 
+  /* Copy-trading disclaimer */
+  const [disclaimer, setDisclaimer] = useState("");
+  const [disclaimerSaving, setDisclaimerSaving] = useState(false);
+
+  const loadDisclaimer = async () => {
+    try {
+      const r = await fetch("/api/admin/copy-trading-disclaimer");
+      if (r.ok) { const d = await r.json() as { text: string }; setDisclaimer(d.text); }
+    } catch { /* ignore */ }
+  };
+
+  const saveDisclaimer = async () => {
+    setDisclaimerSaving(true);
+    try {
+      const r = await fetch("/api/admin/copy-trading-disclaimer", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: disclaimer }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      toast({ title: "Disclaimer saved" });
+    } catch { toast({ title: "Failed to save", variant: "destructive" }); }
+    finally { setDisclaimerSaving(false); }
+  };
+
   /* Trading pairs */
   type TradingPair = { symbol: string; market: string };
   const [pairs, setPairs] = useState<TradingPair[]>([]);
@@ -4120,6 +4144,7 @@ function TradingTab() {
       .catch(() => {});
     void loadVps();
     void loadPairs();
+    void loadDisclaimer();
   }, []);
 
   const saveMetaapiConfig = async () => {
@@ -4640,6 +4665,33 @@ function TradingTab() {
           <div className="flex justify-end">
             <Button size="sm" onClick={saveVultrKey} disabled={vultrSaving || !vultrKey.trim()}>
               <Save className="h-3.5 w-3.5 mr-1.5" />{vultrSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Copy Trading Disclaimer */}
+      <Card className="mt-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            ⚠️ Copy Trading Risk Disclaimer
+            <span className="text-xs text-muted-foreground font-normal">Shown as a popup every time a user opens the Copy Trading page</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            rows={8}
+            placeholder="Enter the risk disclaimer text shown to users before they access copy trading…"
+            value={disclaimer}
+            onChange={(e) => setDisclaimer(e.target.value)}
+            className="text-sm resize-y font-[system-ui] leading-relaxed"
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {disclaimer.trim() ? `${disclaimer.length} characters` : "No disclaimer set — users won't see a popup."}
+            </p>
+            <Button size="sm" onClick={saveDisclaimer} disabled={disclaimerSaving}>
+              <Save className="h-3.5 w-3.5 mr-1.5" />{disclaimerSaving ? "Saving…" : "Save Disclaimer"}
             </Button>
           </div>
         </CardContent>

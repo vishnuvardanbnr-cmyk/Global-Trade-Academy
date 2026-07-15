@@ -202,6 +202,15 @@ router.get("/my-trader", async (req, res): Promise<void> => {
   }
 });
 
+/* GET /copy-trading-disclaimer — public, no auth needed */
+router.get("/copy-trading-disclaimer", async (_req, res): Promise<void> => {
+  try {
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "copy_trading_disclaimer")).limit(1).then((r) => r[0]);
+    res.json({ text: row?.value ?? "" });
+  } catch { res.json({ text: "" }); }
+});
+
 /* GET /trading-pairs — public list of admin-configured pairs for the trade form */
 router.get("/trading-pairs", async (_req, res): Promise<void> => {
   try {

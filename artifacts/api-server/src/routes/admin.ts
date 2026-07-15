@@ -821,6 +821,31 @@ router.put("/admin/integration-settings", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/admin/copy-trading-disclaimer ───────────────────── */
+router.get("/admin/copy-trading-disclaimer", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "copy_trading_disclaimer")).limit(1).then((r) => r[0]);
+    res.json({ text: row?.value ?? "" });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+/* ── PUT /api/admin/copy-trading-disclaimer ───────────────────── */
+router.put("/admin/copy-trading-disclaimer", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { text } = req.body as { text: string };
+    if (typeof text !== "string") { res.status(400).json({ error: "text required" }); return; }
+    await db.insert(siteSettingsTable)
+      .values({ key: "copy_trading_disclaimer", value: text })
+      .onConflictDoUpdate({ target: siteSettingsTable.key, set: { value: text, updatedAt: new Date() } });
+    res.json({ text });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
 /* ── GET /api/admin/trading-pairs ─────────────────────────────── */
 router.get("/admin/trading-pairs", async (req, res): Promise<void> => {
   try {
