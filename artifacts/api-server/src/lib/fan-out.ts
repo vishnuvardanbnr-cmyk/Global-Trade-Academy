@@ -12,7 +12,9 @@ import {
   copyTradesTable,
   siteSettingsTable,
   tradersTable,
+  activityTable,
 } from "@workspace/db";
+import { notifyUser } from "./notify";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import { decrypt } from "./encrypt";
 import { logger } from "./logger";
@@ -729,6 +731,41 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
           .update(copyAccountsTable)
           .set({ status: "active", lastError: null })
           .where(eq(copyAccountsTable.id, account.id));
+
+        // ── Notify the copier ─────────────────────────────────────
+        const isClose = signal.action === "close";
+        const symbol = signal.symbol.toUpperCase();
+        const direction = signal.action === "buy" ? "Buy"
+          : signal.action === "sell" ? "Sell"
+          : "Close";
+        const entryPrice = signal.price
+          ? parseFloat(signal.price as string).toFixed(5)
+          : "Market";
+        const lots = (parseFloat(signal.quantity as string) * multiplier).toFixed(2);
+
+        const notifType = isClose ? "copy_trade_closed" : "copy_trade_executed";
+        const notifTitle = isClose
+          ? `Trade Closed: ${symbol}`
+          : `Trade Executed: ${symbol} ${direction}`;
+        const notifMessage = `${symbol} | ${direction} | Entry: ${entryPrice} | Lots: ${lots}`;
+
+        await notifyUser(sub.userId, notifType, notifTitle, notifMessage, String(trade.id));
+
+        // ── Record in Platform Activity ────────────────────────────
+        await db.insert(activityTable).values({
+          type: "copy_trade",
+          userId: sub.userId,
+          description: notifTitle,
+          metadata: JSON.stringify({
+            symbol,
+            action: signal.action,
+            direction,
+            entryPrice,
+            lots,
+            tradeId: trade.id,
+            broker: account.type,
+          }),
+        }).catch(() => { /* non-critical */ });
 
         successCount++;
       } catch (err: unknown) {

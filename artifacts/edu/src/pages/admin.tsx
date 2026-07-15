@@ -1180,6 +1180,7 @@ const ACTIVITY_ICONS: Record<string, { icon: React.ElementType; color: string }>
   course_complete: { icon: GraduationCap, color: "text-amber-500" },
   enrollment: { icon: Users, color: "text-cyan-500" },
   live_class: { icon: Calendar, color: "text-rose-500" },
+  copy_trade: { icon: TrendingUp, color: "text-emerald-500" },
 };
 
 function ActivityTab() {

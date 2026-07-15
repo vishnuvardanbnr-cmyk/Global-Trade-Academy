@@ -45,6 +45,9 @@ const NOTIF_ICON: Record<string, string> = {
   announcement: "📣",
   new_lesson: "🎓",
   live_class: "🎥",
+  copy_trade_executed: "📈",
+  copy_trade_closed: "📉",
+  copy_trade_failed: "⚠️",
   default: "🔔",
 };
 
