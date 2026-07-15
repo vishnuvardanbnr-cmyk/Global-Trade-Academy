@@ -25,6 +25,7 @@ import groupsRouter from "./groups";
 import setupRouter from "./setup";
 import resourcesRouter from "./resources";
 import discussionsRouter from "./discussions";
+import pushRouter from "./push";
 
 const router: IRouter = Router();
 
@@ -54,5 +55,6 @@ router.use(groupsRouter);
 router.use(setupRouter);
 router.use(resourcesRouter);
 router.use(discussionsRouter);
+router.use(pushRouter);
 
 export default router;

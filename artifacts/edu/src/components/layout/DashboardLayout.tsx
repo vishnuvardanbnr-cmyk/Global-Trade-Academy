@@ -287,6 +287,53 @@ function MobileBottomNav({
   );
 }
 
+/** Subscribe this browser to web push and register with the server. */
+async function subscribeToPush(userId: string): Promise<void> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+
+  try {
+    // Fetch VAPID public key
+    const r = await fetch("/api/push/vapid-public-key");
+    if (!r.ok) return;
+    const { publicKey } = await r.json() as { publicKey: string };
+
+    const reg = await navigator.serviceWorker.ready;
+
+    // Check if already subscribed
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      // Re-register in case the user changed — idempotent on the server
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: existing.endpoint, keys: existing.toJSON().keys }),
+      });
+      return;
+    }
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+
+    const json = sub.toJSON();
+    await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint, keys: json.keys }),
+    });
+  } catch {
+    // Non-critical — ignore any errors (permission denied, SW not ready, etc.)
+  }
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { signOut } = useAuthContext();
@@ -300,6 +347,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: me } = useGetMe();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pushPrompt, setPushPrompt] = useState(false);
 
   const { isDark, toggle: toggleTheme } = useTheme();
   const userId = user?.id ?? null;
@@ -321,6 +369,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, [userId, fetchNotifications]);
+
+  // Check push permission state and show prompt or auto-subscribe
+  useEffect(() => {
+    if (!userId) return;
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+    const dismissed = localStorage.getItem("push_prompt_dismissed");
+    if (dismissed) return;
+    if (Notification.permission === "granted") {
+      // Already granted — silently subscribe/refresh
+      subscribeToPush(userId);
+    } else if (Notification.permission === "default") {
+      // Not yet asked — show our own prompt after a short delay
+      const t = setTimeout(() => setPushPrompt(true), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [userId]);
+
+  const handleEnablePush = async () => {
+    setPushPrompt(false);
+    const permission = await Notification.requestPermission();
+    if (permission === "granted" && userId) {
+      subscribeToPush(userId);
+    } else {
+      localStorage.setItem("push_prompt_dismissed", "1");
+    }
+  };
+
+  const handleDismissPush = () => {
+    setPushPrompt(false);
+    localStorage.setItem("push_prompt_dismissed", "1");
+  };
 
   const markRead = async (id: number) => {
     await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });

@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import { notificationsTable } from "@workspace/db";
+import { sendWebPush } from "./web-push";
 
 export async function notifyUser(
   userId: string,
@@ -13,6 +14,8 @@ export async function notifyUser(
   } catch {
     // non-critical — never crash a request due to notification failure
   }
+  // Fire web push in background — never blocks caller
+  sendWebPush(userId, { title, body: message, data: { type, relatedId } }).catch(() => {});
 }
 
 export async function notifyUsers(
@@ -29,5 +32,9 @@ export async function notifyUsers(
     );
   } catch {
     // non-critical
+  }
+  // Web push per user in background
+  for (const userId of userIds) {
+    sendWebPush(userId, { title, body: message, data: { type, relatedId } }).catch(() => {});
   }
 }
