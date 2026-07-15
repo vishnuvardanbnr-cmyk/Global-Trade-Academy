@@ -821,6 +821,38 @@ router.put("/admin/integration-settings", async (req, res): Promise<void> => {
   }
 });
 
+/* ── GET /api/admin/trading-pairs ─────────────────────────────── */
+router.get("/admin/trading-pairs", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "trading_pairs")).limit(1).then((r) => r[0]);
+    res.json(row ? JSON.parse(row.value) : []);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── PUT /api/admin/trading-pairs ─────────────────────────────── */
+router.put("/admin/trading-pairs", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const pairs = req.body as { symbol: string; market: string }[];
+    if (!Array.isArray(pairs)) { res.status(400).json({ error: "Expected array" }); return; }
+    const sanitised = pairs
+      .filter((p) => p.symbol && p.market)
+      .map((p) => ({ symbol: p.symbol.trim().toUpperCase(), market: p.market.trim().toLowerCase() }));
+    await db.insert(siteSettingsTable)
+      .values({ key: "trading_pairs", value: JSON.stringify(sanitised) })
+      .onConflictDoUpdate({ target: siteSettingsTable.key, set: { value: JSON.stringify(sanitised), updatedAt: new Date() } });
+    res.json(sanitised);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── GET /api/admin/vps ─────────────────────────────────────────── */
 router.get("/admin/vps", async (req, res): Promise<void> => {
   try {

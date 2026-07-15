@@ -4052,6 +4052,48 @@ function TradingTab() {
   const [showVultrKey, setShowVultrKey] = useState(false);
   const [vultrSaving, setVultrSaving] = useState(false);
 
+  /* Trading pairs */
+  type TradingPair = { symbol: string; market: string };
+  const [pairs, setPairs] = useState<TradingPair[]>([]);
+  const [pairsSaving, setPairsSaving] = useState(false);
+  const [newSymbol, setNewSymbol] = useState("");
+  const [newMarket, setNewMarket] = useState("forex");
+
+  const loadPairs = async () => {
+    try {
+      const r = await fetch("/api/admin/trading-pairs");
+      if (r.ok) setPairs(await r.json() as TradingPair[]);
+    } catch { /* ignore */ }
+  };
+
+  const savePairs = async (updated: TradingPair[]) => {
+    setPairsSaving(true);
+    try {
+      const r = await fetch("/api/admin/trading-pairs", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated),
+      });
+      if (!r.ok) throw new Error("Failed");
+      setPairs(updated);
+      toast({ title: "Trading pairs saved" });
+    } catch { toast({ title: "Failed to save", variant: "destructive" }); }
+    finally { setPairsSaving(false); }
+  };
+
+  const addPair = () => {
+    const sym = newSymbol.trim().toUpperCase();
+    if (!sym) return;
+    if (pairs.some((p) => p.symbol === sym && p.market === newMarket)) {
+      toast({ title: "Pair already exists", variant: "destructive" }); return;
+    }
+    const updated = [...pairs, { symbol: sym, market: newMarket }];
+    setNewSymbol("");
+    void savePairs(updated);
+  };
+
+  const removePair = (symbol: string, market: string) => {
+    void savePairs(pairs.filter((p) => !(p.symbol === symbol && p.market === market)));
+  };
+
   /* VPS management */
   type ManagedVps = {
     id: number; copyAccountId: number; userId: string;
@@ -4077,6 +4119,7 @@ function TradingTab() {
       .then((d: IntegrationStatus) => { setMetaapiStatus(d); if (d.metaapiStrategy) setMetaapiStrategy(d.metaapiStrategy); })
       .catch(() => {});
     void loadVps();
+    void loadPairs();
   }, []);
 
   const saveMetaapiConfig = async () => {
@@ -4599,6 +4642,65 @@ function TradingTab() {
               <Save className="h-3.5 w-3.5 mr-1.5" />{vultrSaving ? "Saving…" : "Save"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Trading Pairs */}
+      <Card className="mt-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            📊 Trading Pairs
+            <span className="text-xs text-muted-foreground font-normal">Shown in the symbol dropdown when executing trades</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Add new pair */}
+          <div className="flex gap-2 items-end">
+            <div className="space-y-1 flex-1">
+              <label className="text-xs text-muted-foreground">Symbol</label>
+              <Input
+                placeholder="e.g. EURUSD"
+                value={newSymbol}
+                onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === "Enter" && addPair()}
+                className="h-8 text-sm font-mono"
+              />
+            </div>
+            <div className="space-y-1 w-36">
+              <label className="text-xs text-muted-foreground">Market</label>
+              <Select value={newMarket} onValueChange={setNewMarket}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="forex">Forex</SelectItem>
+                  <SelectItem value="crypto">Crypto</SelectItem>
+                  <SelectItem value="commodities">Commodities</SelectItem>
+                  <SelectItem value="stocks">Stocks</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button size="sm" className="h-8 shrink-0" onClick={addPair} disabled={pairsSaving || !newSymbol.trim()}>
+              <Plus className="h-3.5 w-3.5 mr-1" />Add
+            </Button>
+          </div>
+
+          {/* Pair list grouped by market */}
+          {pairs.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-3">No pairs yet. Add some above.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {pairs.map((p) => (
+                <div key={`${p.market}-${p.symbol}`}
+                  className="flex items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-2.5 py-1 text-xs font-mono">
+                  <span className="text-[10px] text-muted-foreground capitalize">{p.market.slice(0, 2).toUpperCase()}</span>
+                  <span className="font-semibold">{p.symbol}</span>
+                  <button onClick={() => removePair(p.symbol, p.market)}
+                    className="text-muted-foreground hover:text-destructive transition-colors ml-0.5">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -111,6 +111,17 @@ router.get("/my-trader", async (req, res): Promise<void> => {
   }
 });
 
+/* GET /trading-pairs — public list of admin-configured pairs for the trade form */
+router.get("/trading-pairs", async (_req, res): Promise<void> => {
+  try {
+    const row = await db.select().from(siteSettingsTable)
+      .where(eq(siteSettingsTable.key, "trading_pairs")).limit(1).then((r) => r[0]);
+    res.json(row ? JSON.parse(row.value) : []);
+  } catch {
+    res.json([]);
+  }
+});
+
 /* PATCH /my-trader — trader updates their own profile */
 router.patch("/my-trader", async (req, res): Promise<void> => {
   try {

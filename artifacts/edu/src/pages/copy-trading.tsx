@@ -432,9 +432,22 @@ function QuickTradePanel({
 }) {
   const { toast } = useToast();
   const [action, setAction] = useState<QuickTradeAction>("buy");
-  const [market, setMarket] = useState<QuickTradeMarket>("crypto");
+  const [market, setMarket] = useState<QuickTradeMarket>("forex");
   const [orderType, setOrderType] = useState<QuickTradeOrderType>("market");
   const [symbol, setSymbol] = useState("");
+  const [tradingPairs, setTradingPairs] = useState<{ symbol: string; market: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/trading-pairs")
+      .then((r) => r.ok ? r.json() : [])
+      .then((pairs: { symbol: string; market: string }[]) => {
+        setTradingPairs(pairs);
+        // Pre-select first pair for current market
+        const first = pairs.find((p) => p.market === "forex") ?? pairs[0];
+        if (first) { setSymbol(first.symbol); setMarket(first.market as QuickTradeMarket); }
+      })
+      .catch(() => {});
+  }, []);
   const [price, setPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -575,16 +588,33 @@ function QuickTradePanel({
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">Symbol</Label>
-            <Input
-              placeholder="e.g. BTCUSDT"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              className="font-mono uppercase"
-            />
+            {tradingPairs.filter((p) => p.market === market).length > 0 ? (
+              <Select value={symbol} onValueChange={setSymbol}>
+                <SelectTrigger className="font-mono"><SelectValue placeholder="Select symbol" /></SelectTrigger>
+                <SelectContent>
+                  {tradingPairs.filter((p) => p.market === market).map((p) => (
+                    <SelectItem key={p.symbol} value={p.symbol} className="font-mono">{p.symbol}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                placeholder="e.g. EURUSD"
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                className="font-mono uppercase"
+              />
+            )}
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Market</Label>
-            <Select value={market} onValueChange={(v) => setMarket(v as QuickTradeMarket)}>
+            <Select value={market} onValueChange={(v) => {
+              setMarket(v as QuickTradeMarket);
+              // Auto-select first pair for the new market
+              const first = tradingPairs.find((p) => p.market === v);
+              if (first) setSymbol(first.symbol);
+              else setSymbol("");
+            }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="crypto">Crypto</SelectItem>
