@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
+import { usersTable, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, getAuth } from "../lib/auth";
 import { randomUUID } from "crypto";
@@ -32,6 +32,17 @@ router.post("/auth/send-otp", async (req, res): Promise<void> => {
   try {
     const { email, firstName } = req.body as { email: string; firstName?: string };
     if (!email) { res.status(400).json({ error: "Email is required" }); return; }
+
+    const regSetting = await db.select({ value: siteSettingsTable.value })
+      .from(siteSettingsTable).where(eq(siteSettingsTable.key, "registration_open")).limit(1).then(r => r[0]);
+    if (regSetting) {
+      try {
+        const parsed = JSON.parse(regSetting.value);
+        if (parsed === false || parsed === "false") {
+          res.status(403).json({ error: "Registration is currently closed. Please contact the administrator." }); return;
+        }
+      } catch { /* malformed value — treat as open */ }
+    }
 
     const existing = await db.select({ id: usersTable.id }).from(usersTable)
       .where(eq(usersTable.email, email.toLowerCase())).limit(1).then(r => r[0]);
@@ -67,6 +78,17 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
     if (!email || !password) {
       res.status(400).json({ error: "Email and password are required" }); return;
+    }
+
+    const regSetting = await db.select({ value: siteSettingsTable.value })
+      .from(siteSettingsTable).where(eq(siteSettingsTable.key, "registration_open")).limit(1).then(r => r[0]);
+    if (regSetting) {
+      try {
+        const parsed = JSON.parse(regSetting.value);
+        if (parsed === false || parsed === "false") {
+          res.status(403).json({ error: "Registration is currently closed. Please contact the administrator." }); return;
+        }
+      } catch { /* malformed value — treat as open */ }
     }
     if (password.length < 8) {
       res.status(400).json({ error: "Password must be at least 8 characters" }); return;

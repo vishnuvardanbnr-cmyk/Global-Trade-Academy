@@ -25,7 +25,7 @@ import {
   Video, CalendarPlus, Megaphone, MapPin, Send, ImageIcon, Trash2 as Trash2Icon, Mail,
   Hash, Pencil, Plus, Search, AlertTriangle, Loader2, Check, X,
   Layout, ExternalLink, Save, Server, Eye, EyeOff, Wifi, WifiOff,
-  ChevronLeft, ChevronRight, Upload,
+  ChevronLeft, ChevronRight, Upload, Lock, Unlock,
 } from "lucide-react";
 
 /* ─── helpers ─── */
@@ -504,6 +504,92 @@ function OverviewTab() {
 }
 
 /* ─── Users Tab ─── */
+function RegistrationToggleCard() {
+  const { toast } = useToast();
+  const [isOpen, setIsOpen] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/site-settings/registration_open")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || data.value === undefined || data.value === null) {
+          setIsOpen(true); // default open
+        } else {
+          // GET endpoint returns JSON.parse(row.value): boolean false or string "false" both mean closed
+          setIsOpen(data.value !== false && data.value !== "false");
+        }
+      })
+      .catch(() => setIsOpen(true));
+  }, []);
+
+  const toggle = async (open: boolean) => {
+    setSaving(true);
+    try {
+      const r = await fetch("/api/admin/site-settings/registration_open", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: open }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      setIsOpen(open);
+      toast({ title: open ? "Registration opened" : "Registration locked", description: open ? "New users can now register." : "New user registration is now disabled." });
+    } catch {
+      toast({ title: "Failed to update registration setting", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          {isOpen ? <Unlock className="h-4 w-4 text-green-500" /> : <Lock className="h-4 w-4 text-red-500" />}
+          Registration
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">Control whether new users can create accounts on the platform.</p>
+      </CardHeader>
+      <CardContent>
+        {isOpen === null ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-2.5 h-2.5 rounded-full ${isOpen ? "bg-green-500" : "bg-red-500"}`} />
+              <span className="text-sm font-medium">{isOpen ? "Open — new users can register" : "Locked — registration disabled"}</span>
+            </div>
+            <div className="flex gap-2">
+              {isOpen ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => toggle(false)}
+                  className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Lock className="h-3.5 w-3.5 mr-1.5" />}
+                  Lock Registration
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => toggle(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Unlock className="h-3.5 w-3.5 mr-1.5" />}
+                  Open Registration
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function UsersTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -586,6 +672,8 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
+      <RegistrationToggleCard />
+
       <div className="flex items-center gap-3">
         <Input placeholder="Search users…" value={search} onChange={(e) => { setSearch(e.target.value); setUserPage(1); }} className="max-w-xs" />
         <Badge variant="outline" className="ml-auto">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</Badge>

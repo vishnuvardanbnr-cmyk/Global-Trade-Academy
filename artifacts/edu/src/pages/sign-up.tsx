@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { BarChart3, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, RefreshCw, ChevronDown } from "lucide-react";
+import { BarChart3, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, RefreshCw, ChevronDown, Lock } from "lucide-react";
 import { apiRegister, apiSendOtp, apiVerifyOtp } from "@/lib/auth";
 import { useAuthContext } from "@/lib/authContext";
 import { queryClient } from "@/lib/queryClient";
@@ -89,6 +89,7 @@ export default function SignUpPage() {
   const [, navigate] = useLocation();
   const { refetch } = useAuthContext();
   const [step, setStep] = useState<Step>("name");
+  const [registrationOpen, setRegistrationOpen] = useState<boolean | null>(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -107,6 +108,21 @@ export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/site-settings/registration_open")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        // No row in DB (value: null) means open by default
+        // GET endpoint returns JSON.parse(row.value), so stored boolean false → data.value === false
+        if (!data || data.value === undefined || data.value === null) {
+          setRegistrationOpen(true);
+        } else {
+          setRegistrationOpen(data.value !== false);
+        }
+      })
+      .catch(() => setRegistrationOpen(true)); // default open if fetch fails
+  }, []);
 
   useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
 
@@ -221,6 +237,64 @@ export default function SignUpPage() {
   };
 
   const stepIdx = STEP_LABELS.indexOf(step);
+
+  // Loading state while checking registration status
+  if (registrationOpen === null) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[#f4f4f5]">
+        <Loader2 className="h-6 w-6 animate-spin text-[#a1a1aa]" />
+      </div>
+    );
+  }
+
+  // Registration locked state
+  if (!registrationOpen) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[#f4f4f5] px-4 py-8">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-[440px]"
+        >
+          <div className="bg-white rounded-2xl border border-[#e4e4e7] shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden">
+            <div className="px-8 pt-8 pb-6 border-b border-[#f4f4f5]">
+              <div className="flex items-center gap-2.5 mb-6">
+                <div className="w-8 h-8 rounded-lg bg-[#2563eb] flex items-center justify-center">
+                  <BarChart3 className="h-4 w-4 text-white" strokeWidth={2.5} />
+                </div>
+                <span className="font-bold text-[15px] tracking-tight text-[#09090b]">Bright Insight</span>
+              </div>
+            </div>
+            <div className="px-8 py-10 flex flex-col items-center text-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-[#f4f4f5] flex items-center justify-center">
+                <Lock className="h-6 w-6 text-[#52525b]" />
+              </div>
+              <div>
+                <h2 className="text-[1.1rem] font-bold text-[#09090b] mb-1">Registration is closed</h2>
+                <p className="text-sm text-[#71717a] max-w-[280px] mx-auto">
+                  New account registration is currently not available. Please contact the administrator for access.
+                </p>
+              </div>
+              <Link href="/sign-in">
+                <span className="inline-block mt-2 text-sm text-[#2563eb] font-semibold hover:underline cursor-pointer">
+                  Already have an account? Sign in →
+                </span>
+              </Link>
+            </div>
+            <div className="px-8 py-4 bg-[#fafafa] border-t border-[#f4f4f5] flex items-center justify-center gap-4">
+              <a href="#" className="text-xs text-[#a1a1aa] hover:text-[#52525b]">Privacy Policy</a>
+              <span className="text-[#e4e4e7]">·</span>
+              <a href="#" className="text-xs text-[#a1a1aa] hover:text-[#52525b]">Terms of Service</a>
+            </div>
+          </div>
+          <p className="text-center text-xs text-[#a1a1aa] mt-4">
+            Secured by <span className="font-semibold">Bright Insight</span>
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-[#f4f4f5] px-4 py-8">
