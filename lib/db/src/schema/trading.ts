@@ -54,8 +54,27 @@ export const copyAccountsTable = pgTable("copy_accounts", {
   metaapiAccountId: text("metaapi_account_id"), // MetaAPI subscriber account ID
   status: text("status").notNull().default("active"), // active | error | disconnected
   lastError: text("last_error"),
+  // Agent mode — execution from copier's own VPS instead of platform server
+  executionMode: text("execution_mode").notNull().default("cloud"), // "cloud" | "agent"
+  agentToken: text("agent_token"),   // unique secret token the VPS agent uses to auth
+  agentLastSeen: timestamp("agent_last_seen", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+/** Queue of signals destined for agent-mode accounts (polled by the VPS agent). */
+export const agentSignalQueueTable = pgTable("agent_signal_queue", {
+  id: serial("id").primaryKey(),
+  copyAccountId: integer("copy_account_id").notNull(),
+  subscriptionId: integer("subscription_id").notNull(),
+  userId: text("user_id").notNull(),
+  signalId: integer("signal_id").notNull(),
+  tradeId: integer("trade_id").notNull(),           // FK → copy_trades.id
+  payload: text("payload").notNull(),               // JSON: signal + multiplier + metaapiAccountId
+  status: text("status").notNull().default("pending"), // pending | executing | executed | failed | expired
+  result: text("result"),                           // JSON execution result from agent
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
 // Snapshot of each master account's last-known open positions.

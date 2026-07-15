@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getAuth } from "../lib/auth";
+import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
 import {
   tradersTable, copySubscriptionsTable, watchlistTable,
@@ -40,6 +41,9 @@ function maskAccount(a: typeof copyAccountsTable.$inferSelect) {
     mt5Login: a.mt5Login ?? null,
     mt5Server: a.mt5Server ?? null,
     metaapiAccountId: a.metaapiAccountId ?? null,
+    executionMode: a.executionMode ?? "cloud",
+    agentToken: a.agentToken ?? null,
+    agentLastSeen: a.agentLastSeen ?? null,
   };
 }
 
@@ -138,11 +142,12 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
     const { type, label, apiKey, apiSecret, mt5Login, mt5Password, mt5Server,
-            metaapiAccountId, mt5Platform } = req.body as Record<string, string>;
+            metaapiAccountId, mt5Platform, executionMode } = req.body as Record<string, string>;
     if (!type || !label) { res.status(400).json({ error: "type and label required" }); return; }
     if (!["binance", "bybit", "mt5", "metaapi"].includes(type)) {
       res.status(400).json({ error: "type must be binance, bybit, mt5, or metaapi" }); return;
     }
+    const resolvedMode = (executionMode === "agent" ? "agent" : "cloud") as "cloud" | "agent";
     if ((type === "binance" || type === "bybit") && (!apiKey || !apiSecret)) {
       res.status(400).json({ error: "apiKey and apiSecret required for exchange accounts" }); return;
     }
@@ -173,15 +178,21 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       });
     }
 
+    // Generate a unique agent token if agent mode requested
+    const agentToken = resolvedMode === "agent"
+      ? `bia_${randomUUID().replace(/-/g, "")}`
+      : null;
+
     const [inserted] = await db.insert(copyAccountsTable).values({
       userId: clerkId, role: "copier", type, label,
       apiKey: apiKey ? encrypt(apiKey) : null,
       apiSecret: apiSecret ? encrypt(apiSecret) : null,
-      // Store login/server for MetaAPI accounts too (display only — credentials stay with MetaAPI)
       mt5Login: mt5Login ?? null,
       mt5Password: (type === "mt5" && mt5Password) ? encrypt(mt5Password) : null,
       mt5Server: mt5Server ?? null,
       metaapiAccountId: resolvedMetaapiAccountId,
+      executionMode: resolvedMode,
+      agentToken,
     }).returning();
 
     res.status(201).json(maskAccount(inserted));

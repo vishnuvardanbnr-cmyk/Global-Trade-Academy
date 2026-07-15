@@ -16,7 +16,7 @@ import {
   TrendingUp, TrendingDown, Users, ShieldCheck, Plus, Trash2,
   Zap, Link2, Clock, CheckCircle2, XCircle, AlertCircle,
   RefreshCw, ChevronDown, ChevronUp, Send, Crosshair, Loader2,
-  Crown, Sparkles,
+  Crown, Sparkles, Server, Copy, Download, Wifi, WifiOff,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────────────── */
@@ -31,6 +31,9 @@ type CopyAccount = {
   status: string; lastError: string | null; apiKeyHint: string | null;
   mt5Login: string | null; mt5Server: string | null;
   metaapiAccountId: string | null; createdAt: string;
+  executionMode: "cloud" | "agent";
+  agentToken: string | null;
+  agentLastSeen: string | null;
 };
 type Subscription = {
   id: number; traderId: number; traderName: string | null;
@@ -50,6 +53,71 @@ type CopyTrade = {
   pnl: number | null; brokerOrderId: string | null; errorMessage: string | null;
   createdAt: string;
 };
+
+/* ─── Agent Setup Card ───────────────────────────────────────────── */
+function AgentSetupCard({ account }: { account: CopyAccount }) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const isOnline = account.agentLastSeen
+    ? (Date.now() - new Date(account.agentLastSeen).getTime()) < 15_000
+    : false;
+
+  const copyToken = () => {
+    if (!account.agentToken) return;
+    navigator.clipboard.writeText(account.agentToken).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const downloadScript = () => {
+    window.open(`/api/copy-agent/script?token=${account.agentToken}`, "_blank");
+  };
+
+  const setupCmd = `BRIGHT_TOKEN=${account.agentToken} BRIGHT_URL=https://brightinsight.app node bright-agent.js`;
+
+  return (
+    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3 w-full">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Server className="h-4 w-4 text-emerald-500" />
+          <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Agent Mode — VPS Setup</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {isOnline
+            ? <><Wifi className="h-3.5 w-3.5 text-green-500" /><span className="text-[11px] text-green-600 font-medium">Online</span></>
+            : <><WifiOff className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-[11px] text-muted-foreground">{account.agentLastSeen ? "Offline" : "Not connected"}</span></>
+          }
+        </div>
+      </div>
+
+      <div className="space-y-2 text-[12px]">
+        <p className="text-muted-foreground font-medium">1. Download the agent script</p>
+        <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={downloadScript}>
+          <Download className="h-3 w-3" /> Download bright-agent.js
+        </Button>
+
+        <p className="text-muted-foreground font-medium mt-2">2. Run on your VPS (Node.js 18+)</p>
+        <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2 font-mono text-[11px] overflow-x-auto">
+          <span className="flex-1 text-foreground whitespace-nowrap">{setupCmd}</span>
+          <button onClick={() => { navigator.clipboard.writeText(setupCmd); toast({ title: "Copied!" }); }}
+            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <p className="text-muted-foreground font-medium mt-2">3. Agent token (keep secret)</p>
+        <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2 font-mono text-[11px]">
+          <span className="flex-1 truncate text-foreground">{account.agentToken}</span>
+          <button onClick={copyToken} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+            {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ─── Risk bar ───────────────────────────────────────────────────── */
 function RiskBar({ score }: { score: number | null | undefined }) {
@@ -81,12 +149,13 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   const [mt5Server, setMt5Server] = useState("");
   const [metaapiAccountId, setMetaapiAccountId] = useState("");
   const [mt5Platform, setMt5Platform] = useState<"mt5" | "mt4">("mt5");
+  const [executionMode, setExecutionMode] = useState<"cloud" | "agent">("cloud");
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setType("metaapi"); setLabel(""); setApiKey(""); setApiSecret("");
     setMt5Login(""); setMt5Password(""); setMt5Server(""); setMetaapiAccountId("");
-    setMt5Platform("mt5");
+    setMt5Platform("mt5"); setExecutionMode("cloud");
   };
 
   const submit = async () => {
@@ -99,6 +168,7 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
       else if (type === "metaapi") {
         body.mt5Login = mt5Login; body.mt5Password = mt5Password;
         body.mt5Server = mt5Server; body.mt5Platform = mt5Platform;
+        body.executionMode = executionMode;
       }
 
       const res = await fetch("/api/copy-accounts", {
@@ -202,6 +272,28 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
                 <Label>Broker Server</Label>
                 <BrokerServerSearch value={mt5Server} onChange={setMt5Server} placeholder="Search broker server…" />
               </div>
+              {/* Execution mode */}
+              <div className="space-y-1.5">
+                <Label>Execution Mode</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setExecutionMode("cloud")}
+                    className={`rounded-lg border-2 p-2.5 text-left transition-colors ${executionMode === "cloud" ? "border-purple-500 bg-purple-500/10" : "border-border hover:border-purple-500/40"}`}>
+                    <p className="text-xs font-semibold">☁️ Cloud (default)</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Platform server executes. Easy setup.</p>
+                  </button>
+                  <button type="button" onClick={() => setExecutionMode("agent")}
+                    className={`rounded-lg border-2 p-2.5 text-left transition-colors ${executionMode === "agent" ? "border-emerald-500 bg-emerald-500/10" : "border-border hover:border-emerald-500/40"}`}>
+                    <p className="text-xs font-semibold">🖥️ Agent (IP-safe)</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Run on your own VPS. Your IP.</p>
+                  </button>
+                </div>
+                {executionMode === "agent" && (
+                  <p className="text-[11px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2.5">
+                    After connecting, you'll get a one-line setup command to run on your VPS. Trades will execute from your server's IP.
+                  </p>
+                )}
+              </div>
+
               <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
                 Your credentials are transmitted securely to MetaAPI's encrypted cloud infrastructure. We store only your login number and server name for display — never your password.
               </p>
@@ -1144,29 +1236,43 @@ function CopyTradingInner() {
             No accounts connected yet. Add your Binance, Bybit, or MT5 account to enable auto-execution.
           </div>
         ) : (
-          <div className="flex flex-wrap gap-3">
-            {accounts.map((a) => {
-              const meta = accountTypeMeta[a.type] ?? { color: "text-foreground", bg: "bg-secondary" };
-              return (
-                <div key={a.id} className={`rounded-xl border px-4 py-3 flex items-center gap-3 min-w-[220px] ${meta.bg}`}>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-bold uppercase tracking-wide ${meta.color}`}>{a.type}</p>
-                    <p className="text-sm font-medium truncate">{a.label}</p>
-                    {a.apiKeyHint && <p className="text-[11px] text-muted-foreground font-mono">{a.apiKeyHint}</p>}
-                    {a.mt5Login && <p className="text-[11px] text-muted-foreground">Login: {a.mt5Login} · {a.mt5Server}</p>}
-                    {a.status === "error" && <p className="text-[11px] text-red-500 truncate">{a.lastError}</p>}
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              {accounts.map((a) => {
+                const meta = accountTypeMeta[a.type] ?? { color: "text-foreground", bg: "bg-secondary" };
+                const isAgent = a.executionMode === "agent";
+                return (
+                  <div key={a.id} className={`rounded-xl border px-4 py-3 flex items-center gap-3 min-w-[220px] ${meta.bg}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className={`text-xs font-bold uppercase tracking-wide ${meta.color}`}>{a.type}</p>
+                        {isAgent && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                            AGENT
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium truncate">{a.label}</p>
+                      {a.apiKeyHint && <p className="text-[11px] text-muted-foreground font-mono">{a.apiKeyHint}</p>}
+                      {a.mt5Login && <p className="text-[11px] text-muted-foreground">Login: {a.mt5Login} · {a.mt5Server}</p>}
+                      {a.status === "error" && <p className="text-[11px] text-red-500 truncate">{a.lastError}</p>}
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${a.status === "active" ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
+                        {a.status}
+                      </span>
+                      <button onClick={() => deleteAccount(a.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1.5">
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${a.status === "active" ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
-                      {a.status}
-                    </span>
-                    <button onClick={() => deleteAccount(a.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            {/* Agent setup cards */}
+            {accounts.filter((a) => a.executionMode === "agent").map((a) => (
+              <AgentSetupCard key={`agent-${a.id}`} account={a} />
+            ))}
           </div>
         )}
       </section>

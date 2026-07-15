@@ -13,6 +13,7 @@ import {
   siteSettingsTable,
   tradersTable,
   activityTable,
+  agentSignalQueueTable,
 } from "@workspace/db";
 import { notifyUser } from "./notify";
 import { eq, and, inArray, desc } from "drizzle-orm";
@@ -688,6 +689,34 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
 
       try {
         let brokerOrderId = "";
+
+        // ── Agent mode: queue for VPS execution, skip server-side ──
+        if (account.executionMode === "agent") {
+          const expiresAt = new Date(Date.now() + 60_000); // 60s TTL
+          await db.insert(agentSignalQueueTable).values({
+            copyAccountId: account.id,
+            subscriptionId: sub.id,
+            userId: sub.userId,
+            signalId: signal.id,
+            tradeId: trade.id,
+            payload: JSON.stringify({
+              signal: {
+                symbol: signal.symbol,
+                action: signal.action,
+                price: signal.price,
+                quantity: signal.quantity,
+                stopLoss: signal.stopLoss,
+                takeProfit: signal.takeProfit,
+                orderType: signal.orderType,
+                notes: signal.notes,
+              },
+              multiplier,
+            }),
+            expiresAt,
+          });
+          successCount++; // agent will handle actual execution
+          return;         // skip cloud execution below
+        }
 
         if (account.type === "metaapi") {
           if (!metaapiToken) throw new Error("MetaAPI token not configured — set it in Admin → Trading");

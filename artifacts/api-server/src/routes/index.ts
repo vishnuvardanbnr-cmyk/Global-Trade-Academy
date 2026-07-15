@@ -26,6 +26,7 @@ import setupRouter from "./setup";
 import resourcesRouter from "./resources";
 import discussionsRouter from "./discussions";
 import pushRouter from "./push";
+import copyAgentRouter from "./copy-agent";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(setupRouter);
 router.use(resourcesRouter);
 router.use(discussionsRouter);
 router.use(pushRouter);
+router.use(copyAgentRouter);
 
 export default router;
