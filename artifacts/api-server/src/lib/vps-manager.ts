@@ -141,6 +141,44 @@ export async function destroyVps(copyAccountId: number): Promise<void> {
   }
 }
 
+/* ── Push a signal directly to a running VPS agent ──────────────── */
+export async function pushSignalToVps(opts: {
+  copyAccountId: number;
+  agentToken: string;
+  payload: object;
+}): Promise<boolean> {
+  const vps = await db
+    .select({ ipAddress: managedVpsTable.ipAddress, status: managedVpsTable.status })
+    .from(managedVpsTable)
+    .where(eq(managedVpsTable.copyAccountId, opts.copyAccountId))
+    .limit(1)
+    .then((r) => r[0]);
+
+  if (!vps?.ipAddress || vps.status !== "running") return false;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3_000); // 3s timeout
+    try {
+      const res = await fetch(`http://${vps.ipAddress}:7654/execute`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-agent-token": opts.agentToken,
+        },
+        body: JSON.stringify(opts.payload),
+        signal: controller.signal,
+      });
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    // VPS unreachable — caller falls back to queue
+    return false;
+  }
+}
+
 /* ── Reboot the agent on a running VPS (Vultr reboot) ────────────── */
 export async function rebootVps(instanceId: string): Promise<void> {
   const key = await getVultrKey();

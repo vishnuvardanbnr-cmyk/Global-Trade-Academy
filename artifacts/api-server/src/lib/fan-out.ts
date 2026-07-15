@@ -690,31 +690,55 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
       try {
         let brokerOrderId = "";
 
-        // ── Agent mode: queue for VPS execution, skip server-side ──
+        // ── Agent mode: push directly to VPS, queue as fallback ──
         if (account.executionMode === "agent") {
           const expiresAt = new Date(Date.now() + 60_000); // 60s TTL
-          await db.insert(agentSignalQueueTable).values({
+          const signalPayload = {
+            signal: {
+              symbol: signal.symbol,
+              action: signal.action,
+              price: signal.price,
+              quantity: signal.quantity,
+              stopLoss: signal.stopLoss,
+              takeProfit: signal.takeProfit,
+              orderType: signal.orderType,
+              notes: signal.notes,
+            },
+            multiplier,
+          };
+
+          // Insert into queue first (always — acts as audit trail + fallback)
+          const [queueEntry] = await db.insert(agentSignalQueueTable).values({
             copyAccountId: account.id,
             subscriptionId: sub.id,
             userId: sub.userId,
             signalId: signal.id,
             tradeId: trade.id,
-            payload: JSON.stringify({
-              signal: {
-                symbol: signal.symbol,
-                action: signal.action,
-                price: signal.price,
-                quantity: signal.quantity,
-                stopLoss: signal.stopLoss,
-                takeProfit: signal.takeProfit,
-                orderType: signal.orderType,
-                notes: signal.notes,
-              },
-              multiplier,
-            }),
+            payload: JSON.stringify(signalPayload),
             expiresAt,
-          });
-          successCount++; // agent will handle actual execution
+          }).returning();
+
+          // Attempt direct push to VPS (~200ms vs 0-10s polling)
+          if (account.agentToken) {
+            import("./vps-manager").then(async ({ pushSignalToVps }) => {
+              const pushed = await pushSignalToVps({
+                copyAccountId: account.id,
+                agentToken: account.agentToken!,
+                payload: { queueId: queueEntry.id, tradeId: trade.id, signalId: signal.id, ...signalPayload },
+              });
+              if (pushed) {
+                // Mark as executing so the fallback poller doesn't double-pick it
+                await db.update(agentSignalQueueTable)
+                  .set({ status: "executing" })
+                  .where(eq(agentSignalQueueTable.id, queueEntry.id));
+                logger.info({ queueId: queueEntry.id }, "Signal pushed directly to VPS");
+              } else {
+                logger.info({ queueId: queueEntry.id }, "VPS push failed — left in queue for polling fallback");
+              }
+            }).catch(() => {});
+          }
+
+          successCount++; // agent handles execution (push or poll)
           return;         // skip cloud execution below
         }
 

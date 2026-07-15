@@ -213,48 +213,49 @@ function buildAgentScript(token: string): string {
   return `#!/usr/bin/env node
 /**
  * Bright Insight Copy Trading Agent
- * Run on your own VPS to execute trades from your IP.
+ *
+ * Two-mode execution:
+ *   PUSH  — platform pushes signal directly to port 7654 (~200ms latency)
+ *   POLL  — fallback every 10s to catch any missed signals
  *
  * Requirements: Node.js 18+
- * Usage:  node bright-agent.js
- *
- * Set these environment variables (or edit the defaults below):
- *   BRIGHT_TOKEN  - Your agent token (pre-filled)
- *   BRIGHT_URL    - Platform URL (pre-filled)
+ * Env vars:
+ *   BRIGHT_TOKEN  — your agent token (pre-filled below)
+ *   BRIGHT_URL    — platform URL (pre-filled below)
  */
 
+const http  = require("http");
 const TOKEN = process.env.BRIGHT_TOKEN || ${JSON.stringify(token)};
-const BASE  = process.env.BRIGHT_URL  || "https://brightinsight.app";
-const POLL_MS = 2000; // poll every 2 seconds
+const BASE  = process.env.BRIGHT_URL   || "https://brightinsight.app";
+const PUSH_PORT = 7654;
+const POLL_MS   = 10_000; // fallback poll every 10 s
 
-let metaapiToken = null;
+let metaapiToken     = null;
 let metaapiAccountId = null;
-let metaapiBase = "https://mt-client-api-v1.london.agiliumtrade.ai";
 
 /* ── Auth ──────────────────────────────────────────────────────── */
 async function authenticate() {
   const r = await fetch(\`\${BASE}/api/copy-agent/auth?token=\${TOKEN}\`);
-  if (!r.ok) {
-    const e = await r.json().catch(() => ({}));
-    throw new Error("Auth failed: " + (e.error || r.status));
-  }
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error("Auth failed: " + (e.error || r.status)); }
   const d = await r.json();
   metaapiToken     = d.metaapiToken;
   metaapiAccountId = d.metaapiAccountId;
-  metaapiBase      = d.metaapiBase || metaapiBase;
-  console.log("[bright-agent] Authenticated — account:", d.label, "| MetaAPI ID:", metaapiAccountId);
+  console.log("[bright-agent] Auth OK — account:", d.label, "| MT ID:", metaapiAccountId);
 }
 
-/* ── Get broker client URL ─────────────────────────────────────── */
+/* ── Get MetaAPI client base URL for this account ──────────────── */
+let _clientBase = null;
 async function getClientBase() {
+  if (_clientBase) return _clientBase;
   const r = await fetch(
     \`https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/\${metaapiAccountId}\`,
     { headers: { "auth-token": metaapiToken } }
   );
-  if (!r.ok) throw new Error("Could not fetch account details: " + r.status);
+  if (!r.ok) throw new Error("Provisioning API error: " + r.status);
   const d = await r.json();
   const region = (d.region || "london").toLowerCase();
-  return \`https://mt-client-api-v1.\${region}.agiliumtrade.ai\`;
+  _clientBase = \`https://mt-client-api-v1.\${region}.agiliumtrade.ai\`;
+  return _clientBase;
 }
 
 /* ── Execute one trade signal via MetaAPI ──────────────────────── */
@@ -265,19 +266,16 @@ async function executeTrade(item) {
   if (volume <= 0) throw new Error("Volume too small: " + volume);
 
   const clientBase = await getClientBase();
-  const tradeUrl = \`\${clientBase}/users/current/accounts/\${metaapiAccountId}/trade\`;
+  const tradeUrl   = \`\${clientBase}/users/current/accounts/\${metaapiAccountId}/trade\`;
 
-  const action = signal.action === "close" ? "ORDER_TYPE_SELL" // simplified close
-    : signal.action === "buy"  ? "ORDER_TYPE_BUY"
-    : "ORDER_TYPE_SELL";
-
+  const actionType = signal.action === "buy" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
   const body = {
-    actionType: action,
-    symbol:     signal.symbol,
+    actionType,
+    symbol: signal.symbol,
     volume,
-    ...(signal.price     ? { openPrice: parseFloat(signal.price) }      : {}),
-    ...(signal.stopLoss  ? { stopLoss:  parseFloat(signal.stopLoss) }   : {}),
-    ...(signal.takeProfit? { takeProfit:parseFloat(signal.takeProfit) }  : {}),
+    ...(signal.price      ? { openPrice:  parseFloat(signal.price) }       : {}),
+    ...(signal.stopLoss   ? { stopLoss:   parseFloat(signal.stopLoss) }    : {}),
+    ...(signal.takeProfit ? { takeProfit: parseFloat(signal.takeProfit) }  : {}),
   };
 
   const r = await fetch(tradeUrl, {
@@ -285,55 +283,77 @@ async function executeTrade(item) {
     headers: { "auth-token": metaapiToken, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
   const d = await r.json().catch(() => ({}));
-  if (!r.ok && r.status !== 200) throw new Error(d.message || d.error || ("MetaAPI error " + r.status));
-  return d.orderId || d.positionId || "ok";
+  if (!r.ok) throw new Error(d.message || d.error || ("MetaAPI error " + r.status));
+  return d.positionId || d.orderId || "ok";
 }
 
 /* ── Report result back to platform ───────────────────────────── */
 async function reportResult(item, success, brokerOrderId, errorMessage) {
-  const signal = item.signal || {};
+  const signal     = item.signal || {};
   const multiplier = parseFloat(String(item.multiplier || 1));
-  const lots = (parseFloat(signal.quantity || "0") * multiplier).toFixed(2);
-
+  const lots       = (parseFloat(signal.quantity || "0") * multiplier).toFixed(2);
   await fetch(\`\${BASE}/api/copy-agent/result?token=\${TOKEN}\`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      queueId:      item.queueId,
-      tradeId:      item.tradeId,
-      success,
-      brokerOrderId,
-      errorMessage,
-      symbol:       signal.symbol,
-      direction:    signal.action,
-      entryPrice:   signal.price,
-      lots,
+      queueId: item.queueId, tradeId: item.tradeId,
+      success, brokerOrderId, errorMessage,
+      symbol: signal.symbol, direction: signal.action,
+      entryPrice: signal.price, lots,
     }),
   }).catch(() => {});
 }
 
-/* ── Poll loop ─────────────────────────────────────────────────── */
+/* ── Handle one queued item ────────────────────────────────────── */
+async function handleItem(item, source) {
+  try {
+    const orderId = await executeTrade(item);
+    console.log(\`[bright-agent] [\${source}] Executed \${item.signal?.symbol} \${item.signal?.action} → \${orderId}\`);
+    await reportResult(item, true, orderId, undefined);
+  } catch (err) {
+    console.error(\`[bright-agent] [\${source}] Failed:\`, err.message);
+    await reportResult(item, false, undefined, err.message);
+  }
+}
+
+/* ── PUSH server — platform sends signal directly here ─────────── */
+function startPushServer() {
+  const server = http.createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/execute") {
+      res.writeHead(404); res.end(); return;
+    }
+    // Authenticate via header
+    if (req.headers["x-agent-token"] !== TOKEN) {
+      res.writeHead(401); res.end(JSON.stringify({ error: "Unauthorized" })); return;
+    }
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      // ACK immediately so platform doesn't wait on execution
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      // Execute in background
+      try {
+        const item = JSON.parse(body);
+        handleItem(item, "PUSH").catch(() => {});
+      } catch { /* bad JSON — ignore */ }
+    });
+  });
+  server.listen(PUSH_PORT, "0.0.0.0", () => {
+    console.log(\`[bright-agent] Push server listening on :\${PUSH_PORT}\`);
+  });
+}
+
+/* ── POLL loop — safety fallback every 10 s ────────────────────── */
 async function poll() {
   try {
     const r = await fetch(\`\${BASE}/api/copy-agent/pending?token=\${TOKEN}\`);
     if (!r.ok) { console.error("[bright-agent] Poll error:", r.status); return; }
     const items = await r.json();
     if (!Array.isArray(items) || items.length === 0) return;
-
-    console.log(\`[bright-agent] \${items.length} signal(s) received\`);
-
-    for (const item of items) {
-      try {
-        const orderId = await executeTrade(item);
-        console.log("[bright-agent] Executed:", item.signal?.symbol, item.signal?.action, "→ order", orderId);
-        await reportResult(item, true, orderId, undefined);
-      } catch (err) {
-        console.error("[bright-agent] Execution failed:", err.message);
-        await reportResult(item, false, undefined, err.message);
-      }
-    }
+    console.log(\`[bright-agent] [POLL] \${items.length} missed signal(s)\`);
+    for (const item of items) await handleItem(item, "POLL");
   } catch (err) {
     console.error("[bright-agent] Poll error:", err.message);
   }
@@ -341,15 +361,13 @@ async function poll() {
 
 /* ── Entry point ───────────────────────────────────────────────── */
 (async () => {
-  console.log("[bright-agent] Starting… platform:", BASE);
-  try {
-    await authenticate();
-  } catch (err) {
-    console.error("[bright-agent] Fatal:", err.message);
-    process.exit(1);
+  console.log("[bright-agent] Starting — platform:", BASE);
+  try { await authenticate(); } catch (err) {
+    console.error("[bright-agent] Fatal:", err.message); process.exit(1);
   }
-  console.log("[bright-agent] Polling every", POLL_MS, "ms");
+  startPushServer();
   setInterval(poll, POLL_MS);
+  console.log(\`[bright-agent] Ready. Push on :\${PUSH_PORT} | Poll every \${POLL_MS/1000}s\`);
 })();
 `;
 }
