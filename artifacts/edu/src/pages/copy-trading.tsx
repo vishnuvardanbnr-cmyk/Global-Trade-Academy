@@ -31,7 +31,7 @@ type CopyAccount = {
   status: string; lastError: string | null; apiKeyHint: string | null;
   mt5Login: string | null; mt5Server: string | null;
   metaapiAccountId: string | null; createdAt: string;
-  executionMode: "cloud" | "agent";
+  executionMode: "cloud" | "agent" | "safe";
   agentToken: string | null;
   agentLastSeen: string | null;
 };
@@ -145,13 +145,13 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
   const [mt5Server, setMt5Server] = useState("");
   const [metaapiAccountId, setMetaapiAccountId] = useState("");
   const [mt5Platform, setMt5Platform] = useState<"mt5" | "mt4">("mt5");
-  const [executionMode, setExecutionMode] = useState<"cloud" | "agent">("cloud");
+  const [executionMode, setExecutionMode] = useState<"cloud" | "safe">("cloud");
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setType("metaapi"); setLabel(""); setApiKey(""); setApiSecret("");
     setMt5Login(""); setMt5Password(""); setMt5Server(""); setMetaapiAccountId("");
-    setMt5Platform("mt5"); setExecutionMode("cloud");
+    setMt5Platform("mt5"); setExecutionMode("cloud" as "cloud" | "safe");
   };
 
   const submit = async () => {
@@ -274,24 +274,27 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setExecutionMode("cloud")}
                     className={`rounded-lg border-2 p-2.5 text-left transition-colors ${executionMode === "cloud" ? "border-purple-500 bg-purple-500/10" : "border-border hover:border-purple-500/40"}`}>
-                    <p className="text-xs font-semibold">☁️ Cloud (default)</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Platform server executes. Easy setup.</p>
+                    <p className="text-xs font-semibold">☁️ Cloud</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Via MetaAPI. Easy, instant setup.</p>
                   </button>
-                  <button type="button" onClick={() => setExecutionMode("agent")}
-                    className={`rounded-lg border-2 p-2.5 text-left transition-colors ${executionMode === "agent" ? "border-emerald-500 bg-emerald-500/10" : "border-border hover:border-emerald-500/40"}`}>
-                    <p className="text-xs font-semibold">🖥️ Agent (IP-safe)</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Run on your own VPS. Your IP.</p>
+                  <button type="button" onClick={() => setExecutionMode("safe")}
+                    className={`rounded-lg border-2 p-2.5 text-left transition-colors ${executionMode === "safe" ? "border-emerald-500 bg-emerald-500/10" : "border-border hover:border-emerald-500/40"}`}>
+                    <p className="text-xs font-semibold">🛡️ Safe Mode</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">MT5 direct — broker sees your own IP.</p>
                   </button>
                 </div>
-                {executionMode === "agent" && (
+                {executionMode === "safe" && (
                   <p className="text-[11px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2.5">
-                    After connecting, you'll get a one-line setup command to run on your VPS. Trades will execute from your server's IP.
+                    We auto-provision a dedicated Windows VPS in Malaysia, install MT5, and log in with your credentials. Trades go directly to your broker — no MetaAPI in between. Ready in ~5 minutes. $24/month (billed to admin).
                   </p>
                 )}
               </div>
 
               <p className="text-[11px] text-muted-foreground bg-secondary/60 rounded-lg p-2.5">
-                Your credentials are transmitted securely to MetaAPI's encrypted cloud infrastructure. We store only your login number and server name for display — never your password.
+                {executionMode === "safe"
+                  ? "Your MT5 credentials are encrypted and used only to set up your private VPS. They are never shared with MetaAPI or any third party."
+                  : "Your credentials are transmitted securely to MetaAPI's encrypted cloud infrastructure. We store only your login number and server name for display."
+                }
               </p>
             </>
           )}
@@ -1239,7 +1242,7 @@ function CopyTradingInner() {
             <div className="flex flex-wrap gap-3">
               {accounts.map((a) => {
                 const meta = accountTypeMeta[a.type] ?? { color: "text-foreground", bg: "bg-secondary" };
-                const isAgent = a.executionMode === "agent";
+                const isAgent = a.executionMode === "agent" || a.executionMode === "safe";
                 return (
                   <div key={a.id} className={`rounded-xl border px-4 py-3 flex items-center gap-3 min-w-[220px] ${meta.bg}`}>
                     <div className="flex-1 min-w-0">
@@ -1269,7 +1272,7 @@ function CopyTradingInner() {
               })}
             </div>
             {/* Managed VPS status cards */}
-            {accounts.filter((a) => a.executionMode === "agent").map((a) => (
+            {accounts.filter((a) => a.executionMode === "agent" || a.executionMode === "safe").map((a) => (
               <ManagedVpsCard
                 key={`vps-${a.id}`}
                 account={{

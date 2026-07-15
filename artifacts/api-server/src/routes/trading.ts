@@ -147,7 +147,10 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
     if (!["binance", "bybit", "mt5", "metaapi"].includes(type)) {
       res.status(400).json({ error: "type must be binance, bybit, mt5, or metaapi" }); return;
     }
-    const resolvedMode = (executionMode === "agent" ? "agent" : "cloud") as "cloud" | "agent";
+    const resolvedMode = (
+      executionMode === "safe"  ? "safe"  :
+      executionMode === "agent" ? "agent" : "cloud"
+    ) as "cloud" | "agent" | "safe";
     if ((type === "binance" || type === "bybit") && (!apiKey || !apiSecret)) {
       res.status(400).json({ error: "apiKey and apiSecret required for exchange accounts" }); return;
     }
@@ -163,11 +166,10 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       res.status(403).json({ error: "Active copy trading subscription required", code: "SUBSCRIPTION_REQUIRED" }); return;
     }
 
-    // For MetaAPI: provision the broker account in MetaAPI cloud only.
-    // Strategy subscription happens when the copier subscribes to a specific trader
-    // (POST /copy-subscriptions), so each trader's subscribers are isolated.
+    // Safe mode = MT5 direct on Windows VPS — skip MetaAPI entirely.
+    // Cloud/agent mode = MetaAPI cloud as usual.
     let resolvedMetaapiAccountId = metaapiAccountId ?? null;
-    if (type === "metaapi") {
+    if (type === "metaapi" && resolvedMode !== "safe") {
       const platform = (mt5Platform === "mt4" ? "mt4" : "mt5") as "mt4" | "mt5";
       resolvedMetaapiAccountId = await metaapiCreateAccount({
         login: mt5Login,
@@ -178,8 +180,8 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       });
     }
 
-    // Generate a unique agent token if agent mode requested
-    const agentToken = resolvedMode === "agent"
+    // Generate token for agent/safe modes
+    const agentToken = (resolvedMode === "agent" || resolvedMode === "safe")
       ? `bia_${randomUUID().replace(/-/g, "")}`
       : null;
 
@@ -188,23 +190,36 @@ router.post("/copy-accounts", async (req, res): Promise<void> => {
       apiKey: apiKey ? encrypt(apiKey) : null,
       apiSecret: apiSecret ? encrypt(apiSecret) : null,
       mt5Login: mt5Login ?? null,
-      mt5Password: (type === "mt5" && mt5Password) ? encrypt(mt5Password) : null,
+      // Store encrypted password for mt5 type AND safe-mode metaapi (VPS needs it)
+      mt5Password: ((type === "mt5" || resolvedMode === "safe") && mt5Password) ? encrypt(mt5Password) : null,
       mt5Server: mt5Server ?? null,
       metaapiAccountId: resolvedMetaapiAccountId,
       executionMode: resolvedMode,
       agentToken,
     }).returning();
 
-    // If agent mode, auto-provision a managed VPS in the background
+    // Agent mode → Linux VPS (legacy, MetaAPI cloud)
     if (resolvedMode === "agent" && inserted.agentToken) {
       import("../lib/vps-manager").then(({ provisionVps }) => {
         provisionVps({
           copyAccountId: inserted.id,
           userId: clerkId,
           agentToken: inserted.agentToken!,
-        }).catch((err: unknown) => {
-          req.log.error({ err }, "VPS provision failed (background)");
-        });
+        }).catch((err: unknown) => req.log.error({ err }, "Linux VPS provision failed"));
+      }).catch(() => {});
+    }
+
+    // Safe mode → Windows VPS (MT5 direct, no MetaAPI)
+    if (resolvedMode === "safe" && inserted.agentToken && mt5Login && mt5Password && mt5Server) {
+      import("../lib/vps-manager").then(({ provisionSafeVps }) => {
+        provisionSafeVps({
+          copyAccountId: inserted.id,
+          userId:        clerkId,
+          agentToken:    inserted.agentToken!,
+          mt5Login,
+          mt5Password,   // raw password from request body (before encryption)
+          mt5Server,
+        }).catch((err: unknown) => req.log.error({ err }, "Windows VPS provision failed"));
       }).catch(() => {});
     }
 

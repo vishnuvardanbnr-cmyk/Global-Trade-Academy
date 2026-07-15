@@ -690,8 +690,8 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
       try {
         let brokerOrderId = "";
 
-        // ── Agent mode: push directly to VPS, queue as fallback ──
-        if (account.executionMode === "agent") {
+        // ── Agent/Safe mode: push directly to VPS, queue as fallback ──
+        if (account.executionMode === "agent" || account.executionMode === "safe") {
           const expiresAt = new Date(Date.now() + 60_000); // 60s TTL
           const signalPayload = {
             signal: {

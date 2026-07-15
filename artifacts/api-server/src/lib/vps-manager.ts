@@ -7,10 +7,17 @@ import { managedVpsTable, siteSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 
-const VULTR_API   = "https://api.vultr.com/v2";
-const REGION      = "kul";           // Kuala Lumpur, Malaysia
-const PLAN        = "vc2-1c-1gb";   // 1 CPU, 1 GB RAM — $6/month
-const OS_ID       = 1743;            // Ubuntu 22.04 LTS x64
+const VULTR_API    = "https://api.vultr.com/v2";
+const REGION       = "kul";           // Kuala Lumpur, Malaysia
+
+// Linux (agent mode — legacy)
+const LINUX_PLAN   = "vc2-1c-1gb";   // 1 CPU, 1 GB RAM — $6/month
+const LINUX_OS_ID  = 1743;            // Ubuntu 22.04 LTS x64
+
+// Windows (safe mode — MT5 native, no MetaAPI)
+const WIN_PLAN     = "vc2-2c-4gb";   // 2 CPU, 4 GB RAM — $24/month (MT5 needs RAM)
+const WIN_OS_ID    = 2284;            // Windows Server 2022 Standard x64
+
 const PLATFORM_URL = process.env.PLATFORM_URL ?? "https://brightinsight.app";
 
 /* ── Read Vultr key from DB (integration_settings) ───────────────── */
@@ -27,8 +34,8 @@ export async function getVultrKey(): Promise<string> {
   return key;
 }
 
-/* ── Cloud-init startup script (base64) ─────────────────────────── */
-function buildUserData(agentToken: string): string {
+/* ── Linux cloud-init (agent/legacy mode) ────────────────────────── */
+function buildLinuxUserData(agentToken: string): string {
   const script = `#!/bin/bash
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
@@ -38,79 +45,181 @@ npm install -g pm2
 mkdir -p /opt/bright-agent
 curl -sL "${PLATFORM_URL}/api/copy-agent/script?token=${agentToken}" -o /opt/bright-agent/bright-agent.js
 cd /opt/bright-agent
-pm2 start bright-agent.js --name bright-agent \\
-  --env production \\
-  -- --token "${agentToken}" --url "${PLATFORM_URL}"
+pm2 start bright-agent.js --name bright-agent --env production
 pm2 save
 env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root | tail -1 | bash
 `;
   return Buffer.from(script, "utf-8").toString("base64");
 }
 
-/* ── Provision a new VPS for a copier account ────────────────────── */
+/* ── Windows PowerShell cloudbase-init (safe/MT5-direct mode) ─────── */
+function buildWindowsUserData(opts: {
+  agentToken: string;
+  mt5Login: string;
+  mt5Password: string;
+  mt5Server: string;
+}): string {
+  const { agentToken, mt5Login, mt5Password, mt5Server } = opts;
+  const script = `#ps1_sysnative
+$ErrorActionPreference = "Continue"
+$ProgressPreference    = "SilentlyContinue"
+$wc = New-Object Net.WebClient
+
+# 1. Create working directory
+New-Item -ItemType Directory -Force -Path "C:\\bright-bridge" | Out-Null
+
+# 2. Python 3.11 (silent install)
+$wc.DownloadFile("https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe", "C:\\bright-bridge\\py-installer.exe")
+Start-Process "C:\\bright-bridge\\py-installer.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0" -Wait
+
+# 3. Install MetaTrader5 Python package
+& "C:\\Program Files\\Python311\\Scripts\\pip.exe" install --quiet MetaTrader5
+
+# 4. MT5 terminal (silent install)
+$wc.DownloadFile("https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe", "C:\\bright-bridge\\mt5setup.exe")
+Start-Process "C:\\bright-bridge\\mt5setup.exe" -ArgumentList "/auto" -Wait
+
+# 5. Download Python bridge from platform
+$wc.DownloadFile("${PLATFORM_URL}/api/copy-agent/bridge-script", "C:\\bright-bridge\\bridge.py")
+
+# 6. Startup batch (env vars baked in)
+@"
+@echo off
+set BRIGHT_TOKEN=${agentToken}
+set BRIGHT_URL=${PLATFORM_URL}
+set MT5_LOGIN=${mt5Login}
+set MT5_PASSWORD=${mt5Password}
+set MT5_SERVER=${mt5Server}
+cd C:\\bright-bridge
+"C:\\Program Files\\Python311\\python.exe" bridge.py >> C:\\bright-bridge\\bridge.log 2>&1
+"@ | Out-File -FilePath "C:\\bright-bridge\\start.bat" -Encoding ascii
+
+# 7. Task Scheduler — auto-start + restart on failure
+$action   = New-ScheduledTaskAction -Execute "C:\\bright-bridge\\start.bat"
+$trigger  = New-ScheduledTaskTrigger -AtStartup
+$settings = New-ScheduledTaskSettingsSet \`
+  -RestartCount 99 \`
+  -RestartInterval (New-TimeSpan -Minutes 2) \`
+  -ExecutionTimeLimit ([TimeSpan]::Zero)
+Register-ScheduledTask -TaskName "BrightBridge" \`
+  -Action $action -Trigger $trigger \`
+  -Settings $settings -RunLevel Highest -Force | Out-Null
+Start-ScheduledTask -TaskName "BrightBridge"
+`;
+  return Buffer.from(script, "utf-8").toString("base64");
+}
+
+/* ── Internal: create a Vultr instance ───────────────────────────── */
+async function createVultrInstance(opts: {
+  vpsRecordId: number;
+  copyAccountId: number;
+  plan: string;
+  osId: number;
+  label: string;
+  userData: string;
+  monthlyCost: string;
+}): Promise<void> {
+  const key = await getVultrKey();
+  const res = await fetch(`${VULTR_API}/instances`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      region:      REGION,
+      plan:        opts.plan,
+      os_id:       opts.osId,
+      label:       opts.label,
+      hostname:    opts.label,
+      user_data:   opts.userData,
+      backups:     "disabled",
+      enable_ipv6: false,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error ?? `Vultr API error ${res.status}`);
+  }
+
+  const data = await res.json() as { instance: { id: string } };
+  await db
+    .update(managedVpsTable)
+    .set({ instanceId: data.instance.id, monthlyCost: opts.monthlyCost })
+    .where(eq(managedVpsTable.id, opts.vpsRecordId));
+
+  logger.info({ copyAccountId: opts.copyAccountId, instanceId: data.instance.id }, "VPS provisioned, waiting for boot");
+}
+
+/* ── Provision Linux VPS (legacy agent mode) ─────────────────────── */
 export async function provisionVps(opts: {
   copyAccountId: number;
   userId: string;
   agentToken: string;
 }): Promise<void> {
-  const key = await getVultrKey();
-
-  // Create DB record immediately so UI shows "provisioning"
-  const [vpsRecord] = await db
-    .insert(managedVpsTable)
-    .values({
-      copyAccountId: opts.copyAccountId,
-      userId: opts.userId,
-      status: "provisioning",
-      region: REGION,
-      plan: PLAN,
-    })
-    .returning();
+  const [vpsRecord] = await db.insert(managedVpsTable).values({
+    copyAccountId: opts.copyAccountId,
+    userId:        opts.userId,
+    status:        "provisioning",
+    region:        REGION,
+    plan:          LINUX_PLAN,
+  }).returning();
 
   try {
-    const res = await fetch(`${VULTR_API}/instances`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        region: REGION,
-        plan: PLAN,
-        os_id: OS_ID,
-        label: `bright-agent-${opts.copyAccountId}`,
-        hostname: `bright-agent-${opts.copyAccountId}`,
-        user_data: buildUserData(opts.agentToken),
-        backups: "disabled",
-        enable_ipv6: false,
-      }),
+    await createVultrInstance({
+      vpsRecordId:   vpsRecord.id,
+      copyAccountId: opts.copyAccountId,
+      plan:          LINUX_PLAN,
+      osId:          LINUX_OS_ID,
+      label:         `bright-agent-${opts.copyAccountId}`,
+      userData:      buildLinuxUserData(opts.agentToken),
+      monthlyCost:   "6.00",
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as { error?: string };
-      throw new Error(err.error ?? `Vultr API error ${res.status}`);
-    }
-
-    const data = await res.json() as {
-      instance: { id: string; main_ip: string; status: string };
-    };
-
-    await db
-      .update(managedVpsTable)
-      .set({ instanceId: data.instance.id })
-      .where(eq(managedVpsTable.id, vpsRecord.id));
-
-    logger.info(
-      { copyAccountId: opts.copyAccountId, instanceId: data.instance.id },
-      "VPS provisioned, waiting for boot",
-    );
   } catch (err) {
-    await db
-      .update(managedVpsTable)
-      .set({
-        status: "error",
-        errorMessage: err instanceof Error ? err.message : String(err),
-      })
-      .where(eq(managedVpsTable.id, vpsRecord.id));
-    logger.error({ err }, "VPS provision failed");
-    // Don't rethrow — account was already created successfully
+    await db.update(managedVpsTable).set({
+      status: "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+    }).where(eq(managedVpsTable.id, vpsRecord.id));
+    logger.error({ err }, "Linux VPS provision failed");
+  }
+}
+
+/* ── Provision Windows VPS (safe mode — MT5 direct, no MetaAPI) ──── */
+export async function provisionSafeVps(opts: {
+  copyAccountId: number;
+  userId: string;
+  agentToken: string;
+  mt5Login: string;
+  mt5Password: string;   // raw (decrypted) password
+  mt5Server: string;
+}): Promise<void> {
+  const [vpsRecord] = await db.insert(managedVpsTable).values({
+    copyAccountId: opts.copyAccountId,
+    userId:        opts.userId,
+    status:        "provisioning",
+    region:        REGION,
+    plan:          WIN_PLAN,
+  }).returning();
+
+  try {
+    await createVultrInstance({
+      vpsRecordId:   vpsRecord.id,
+      copyAccountId: opts.copyAccountId,
+      plan:          WIN_PLAN,
+      osId:          WIN_OS_ID,
+      label:         `bright-safe-${opts.copyAccountId}`,
+      userData:      buildWindowsUserData({
+        agentToken:   opts.agentToken,
+        mt5Login:     opts.mt5Login,
+        mt5Password:  opts.mt5Password,
+        mt5Server:    opts.mt5Server,
+      }),
+      monthlyCost:   "24.00",
+    });
+  } catch (err) {
+    await db.update(managedVpsTable).set({
+      status: "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+    }).where(eq(managedVpsTable.id, vpsRecord.id));
+    logger.error({ err }, "Windows VPS provision failed");
   }
 }
 

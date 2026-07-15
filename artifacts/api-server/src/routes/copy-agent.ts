@@ -198,15 +198,219 @@ router.post("/copy-agent/result", async (req, res): Promise<void> => {
 });
 
 /* ── GET /api/copy-agent/script ───────────────────────────────────
-   Serves the downloadable agent Node.js script.                     */
+   Serves the Node.js agent script (Linux legacy mode).              */
 router.get("/copy-agent/script", async (req, res): Promise<void> => {
   const token = req.query.token as string | undefined;
-  // Token is optional here — but we add it pre-filled if present
   const script = buildAgentScript(token ?? "YOUR_AGENT_TOKEN");
   res.setHeader("Content-Type", "application/javascript");
   res.setHeader("Content-Disposition", `attachment; filename="bright-agent.js"`);
   res.send(script);
 });
+
+/* ── GET /api/copy-agent/bridge-script ───────────────────────────
+   Serves the Python bridge downloaded by the Windows VPS on boot.
+   No token auth — the startup script supplies creds via env vars.  */
+router.get("/copy-agent/bridge-script", async (_req, res): Promise<void> => {
+  res.setHeader("Content-Type", "text/x-python");
+  res.send(buildBridgeScript());
+});
+
+/* ── Python bridge template ───────────────────────────────────────── */
+function buildBridgeScript(): string {
+  return `#!/usr/bin/env python3
+"""
+Bright Insight MT5 Bridge
+Connects to locally running MT5 terminal and executes trades directly.
+No MetaAPI involved — broker sees this VPS IP.
+
+Push server: listens on port 7654 for signals pushed by platform (~200ms)
+Poll loop:   fallback every 10s to catch any missed signals
+"""
+import os, json, time, logging, threading
+import urllib.request, urllib.error
+import http.server, socketserver
+import MetaTrader5 as mt5
+
+TOKEN    = os.environ.get("BRIGHT_TOKEN", "")
+BASE_URL = os.environ.get("BRIGHT_URL",   "https://brightinsight.app")
+MT5_LOGIN    = int(os.environ.get("MT5_LOGIN",    "0"))
+MT5_PASSWORD =     os.environ.get("MT5_PASSWORD", "")
+MT5_SERVER   =     os.environ.get("MT5_SERVER",   "")
+PUSH_PORT    = 7654
+POLL_INTERVAL = 10  # seconds
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [bright-bridge] %(message)s", datefmt="%H:%M:%S")
+log = logging.getLogger(__name__)
+
+# ── MT5 init with retry ─────────────────────────────────────────────
+def mt5_connect(retries=10, delay=15):
+    for attempt in range(retries):
+        if mt5.initialize():
+            if mt5.login(MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER):
+                info = mt5.account_info()
+                log.info(f"MT5 connected — account {info.login} on {info.server} | balance {info.balance}")
+                return True
+            log.warning(f"MT5 login failed: {mt5.last_error()}")
+        else:
+            log.warning(f"MT5 init failed (attempt {attempt+1}/{retries}): {mt5.last_error()}")
+        time.sleep(delay)
+    raise RuntimeError(f"Could not connect to MT5 after {retries} attempts")
+
+# ── Execute one trade ────────────────────────────────────────────────
+def execute_trade(item):
+    signal     = item.get("signal", {})
+    multiplier = float(item.get("multiplier", 1))
+    symbol     = signal.get("symbol", "")
+    action     = signal.get("action", "buy").lower()
+    volume     = round(float(signal.get("quantity", 0)) * multiplier, 2)
+
+    if volume <= 0:
+        raise ValueError(f"Volume too small: {volume}")
+
+    # Ensure symbol is available
+    if not mt5.symbol_select(symbol, True):
+        raise ValueError(f"Symbol not available: {symbol}")
+
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        raise ValueError(f"No tick data for {symbol}")
+
+    if action == "close":
+        # Close all positions for this symbol
+        positions = mt5.positions_get(symbol=symbol)
+        if not positions:
+            raise ValueError(f"No open positions found for {symbol}")
+        closed = 0
+        for pos in positions:
+            close_type  = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
+            close_price = tick.bid if close_type == mt5.ORDER_TYPE_SELL else tick.ask
+            req = {
+                "action":   mt5.TRADE_ACTION_DEAL,
+                "symbol":   symbol,
+                "volume":   pos.volume,
+                "type":     close_type,
+                "position": pos.ticket,
+                "price":    close_price,
+                "deviation": 20,
+                "magic":    234000,
+                "comment":  "bright-bridge close",
+                "type_time":    mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+            result = mt5.order_send(req)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                closed += 1
+        return f"closed-{closed}"
+
+    order_type  = mt5.ORDER_TYPE_BUY  if action == "buy"  else mt5.ORDER_TYPE_SELL
+    order_price = tick.ask            if action == "buy"  else tick.bid
+
+    req = {
+        "action":   mt5.TRADE_ACTION_DEAL,
+        "symbol":   symbol,
+        "volume":   volume,
+        "type":     order_type,
+        "price":    order_price,
+        "deviation": 20,
+        "magic":    234000,
+        "comment":  "bright-bridge",
+        "type_time":    mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+    if signal.get("stopLoss"):
+        req["sl"] = float(signal["stopLoss"])
+    if signal.get("takeProfit"):
+        req["tp"] = float(signal["takeProfit"])
+
+    result = mt5.order_send(req)
+    if not result or result.retcode != mt5.TRADE_RETCODE_DONE:
+        code = result.retcode if result else -1
+        comment = result.comment if result else "no result"
+        raise RuntimeError(f"MT5 order failed: retcode={code} ({comment})")
+
+    return str(result.order)
+
+# ── Report result to platform ────────────────────────────────────────
+def report_result(item, success, broker_order_id=None, error_message=None):
+    signal = item.get("signal", {})
+    mult   = float(item.get("multiplier", 1))
+    lots   = f"{float(signal.get('quantity', 0)) * mult:.2f}"
+    payload = json.dumps({
+        "queueId":      item.get("queueId"),
+        "tradeId":      item.get("tradeId"),
+        "success":      success,
+        "brokerOrderId": broker_order_id,
+        "errorMessage": error_message,
+        "symbol":       signal.get("symbol"),
+        "direction":    signal.get("action"),
+        "entryPrice":   signal.get("price"),
+        "lots":         lots,
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            f"{BASE_URL}/api/copy-agent/result?token={TOKEN}",
+            data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        log.warning(f"Report failed: {e}")
+
+# ── Handle one item ──────────────────────────────────────────────────
+def handle_item(item, source):
+    sym = item.get("signal", {}).get("symbol", "?")
+    act = item.get("signal", {}).get("action", "?")
+    try:
+        order_id = execute_trade(item)
+        log.info(f"[{source}] Executed {sym} {act} → {order_id}")
+        report_result(item, True, order_id)
+    except Exception as e:
+        log.error(f"[{source}] Failed {sym}: {e}")
+        report_result(item, False, error_message=str(e))
+
+# ── Push server (port 7654) ──────────────────────────────────────────
+class PushHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        if self.path != "/execute":
+            self.send_response(404); self.end_headers(); return
+        if self.headers.get("x-agent-token") != TOKEN:
+            self.send_response(401); self.end_headers(); return
+        length = int(self.headers.get("Content-Length", 0))
+        body   = self.rfile.read(length)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"ok":true}')
+        try:
+            item = json.loads(body)
+            threading.Thread(target=handle_item, args=(item, "PUSH"), daemon=True).start()
+        except Exception as e:
+            log.error(f"Push parse error: {e}")
+    def log_message(self, *args): pass  # silence
+
+# ── Fallback poll loop ───────────────────────────────────────────────
+def poll_loop():
+    while True:
+        try:
+            req = urllib.request.Request(f"{BASE_URL}/api/copy-agent/pending?token={TOKEN}")
+            with urllib.request.urlopen(req, timeout=15) as r:
+                items = json.loads(r.read())
+            if items:
+                log.info(f"[POLL] {len(items)} missed signal(s)")
+                for item in items:
+                    handle_item(item, "POLL")
+        except Exception as e:
+            log.debug(f"Poll error: {e}")
+        time.sleep(POLL_INTERVAL)
+
+# ── Entry point ──────────────────────────────────────────────────────
+if __name__ == "__main__":
+    log.info(f"Starting — platform: {BASE_URL} | MT5 login: {MT5_LOGIN}@{MT5_SERVER}")
+    mt5_connect()
+    threading.Thread(target=poll_loop, daemon=True).start()
+    with socketserver.TCPServer(("0.0.0.0", PUSH_PORT), PushHandler) as server:
+        log.info(f"Ready. Push :{PUSH_PORT} | Poll every {POLL_INTERVAL}s")
+        server.serve_forever()
+`;
+}
 
 /* ── Agent script template ────────────────────────────────────────── */
 function buildAgentScript(token: string): string {
