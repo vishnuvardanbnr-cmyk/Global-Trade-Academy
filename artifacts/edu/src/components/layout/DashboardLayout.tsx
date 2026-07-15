@@ -577,6 +577,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <>
       {showProfileDialog && <CompleteProfileDialog onDone={() => setProfileDismissed(true)} />}
+
+      {/* Push notification permission prompt */}
+      {pushPrompt && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm">
+          <div className="bg-popover border border-border rounded-2xl shadow-xl px-4 py-3.5 flex items-start gap-3">
+            <span className="text-2xl shrink-0 mt-0.5">📈</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground leading-tight">Enable trade alerts</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Get notified when your copy trades are executed or closed.</p>
+            </div>
+            <div className="flex flex-col gap-1.5 shrink-0">
+              <button
+                onClick={handleEnablePush}
+                className="text-xs font-semibold text-white bg-primary rounded-lg px-3 py-1.5 hover:bg-primary/90 transition-colors"
+              >
+                Enable
+              </button>
+              <button
+                onClick={handleDismissPush}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-sidebar flex-col h-screen">
           {sidebarContent}

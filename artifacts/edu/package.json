@@ -82,6 +82,7 @@
     "hls.js": "^1.6.16",
     "lightweight-charts": "^5.2.0",
     "livekit-client": "^2.19.1",
+    "workbox-precaching": "^7.4.1",
     "xlsx": "^0.18.5"
   }
 }
