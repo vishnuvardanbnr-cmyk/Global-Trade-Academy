@@ -285,7 +285,7 @@ function ConnectAccountModal({ open, onClose, onCreated }: {
                 </div>
                 {executionMode === "safe" && (
                   <p className="text-[11px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2.5">
-                    We auto-provision a dedicated Windows VPS in Malaysia, install MT5, and log in with your credentials. Trades go directly to your broker — no MetaAPI in between. Ready in ~5 minutes. $24/month (billed to admin).
+                    We auto-provision a dedicated Windows VPS in Malaysia, install MT5, and log in with your credentials. Trades go directly to your broker — no MetaAPI in between. Ready in ~5 minutes.
                   </p>
                 )}
               </div>
