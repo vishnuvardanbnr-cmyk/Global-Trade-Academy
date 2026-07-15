@@ -87,6 +87,7 @@ type Subscriber = {
   subId: number; userId: string; displayName: string;
   accountLabel: string; accountType: string | null;
   lotMultiplier: number; currentPnl: number | null;
+  allocatedAmount: number | null; maxAmount: number | null;
   status: string; since: string;
 };
 type TraderDashboard = {
@@ -1522,6 +1523,7 @@ function CopyTradingInner() {
                         <th className="text-left px-4 py-2 font-medium">Member</th>
                         <th className="text-left px-4 py-2 font-medium">Account</th>
                         <th className="text-right px-4 py-2 font-medium">Multiplier</th>
+                        <th className="text-right px-4 py-2 font-medium">Balance</th>
                         <th className="text-right px-4 py-2 font-medium">P&L</th>
                         <th className="text-center px-4 py-2 font-medium">Status</th>
                         <th className="text-right px-4 py-2 font-medium">Since</th>
@@ -1538,6 +1540,13 @@ function CopyTradingInner() {
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
+                          <td className="px-4 py-2.5 text-right font-mono">
+                            {s.allocatedAmount != null
+                              ? <span className="font-semibold">${s.allocatedAmount.toFixed(2)}</span>
+                              : s.maxAmount != null
+                                ? <span className="font-semibold">${s.maxAmount.toFixed(2)}</span>
+                                : <span className="text-muted-foreground">—</span>}
+                          </td>
                           <td className="px-4 py-2.5 text-right font-mono font-semibold">
                             {s.currentPnl != null
                               ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
@@ -1692,9 +1701,35 @@ function CopyTradingInner() {
               Open Positions
               <Badge variant="secondary">{openPositions.length}</Badge>
             </h2>
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => myTrader && void loadOpenPositions(myTrader.id)}>
-              <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => myTrader && void loadOpenPositions(myTrader.id)}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
+              </Button>
+              <Button
+                variant="destructive" size="sm" className="text-xs font-bold"
+                disabled={closingSignalId !== null}
+                onClick={async () => {
+                  if (!myTrader) return;
+                  if (!confirm(`Close ALL ${openPositions.length} open position${openPositions.length !== 1 ? "s" : ""} across all copier accounts? This cannot be undone.`)) return;
+                  setClosingSignalId(-1);
+                  try {
+                    const r = await fetch(`/api/signals/close-all?traderId=${myTrader.id}`, { method: "POST" });
+                    const d = await r.json() as { closed?: number; failed?: number; skipped?: number; error?: string };
+                    if (!r.ok) throw new Error(d.error ?? "Failed");
+                    toast({
+                      title: "Close All complete",
+                      description: `${d.closed ?? 0} closed · ${d.failed ?? 0} failed · ${d.skipped ?? 0} skipped`,
+                    });
+                    void loadOpenPositions(myTrader.id);
+                    void loadDashboard(myTrader.id);
+                  } catch (e: unknown) {
+                    toast({ title: e instanceof Error ? e.message : "Failed", variant: "destructive" });
+                  } finally { setClosingSignalId(null); }
+                }}
+              >
+                {closingSignalId === -1 ? <><RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />Closing…</> : "⚠ Close All"}
+              </Button>
+            </div>
           </div>
           <div className="space-y-2">
             {openPositions.map((pos) => {

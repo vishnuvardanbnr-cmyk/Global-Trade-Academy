@@ -9,6 +9,7 @@ import {
   BookOpen, Trophy, TrendingUp, Video, ArrowUpRight,
   Star, Clock, CheckCircle2, Target, Zap, BarChart3, Activity,
   Users, GraduationCap, Radio, Calendar, Megaphone, Bell, AlertTriangle, RefreshCw,
+  MapPin, ExternalLink, X,
 } from "lucide-react";
 import { useCreateEnrollment } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +40,92 @@ type PlatformEvent = {
   id: number; title: string; description: string | null; thumbnailUrl: string | null;
   eventDate: string | null; location: string | null; type: string;
 };
+
+function EventDetailModal({ event, onClose }: { event: PlatformEvent; onClose: () => void }) {
+  const isLink = event.location && (event.location.startsWith("http://") || event.location.startsWith("https://"));
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-background rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Hero image */}
+        {event.thumbnailUrl && (
+          <div className="w-full h-52 overflow-hidden bg-secondary">
+            <img src={event.thumbnailUrl} alt={event.title} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }} />
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="p-6 space-y-4">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <Badge variant="outline" className="text-[10px] capitalize mb-2">{event.type}</Badge>
+              <h2 className="text-xl font-bold text-foreground leading-tight">{event.title}</h2>
+            </div>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Meta row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {event.eventDate && (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-secondary/50 border border-border">
+                <Calendar className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-0.5">Date & Time</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {new Date(event.eventDate).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(event.eventDate).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+            )}
+            {event.location && (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-secondary/50 border border-border">
+                <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-0.5">Venue</p>
+                  {isLink ? (
+                    <a href={event.location} target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-semibold text-primary hover:underline flex items-center gap-1 truncate">
+                      Join Link <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  ) : (
+                    <p className="text-sm font-semibold text-foreground break-words">{event.location}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Description */}
+          {event.description && (
+            <div>
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-1.5">About this event</p>
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{event.description}</p>
+            </div>
+          )}
+
+          {/* CTA if link */}
+          {isLink && event.location && (
+            <a href={event.location} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity">
+              <ExternalLink className="h-4 w-4" />Join Event
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function useUpcomingEvents() {
   const [events, setEvents] = useState<PlatformEvent[]>([]);
@@ -128,6 +215,7 @@ export default function Dashboard() {
   const myGroups = useMyGroups();
   const { items: announcements, loading: announcementsLoading } = useAnnouncements();
   const { events: upcomingEvents, loading: eventsLoading } = useUpcomingEvents();
+  const [selectedEvent, setSelectedEvent] = useState<PlatformEvent | null>(null);
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
   const { data: leaderboard, isLoading: leaderLoading } = useGetLeaderboard();
   const { data: activity, isLoading: activityLoading } = useGetRecentActivity();
@@ -181,6 +269,7 @@ export default function Dashboard() {
     .slice(0, 4);
 
   return (
+    <>
     <div className="space-y-6">
       {/* Page header */}
       <div className="flex items-start justify-between">
@@ -435,7 +524,11 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground">No upcoming events.</p>
               </div>
             ) : upcomingEvents.map((ev) => (
-              <div key={ev.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border overflow-hidden">
+              <button
+                key={ev.id}
+                className="w-full flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border overflow-hidden text-left hover:bg-secondary/80 hover:border-primary/30 transition-colors cursor-pointer"
+                onClick={() => setSelectedEvent(ev)}
+              >
                 {ev.thumbnailUrl ? (
                   <img src={ev.thumbnailUrl} alt={ev.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                 ) : (
@@ -453,7 +546,7 @@ export default function Dashboard() {
                   {ev.location && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{ev.location}</p>}
                 </div>
                 <Badge variant="outline" className="text-[10px] capitalize shrink-0 self-start mt-0.5">{ev.type}</Badge>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
@@ -539,5 +632,11 @@ export default function Dashboard() {
         </CardContent>
       </Card>
     </div>
+
+    {/* Event detail modal */}
+    {selectedEvent && (
+      <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+    )}
+    </>
   );
 }

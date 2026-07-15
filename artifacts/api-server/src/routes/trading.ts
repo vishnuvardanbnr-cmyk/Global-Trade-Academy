@@ -886,16 +886,18 @@ router.get("/trader-dashboard", async (req, res): Promise<void> => {
     // ── 6. Subscribers list ──────────────────────────────────────
     const subsRows = await db
       .select({
-        subId:        copySubscriptionsTable.id,
-        userId:       copySubscriptionsTable.userId,
-        status:       copySubscriptionsTable.status,
-        lotMultiplier: copySubscriptionsTable.lotMultiplier,
-        currentPnl:   copySubscriptionsTable.currentPnl,
-        since:        copySubscriptionsTable.createdAt,
-        accountLabel: copyAccountsTable.label,
-        accountType:  copyAccountsTable.type,
-        displayName:  usersTable.displayName,
-        email:        usersTable.email,
+        subId:           copySubscriptionsTable.id,
+        userId:          copySubscriptionsTable.userId,
+        status:          copySubscriptionsTable.status,
+        lotMultiplier:   copySubscriptionsTable.lotMultiplier,
+        currentPnl:      copySubscriptionsTable.currentPnl,
+        allocatedAmount: copySubscriptionsTable.allocatedAmount,
+        maxAmount:       copySubscriptionsTable.maxAmount,
+        since:           copySubscriptionsTable.createdAt,
+        accountLabel:    copyAccountsTable.label,
+        accountType:     copyAccountsTable.type,
+        displayName:     usersTable.displayName,
+        email:           usersTable.email,
       })
       .from(copySubscriptionsTable)
       .leftJoin(copyAccountsTable, eq(copySubscriptionsTable.copyAccountId, copyAccountsTable.id))
@@ -932,15 +934,17 @@ router.get("/trader-dashboard", async (req, res): Promise<void> => {
         winCount:      r.winCount     ? parseInt(r.winCount)        : 0,
       })),
       subscribers: subsRows.map((s) => ({
-        subId:        s.subId,
-        userId:       s.userId,
-        displayName:  s.displayName ?? s.email ?? "Unknown",
-        accountLabel: s.accountLabel ?? "Signal only",
-        accountType:  s.accountType ?? null,
-        lotMultiplier: s.lotMultiplier ? parseFloat(s.lotMultiplier as string) : 1,
-        currentPnl:   s.currentPnl ? parseFloat(s.currentPnl as string) : null,
-        status:       s.status,
-        since:        s.since,
+        subId:           s.subId,
+        userId:          s.userId,
+        displayName:     s.displayName ?? s.email ?? "Unknown",
+        accountLabel:    s.accountLabel ?? "Signal only",
+        accountType:     s.accountType ?? null,
+        lotMultiplier:   s.lotMultiplier ? parseFloat(s.lotMultiplier as string) : 1,
+        currentPnl:      s.currentPnl      ? parseFloat(s.currentPnl      as string) : null,
+        allocatedAmount: s.allocatedAmount ? parseFloat(s.allocatedAmount  as string) : null,
+        maxAmount:       s.maxAmount       ? parseFloat(s.maxAmount        as string) : null,
+        status:          s.status,
+        since:           s.since,
       })),
     });
   } catch (err) {
@@ -1111,6 +1115,62 @@ router.post("/signals/:signalId/close", async (req, res): Promise<void> => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     req.log.error({ err }, "Error closing signal positions");
+    res.status(500).json({ error: msg });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   CLOSE ALL — close every open position for a trader
+════════════════════════════════════════════════════════════════════ */
+
+router.post("/signals/close-all", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const traderId = req.query.traderId ? parseInt(req.query.traderId as string) : null;
+    if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
+
+    // Find all FIFO-open signal IDs (same logic as open-positions)
+    const allSigs = await db.select({ id: tradeSignalsTable.id, action: tradeSignalsTable.action, symbol: tradeSignalsTable.symbol })
+      .from(tradeSignalsTable)
+      .where(and(
+        eq(tradeSignalsTable.traderId, traderId),
+        eq(tradeSignalsTable.status, "executed"),
+        inArray(tradeSignalsTable.action, ["buy", "sell", "close"]),
+      ))
+      .orderBy(tradeSignalsTable.createdAt);
+
+    const openStack = new Map<string, number[]>();
+    for (const sig of allSigs) {
+      if (sig.action === "buy" || sig.action === "sell") {
+        const st = openStack.get(sig.symbol) ?? [];
+        st.push(sig.id);
+        openStack.set(sig.symbol, st);
+      } else if (sig.action === "close") {
+        const st = openStack.get(sig.symbol);
+        if (st && st.length > 0) st.shift();
+      }
+    }
+
+    const openIds: number[] = [];
+    for (const ids of openStack.values()) openIds.push(...ids);
+    if (openIds.length === 0) { res.json({ closed: 0, failed: 0, skipped: 0, total: 0 }); return; }
+
+    const { closeBySignalId } = await import("../lib/fan-out");
+    let closed = 0, failed = 0, skipped = 0;
+    await Promise.allSettled(openIds.map(async (id) => {
+      try {
+        const r = await closeBySignalId(id);
+        closed  += r.closed;
+        failed  += r.failed;
+        skipped += r.skipped;
+      } catch { failed++; }
+    }));
+
+    res.json({ closed, failed, skipped, total: openIds.length });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    req.log.error({ err }, "Error in close-all");
     res.status(500).json({ error: msg });
   }
 });

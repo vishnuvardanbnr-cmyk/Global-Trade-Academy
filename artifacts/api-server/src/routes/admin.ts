@@ -626,6 +626,31 @@ router.post("/admin/events", async (req, res): Promise<void> => {
   }
 });
 
+/* ── PATCH /api/admin/events/:id ───────────────────────────────── */
+router.patch("/admin/events/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId || !(await isAdmin(clerkId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { title, description, thumbnailUrl, eventDate, location, type } = req.body as {
+      title?: string; description?: string; thumbnailUrl?: string; eventDate?: string; location?: string; type?: string;
+    };
+    const update: Record<string, unknown> = {};
+    if (title       !== undefined) update.title        = title.trim();
+    if (description !== undefined) update.description  = description?.trim() || null;
+    if (thumbnailUrl !== undefined) update.thumbnailUrl = thumbnailUrl?.trim() || null;
+    if (eventDate   !== undefined) update.eventDate    = eventDate ? new Date(eventDate) : null;
+    if (location    !== undefined) update.location     = location?.trim() || null;
+    if (type        !== undefined) update.type         = type;
+    const [updated] = await db.update(eventsTable)
+      .set(update)
+      .where(eq(eventsTable.id, parseInt(req.params.id)))
+      .returning();
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── DELETE /api/admin/events/:id ──────────────────────────────── */
 router.delete("/admin/events/:id", async (req, res): Promise<void> => {
   try {

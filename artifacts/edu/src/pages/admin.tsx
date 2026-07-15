@@ -1850,6 +1850,7 @@ type AdminEvent = {
 };
 
 const EVENT_TYPES = ["general", "webinar", "workshop", "trading", "masterclass", "ama"];
+const BLANK_FORM = { title: "", description: "", thumbnailUrl: "", eventDate: "", location: "", type: "general" };
 
 function EventsTab() {
   const { toast } = useToast();
@@ -1857,7 +1858,9 @@ function EventsTab() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
-  const [form, setForm] = useState({ title: "", description: "", thumbnailUrl: "", eventDate: "", location: "", type: "general" });
+  const [uploadingThumb, setUploadingThumb] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(BLANK_FORM);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1869,19 +1872,33 @@ function EventsTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  const uploadThumbnail = async (file: File) => {
+    if (!file.type.startsWith("image/")) { toast({ title: "Images only", variant: "destructive" }); return; }
+    setUploadingThumb(true);
+    try {
+      const fd = new FormData(); fd.append("image", file);
+      const r = await fetch("/api/upload/image", { method: "POST", body: fd });
+      if (!r.ok) throw new Error("Upload failed");
+      const { url } = await r.json() as { url: string };
+      setForm((f) => ({ ...f, thumbnailUrl: url }));
+      toast({ title: "Image uploaded" });
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Upload failed", variant: "destructive" });
+    } finally { setUploadingThumb(false); }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) return;
     setCreating(true);
     try {
-      const r = await fetch("/api/admin/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      const method = editingId ? "PATCH" : "POST";
+      const url = editingId ? `/api/admin/events/${editingId}` : "/api/admin/events";
+      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       if (r.ok) {
-        toast({ title: "Event created" });
-        setForm({ title: "", description: "", thumbnailUrl: "", eventDate: "", location: "", type: "general" });
+        toast({ title: editingId ? "Event updated" : "Event created" });
+        setForm(BLANK_FORM);
+        setEditingId(null);
         load();
       } else {
         const d = await r.json();
@@ -1890,20 +1907,41 @@ function EventsTab() {
     } finally { setCreating(false); }
   };
 
+  const startEdit = (ev: AdminEvent) => {
+    setEditingId(ev.id);
+    setForm({
+      title: ev.title,
+      description: ev.description ?? "",
+      thumbnailUrl: ev.thumbnailUrl ?? "",
+      eventDate: ev.eventDate ? new Date(ev.eventDate).toISOString().slice(0, 16) : "",
+      location: ev.location ?? "",
+      type: ev.type,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => { setEditingId(null); setForm(BLANK_FORM); };
+
   const handleDelete = async (id: number) => {
     setDeleting(id);
     try {
       await fetch(`/api/admin/events/${id}`, { method: "DELETE" });
       setEvents((prev) => prev.filter((e) => e.id !== id));
+      if (editingId === id) cancelEdit();
       toast({ title: "Event deleted" });
     } finally { setDeleting(null); }
   };
 
   return (
     <div className="space-y-6">
-      {/* Create form */}
-      <Card>
-        <CardHeader><CardTitle className="text-base">Create Event</CardTitle></CardHeader>
+      {/* Create / Edit form */}
+      <Card className={editingId ? "border-primary/40 ring-1 ring-primary/20" : ""}>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center justify-between">
+            {editingId ? <span className="flex items-center gap-2"><Pencil className="h-4 w-4 text-primary" />Edit Event</span> : "Create Event"}
+            {editingId && <Button variant="ghost" size="sm" onClick={cancelEdit}>Cancel</Button>}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
@@ -1922,26 +1960,42 @@ function EventsTab() {
                 <label className="text-sm font-medium">Description</label>
                 <Textarea placeholder="What is this event about?" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} />
               </div>
+              {/* Image upload */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Thumbnail URL</label>
-                <Input placeholder="https://..." value={form.thumbnailUrl} onChange={(e) => setForm((f) => ({ ...f, thumbnailUrl: e.target.value }))} />
+                <label className="text-sm font-medium flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" />Event Image</label>
+                <div className="space-y-2">
+                  <label className={cn(
+                    "flex items-center justify-center gap-2 h-10 px-3 rounded-lg border-2 border-dashed border-border cursor-pointer text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground",
+                    uploadingThumb && "opacity-60 pointer-events-none",
+                  )}>
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadThumbnail(f); e.target.value = ""; }} />
+                    {uploadingThumb
+                      ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</>
+                      : <><Upload className="h-4 w-4" /> Upload image</>}
+                  </label>
+                  {form.thumbnailUrl && (
+                    <div className="relative rounded-xl overflow-hidden border border-border w-full max-w-xs group">
+                      <img src={form.thumbnailUrl} alt="Thumbnail preview" className="w-full h-28 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      <button type="button"
+                        className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded-lg p-1 opacity-0 group-hover:opacity-100 transition-all"
+                        onClick={() => setForm((f) => ({ ...f, thumbnailUrl: "" }))}
+                      ><Trash2Icon className="h-3 w-3" /></button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Location / Link</label>
-                <Input placeholder="Zoom link or venue" value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
+                <label className="text-sm font-medium flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Venue / Location</label>
+                <Input placeholder="e.g. Zoom link, venue address" value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />Date & Time</label>
                 <Input type="datetime-local" value={form.eventDate} onChange={(e) => setForm((f) => ({ ...f, eventDate: e.target.value }))} />
               </div>
             </div>
-            {form.thumbnailUrl && (
-              <div className="rounded-xl overflow-hidden border border-border w-full max-w-xs">
-                <img src={form.thumbnailUrl} alt="Thumbnail preview" className="w-full h-32 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              </div>
-            )}
-            <Button type="submit" disabled={creating || !form.title.trim()} className="w-full sm:w-auto">
-              <CalendarPlus className="h-4 w-4 mr-2" />{creating ? "Creating…" : "Create Event"}
+            <Button type="submit" disabled={creating || uploadingThumb || !form.title.trim()} className="w-full sm:w-auto">
+              <CalendarPlus className="h-4 w-4 mr-2" />{creating ? (editingId ? "Saving…" : "Creating…") : editingId ? "Save Changes" : "Create Event"}
             </Button>
           </form>
         </CardContent>
@@ -1963,9 +2017,9 @@ function EventsTab() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {events.map((ev) => (
-              <Card key={ev.id} className="overflow-hidden">
+              <Card key={ev.id} className={cn("overflow-hidden", editingId === ev.id && "ring-2 ring-primary/40")}>
                 {ev.thumbnailUrl && (
-                  <div className="h-32 w-full overflow-hidden bg-secondary">
+                  <div className="h-36 w-full overflow-hidden bg-secondary">
                     <img src={ev.thumbnailUrl} alt={ev.title} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }} />
                   </div>
                 )}
@@ -1982,9 +2036,14 @@ function EventsTab() {
                     </p>
                   )}
                   {ev.location && <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />{ev.location}</p>}
-                  <Button variant="destructive" size="sm" className="w-full mt-2" onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}>
-                    <Trash2Icon className="h-3.5 w-3.5 mr-1.5" />{deleting === ev.id ? "Deleting…" : "Delete"}
-                  </Button>
+                  <div className="flex gap-2 mt-2">
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => startEdit(ev)} disabled={editingId === ev.id}>
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" />Edit
+                    </Button>
+                    <Button variant="destructive" size="sm" className="flex-1" onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}>
+                      <Trash2Icon className="h-3.5 w-3.5 mr-1.5" />{deleting === ev.id ? "Deleting…" : "Delete"}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
