@@ -535,10 +535,16 @@ function QuickTradePanel({
   traderId,
   subscriberCount,
   onSignalCreated,
+  openPositions,
+  closingSignalId,
+  onClosePosition,
 }: {
   traderId: number;
   subscriberCount: number;
   onSignalCreated: (sig: Signal) => void;
+  openPositions: OpenPosition[];
+  closingSignalId: number | null;
+  onClosePosition: (signalId: number) => Promise<void>;
 }) {
   const { toast } = useToast();
   const [action, setAction] = useState<QuickTradeAction>("buy");
@@ -667,198 +673,214 @@ function QuickTradePanel({
           })}
         </div>
 
-        {/* Close side: long or short — required when action = close */}
-        {action === "close" && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground font-medium">Closing position:</span>
-            <div className="flex gap-2">
-              {(["long", "short"] as const).map((side) => (
-                <button
-                  key={side}
-                  onClick={() => setCloseSide(side)}
-                  className={`rounded-lg border-2 px-4 py-1.5 text-xs font-bold transition-all ${
-                    closeSide === side
-                      ? side === "long"
-                        ? "bg-green-500 text-white border-green-500"
-                        : "bg-red-500 text-white border-red-500"
-                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                  }`}
-                >
-                  {side === "long" ? "▲ LONG" : "▼ SHORT"}
-                </button>
-              ))}
-            </div>
-            <span className="text-[11px] text-muted-foreground">
-              Will send &quot;{`close ${closeSide}`}&quot; to exchange
-            </span>
-          </div>
-        )}
-
-        {/* Row 1: Symbol + Market + Order type */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Symbol</Label>
-            {tradingPairs.filter((p) => p.market === market).length > 0 ? (
-              <Select value={symbol} onValueChange={setSymbol}>
-                <SelectTrigger className="font-mono"><SelectValue placeholder="Select symbol" /></SelectTrigger>
-                <SelectContent>
-                  {tradingPairs.filter((p) => p.market === market).map((p) => (
-                    <SelectItem key={p.symbol} value={p.symbol} className="font-mono">{p.symbol}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                placeholder="e.g. EURUSD"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                className="font-mono uppercase"
-              />
-            )}
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Market</Label>
-            <Select value={market} onValueChange={(v) => {
-              setMarket(v as QuickTradeMarket);
-              // Auto-select first pair for the new market
-              const first = tradingPairs.find((p) => p.market === v);
-              if (first) setSymbol(first.symbol);
-              else setSymbol("");
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="crypto">Crypto</SelectItem>
-                <SelectItem value="forex">Forex</SelectItem>
-                <SelectItem value="commodities">Commodities</SelectItem>
-                <SelectItem value="stocks">Stocks</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Order Type</Label>
-            <Select value={orderType} onValueChange={(v) => setOrderType(v as QuickTradeOrderType)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(Object.entries(orderTypeMeta) as [QuickTradeOrderType, string][]).map(([val, label]) => (
-                  <SelectItem key={val} value={val}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Row 2: Quantity + Trigger price (stop/stop_limit) + Limit price (limit/stop_limit) + Leverage */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Quantity / Lots</Label>
-            <Input
-              type="number" min="0" step="any"
-              placeholder="0.01"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </div>
-          {needsStopPx ? (
-            <div className="space-y-1">
-              <Label className="text-xs text-orange-500">Trigger Price *</Label>
-              <Input
-                type="number" min="0" step="any"
-                placeholder="stop trigger price"
-                value={stopPrice}
-                onChange={(e) => setStopPrice(e.target.value)}
-                className="border-orange-300 focus:border-orange-500"
-              />
+        {/* ── CLOSE tab: show open positions list instead of a form ── */}
+        {action === "close" ? (
+          openPositions.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+              <CheckCircle2 className="h-6 w-6 mx-auto mb-2 opacity-30" />
+              No running positions to close.
             </div>
           ) : (
-            <div className="space-y-1">
-              <Label className="text-xs">{needsPrice ? "Limit Price *" : "Price (optional)"}</Label>
-              <Input
-                type="number" min="0" step="any"
-                placeholder={needsPrice ? "entry price" : "auto"}
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-              />
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Select a position to close it across all copier accounts:</p>
+              {openPositions.map((pos) => {
+                const isBuy = pos.action === "buy";
+                const avgFill = pos.copiers.filter((c) => c.executedPrice != null).length > 0
+                  ? pos.copiers.filter((c) => c.executedPrice != null).reduce((s, c) => s + (c.executedPrice ?? 0), 0) /
+                    pos.copiers.filter((c) => c.executedPrice != null).length
+                  : null;
+                const isClosing = closingSignalId === pos.signalId;
+                return (
+                  <div key={pos.signalId}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-secondary/20 px-4 py-3 flex-wrap">
+                    <span className={`text-[11px] font-black px-2.5 py-1 rounded-full shrink-0 ${
+                      isBuy ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                    }`}>
+                      {isBuy ? "▲ BUY" : "▼ SELL"}
+                    </span>
+                    <span className="font-bold font-mono text-sm">{pos.symbol}</span>
+                    <span className="text-xs text-muted-foreground uppercase">{pos.market}</span>
+                    <span className="text-xs text-muted-foreground">Qty: {pos.quantity}</span>
+                    {avgFill != null && avgFill > 0 && (
+                      <span className="text-xs font-mono text-muted-foreground">
+                        @ <span className="text-foreground font-semibold">{avgFill.toFixed(5)}</span>
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground ml-auto shrink-0">
+                      <Clock className="h-3 w-3 inline mr-1 opacity-60" />
+                      {new Date(pos.createdAt).toLocaleString()}
+                    </span>
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {pos.copiers.length} copier{pos.copiers.length !== 1 ? "s" : ""}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-8 text-xs px-4 font-bold shrink-0"
+                      disabled={isClosing}
+                      onClick={() => onClosePosition(pos.signalId)}
+                    >
+                      {isClosing
+                        ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Closing…</>
+                        : <><XCircle className="h-3.5 w-3.5 mr-1.5" />Close</>
+                      }
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
-          )}
-          <div className="space-y-1">
-            <Label className="text-xs">Leverage</Label>
-            <Input
-              type="number" min="1" max="500" step="1"
-              placeholder="1"
-              value={leverage}
-              onChange={(e) => setLeverage(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Extra row: limit price shown alongside trigger price for stop_limit */}
-        {orderType === "stop_limit" && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-start-2 space-y-1">
-              <Label className="text-xs">Limit Price *</Label>
-              <Input
-                type="number" min="0" step="any"
-                placeholder="limit entry price"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-              />
+          )
+        ) : (
+          <>
+            {/* Row 1: Symbol + Market + Order type */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Symbol</Label>
+                {tradingPairs.filter((p) => p.market === market).length > 0 ? (
+                  <Select value={symbol} onValueChange={setSymbol}>
+                    <SelectTrigger className="font-mono"><SelectValue placeholder="Select symbol" /></SelectTrigger>
+                    <SelectContent>
+                      {tradingPairs.filter((p) => p.market === market).map((p) => (
+                        <SelectItem key={p.symbol} value={p.symbol} className="font-mono">{p.symbol}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    placeholder="e.g. EURUSD"
+                    value={symbol}
+                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                    className="font-mono uppercase"
+                  />
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Market</Label>
+                <Select value={market} onValueChange={(v) => {
+                  setMarket(v as QuickTradeMarket);
+                  const first = tradingPairs.find((p) => p.market === v);
+                  if (first) setSymbol(first.symbol);
+                  else setSymbol("");
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="crypto">Crypto</SelectItem>
+                    <SelectItem value="forex">Forex</SelectItem>
+                    <SelectItem value="commodities">Commodities</SelectItem>
+                    <SelectItem value="stocks">Stocks</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Order Type</Label>
+                <Select value={orderType} onValueChange={(v) => setOrderType(v as QuickTradeOrderType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(orderTypeMeta) as [QuickTradeOrderType, string][]).map(([val, label]) => (
+                      <SelectItem key={val} value={val}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* Row 3: SL + TP */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-red-500">Stop Loss (optional)</Label>
-            <Input
-              type="number" min="0" step="any"
-              placeholder="0.00"
-              value={stopLoss}
-              onChange={(e) => setStopLoss(e.target.value)}
-              className="border-red-200 focus:border-red-400"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-green-600">Take Profit (optional)</Label>
-            <Input
-              type="number" min="0" step="any"
-              placeholder="0.00"
-              value={takeProfit}
-              onChange={(e) => setTakeProfit(e.target.value)}
-              className="border-green-200 focus:border-green-400"
-            />
-          </div>
-        </div>
+            {/* Row 2: Quantity + Price + Leverage */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Quantity / Lots</Label>
+                <Input
+                  type="number" min="0" step="any" placeholder="0.01"
+                  value={quantity} onChange={(e) => setQuantity(e.target.value)}
+                />
+              </div>
+              {needsStopPx ? (
+                <div className="space-y-1">
+                  <Label className="text-xs text-orange-500">Trigger Price *</Label>
+                  <Input
+                    type="number" min="0" step="any" placeholder="stop trigger price"
+                    value={stopPrice} onChange={(e) => setStopPrice(e.target.value)}
+                    className="border-orange-300 focus:border-orange-500"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Label className="text-xs">{needsPrice ? "Limit Price *" : "Price (optional)"}</Label>
+                  <Input
+                    type="number" min="0" step="any" placeholder={needsPrice ? "entry price" : "auto"}
+                    value={price} onChange={(e) => setPrice(e.target.value)}
+                  />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs">Leverage</Label>
+                <Input
+                  type="number" min="1" max="500" step="1" placeholder="1"
+                  value={leverage} onChange={(e) => setLeverage(e.target.value)}
+                />
+              </div>
+            </div>
 
-        {/* Notes + Fire button */}
-        <div className="flex gap-3 items-end">
-          <div className="flex-1 space-y-1">
-            <Label className="text-xs">Notes (optional)</Label>
-            <Textarea
-              placeholder="Analysis or reason for this trade…"
-              rows={1}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="resize-none"
-            />
-          </div>
-          <Button
-            onClick={fire}
-            disabled={firing || !symbol.trim() || !quantity.trim()}
-            className={`h-10 min-w-[140px] font-bold text-sm gap-2 ${
-              action === "buy"   ? "bg-green-500 hover:bg-green-600" :
-              action === "sell"  ? "bg-red-500 hover:bg-red-600" :
-              action === "close" ? "bg-gray-600 hover:bg-gray-700" :
-                                   "bg-blue-500 hover:bg-blue-600"
-            }`}
-          >
-            {firing ? (
-              <><Loader2 className="h-4 w-4 animate-spin" />Firing…</>
-            ) : (
-              <><Send className="h-4 w-4" />Fire {actionMeta[action].label}</>
+            {/* Extra: limit price for stop_limit */}
+            {orderType === "stop_limit" && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-start-2 space-y-1">
+                  <Label className="text-xs">Limit Price *</Label>
+                  <Input
+                    type="number" min="0" step="any" placeholder="limit entry price"
+                    value={price} onChange={(e) => setPrice(e.target.value)}
+                  />
+                </div>
+              </div>
             )}
-          </Button>
-        </div>
+
+            {/* Row 3: SL + TP */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-red-500">Stop Loss (optional)</Label>
+                <Input
+                  type="number" min="0" step="any" placeholder="0.00"
+                  value={stopLoss} onChange={(e) => setStopLoss(e.target.value)}
+                  className="border-red-200 focus:border-red-400"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-green-600">Take Profit (optional)</Label>
+                <Input
+                  type="number" min="0" step="any" placeholder="0.00"
+                  value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)}
+                  className="border-green-200 focus:border-green-400"
+                />
+              </div>
+            </div>
+
+            {/* Notes + Fire button */}
+            <div className="flex gap-3 items-end">
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Notes (optional)</Label>
+                <Textarea
+                  placeholder="Analysis or reason for this trade…"
+                  rows={1} value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="resize-none"
+                />
+              </div>
+              <Button
+                onClick={fire}
+                disabled={firing || !symbol.trim() || !quantity.trim()}
+                className={`h-10 min-w-[140px] font-bold text-sm gap-2 ${
+                  action === "buy"  ? "bg-green-500 hover:bg-green-600" :
+                  action === "sell" ? "bg-red-500 hover:bg-red-600"    :
+                                      "bg-blue-500 hover:bg-blue-600"
+                }`}
+              >
+                {firing
+                  ? <><Loader2 className="h-4 w-4 animate-spin" />Firing…</>
+                  : <><Send className="h-4 w-4" />Fire {actionMeta[action].label}</>
+                }
+              </Button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -1430,7 +1452,13 @@ function CopyTradingInner() {
         <QuickTradePanel
           traderId={myTrader.id}
           subscriberCount={subscriberCount}
-          onSignalCreated={(sig) => setSignals((prev) => [sig, ...prev])}
+          onSignalCreated={(sig) => {
+            setSignals((prev) => [sig, ...prev]);
+            void loadOpenPositions(myTrader.id);
+          }}
+          openPositions={openPositions}
+          closingSignalId={closingSignalId}
+          onClosePosition={closePosition}
         />
       )}
       {isInstructor && !myTrader && !loading && (
