@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Settings2, Zap, History, Server,
-  Plus, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, Loader2,
+  Plus, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Activity,
 } from "lucide-react";
 
 type TraderProfile = {
@@ -92,7 +92,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export default function TraderDashboard() {
   const { toast } = useToast();
-  const [tab, setTab] = useState<"profile" | "master" | "execute" | "history">("profile");
+  const [tab, setTab] = useState<"profile" | "master" | "execute" | "positions" | "history">("profile");
 
   const [trader, setTrader] = useState<TraderProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,7 +187,7 @@ export default function TraderDashboard() {
   useEffect(() => {
     if (tab === "master" && trader) loadMasterAccounts();
     if (tab === "history" && trader) loadSignals();
-    if (tab === "execute" && trader) void loadOpenPositions(trader.id);
+    if ((tab === "execute" || tab === "positions") && trader) void loadOpenPositions(trader.id);
   }, [tab, trader]);
 
   const saveProfile = async () => {
@@ -303,10 +303,11 @@ export default function TraderDashboard() {
   );
 
   const tabs = [
-    { id: "profile" as const,  label: "Profile",        icon: Settings2 },
-    { id: "master" as const,   label: "Master Account", icon: Server },
-    { id: "execute" as const,  label: "Execute Trade",  icon: Zap },
-    { id: "history" as const,  label: "Signal History", icon: History },
+    { id: "profile" as const,    label: "Profile",          icon: Settings2 },
+    { id: "master" as const,     label: "Master Account",   icon: Server },
+    { id: "execute" as const,    label: "Execute Trade",    icon: Zap },
+    { id: "positions" as const,  label: "Open Positions",   icon: Activity },
+    { id: "history" as const,    label: "Signal History",   icon: History },
   ];
 
   return (
@@ -732,6 +733,159 @@ export default function TraderDashboard() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* ── Open Positions ── */}
+        {tab === "positions" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Open Positions</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Live trades currently running across your copier accounts.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => trader && void loadOpenPositions(trader.id)}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
+              </Button>
+            </div>
+
+            {positionsLoading ? (
+              <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /><span>Loading open positions…</span>
+              </div>
+            ) : openPositions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
+                <Activity className="h-8 w-8 mx-auto mb-3 opacity-25" />
+                <p className="font-medium">No open positions</p>
+                <p className="text-xs mt-1 opacity-70">Execute a BUY or SELL signal to open a trade.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {openPositions.map((pos) => {
+                  const isBuy = pos.action === "buy";
+                  const activeCopiers = pos.copiers.filter((c) => c.status === "executed");
+                  const avgFill = activeCopiers.filter((c) => c.executedPrice != null).length > 0
+                    ? activeCopiers.filter((c) => c.executedPrice != null)
+                        .reduce((s, c) => s + (c.executedPrice ?? 0), 0) /
+                      activeCopiers.filter((c) => c.executedPrice != null).length
+                    : null;
+                  const isClosing = closingSignalId === pos.signalId;
+
+                  return (
+                    <Card key={pos.signalId} className="overflow-hidden">
+                      {/* position header */}
+                      <div className="flex items-center gap-3 px-5 py-4 border-b border-border flex-wrap">
+                        <span className={cn(
+                          "text-[11px] font-black px-3 py-1 rounded-full shrink-0",
+                          isBuy ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                        )}>
+                          {isBuy ? "▲ BUY" : "▼ SELL"}
+                        </span>
+                        <span className="font-bold font-mono text-lg">{pos.symbol}</span>
+                        <span className="text-xs uppercase text-muted-foreground border border-border rounded-full px-2 py-0.5">{pos.market}</span>
+                        <div className="flex items-center gap-4 text-sm ml-2">
+                          <div>
+                            <span className="text-xs text-muted-foreground">Qty </span>
+                            <span className="font-semibold font-mono">{pos.quantity}</span>
+                          </div>
+                          {avgFill != null && avgFill > 0 && (
+                            <div>
+                              <span className="text-xs text-muted-foreground">Avg Fill </span>
+                              <span className="font-semibold font-mono">{avgFill.toFixed(5)}</span>
+                            </div>
+                          )}
+                          {pos.signalPrice != null && pos.signalPrice > 0 && (
+                            <div>
+                              <span className="text-xs text-muted-foreground">Signal Price </span>
+                              <span className="font-semibold font-mono">{pos.signalPrice}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="ml-auto flex items-center gap-3 shrink-0">
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(pos.createdAt).toLocaleString()}
+                          </span>
+                          <Button
+                            size="sm" variant="destructive"
+                            className="h-8 text-xs px-4 font-bold"
+                            disabled={isClosing}
+                            onClick={async () => {
+                              if (!confirm(`Close ${pos.symbol} position across all copier accounts?`)) return;
+                              setClosingSignalId(pos.signalId);
+                              try {
+                                const r = await fetch(`/api/signals/${pos.signalId}/close`, { method: "POST" });
+                                const d = await r.json() as { closed?: number; failed?: number; skipped?: number; error?: string };
+                                if (!r.ok) throw new Error(d.error ?? "Failed");
+                                toast({
+                                  title: "Position closed",
+                                  description: `${d.closed ?? 0} closed · ${d.failed ?? 0} failed · ${d.skipped ?? 0} skipped`,
+                                });
+                                if (trader) void loadOpenPositions(trader.id);
+                              } catch (e: unknown) {
+                                toast({ title: e instanceof Error ? e.message : "Failed to close", variant: "destructive" });
+                              } finally { setClosingSignalId(null); }
+                            }}
+                          >
+                            {isClosing
+                              ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Closing…</>
+                              : <><XCircle className="h-3.5 w-3.5 mr-1.5" />Close Position</>
+                            }
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* copier breakdown table */}
+                      {pos.copiers.length > 0 && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-secondary/40">
+                              <tr className="border-b border-border text-muted-foreground">
+                                <th className="text-left px-4 py-2.5 font-medium">Copier Account</th>
+                                <th className="text-left px-4 py-2.5 font-medium">Type</th>
+                                <th className="text-right px-4 py-2.5 font-medium">Fill Price</th>
+                                <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                                <th className="text-left px-4 py-2.5 font-medium">Order ID</th>
+                                <th className="text-center px-4 py-2.5 font-medium">Status</th>
+                                <th className="text-right px-4 py-2.5 font-medium">Executed At</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pos.copiers.map((c) => (
+                                <tr key={c.copyTradeId} className="border-b border-border/30 hover:bg-secondary/20 transition-colors">
+                                  <td className="px-4 py-2.5 font-medium">{c.accountLabel}</td>
+                                  <td className="px-4 py-2.5 uppercase text-muted-foreground">{c.accountType}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono">{c.executedPrice != null ? c.executedPrice.toFixed(5) : "—"}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono">{c.quantity ?? "—"}</td>
+                                  <td className="px-4 py-2.5 font-mono text-muted-foreground truncate max-w-[140px]">{c.brokerOrderId ?? "—"}</td>
+                                  <td className="px-4 py-2.5 text-center">
+                                    <span className={cn(
+                                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium",
+                                      c.status === "executed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                      : c.status === "failed"   ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                      : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                    )}>
+                                      {c.status === "executed" ? <CheckCircle2 className="h-3 w-3" />
+                                       : c.status === "failed"  ? <XCircle className="h-3 w-3" />
+                                       : <Clock className="h-3 w-3" />}
+                                      {c.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right text-muted-foreground">
+                                    {new Date(c.executedAt).toLocaleString()}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── Signal History ── */}
