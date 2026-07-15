@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Settings2, Zap, History, Server,
-  Plus, Trash2, RefreshCw, CheckCircle2, XCircle, Clock,
+  Plus, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, Loader2,
 } from "lucide-react";
 
 type TraderProfile = {
@@ -60,6 +60,18 @@ type TradeSignal = {
   createdAt: string;
 };
 
+type OpenPositionCopier = {
+  copyTradeId: number; accountLabel: string; accountType: string;
+  executedPrice: number | null; quantity: number | null;
+  brokerOrderId: string | null; executedAt: string; status: string;
+};
+type OpenPosition = {
+  signalId: number; symbol: string; market: string;
+  action: "buy" | "sell"; quantity: number;
+  signalPrice: number | null; createdAt: string;
+  copiers: OpenPositionCopier[];
+};
+
 const MARKETS = ["forex", "crypto", "stocks", "commodities"];
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -94,6 +106,9 @@ export default function TraderDashboard() {
     price: "", quantity: "", stopLoss: "", takeProfit: "", leverage: "1", notes: "",
   });
   const [executing, setExecuting] = useState(false);
+  const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [closingSignalId, setClosingSignalId] = useState<number | null>(null);
 
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [histLoading, setHistLoading] = useState(false);
@@ -138,9 +153,19 @@ export default function TraderDashboard() {
       .finally(() => setHistLoading(false));
   };
 
+  const loadOpenPositions = async (traderId: number) => {
+    setPositionsLoading(true);
+    try {
+      const r = await fetch(`/api/open-positions?traderId=${traderId}`);
+      if (r.ok) setOpenPositions(await r.json() as OpenPosition[]);
+    } catch { /* ignore */ }
+    finally { setPositionsLoading(false); }
+  };
+
   useEffect(() => {
     if (tab === "master" && trader) loadMasterAccounts();
     if (tab === "history" && trader) loadSignals();
+    if (tab === "execute" && trader) void loadOpenPositions(trader.id);
   }, [tab, trader]);
 
   const saveProfile = async () => {
@@ -499,14 +524,19 @@ export default function TraderDashboard() {
               <CardDescription>Signal fans out immediately to all active copy-trading subscribers.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
+              {/* Action tabs */}
               <div className="flex gap-2">
                 {(["buy", "sell", "close"] as const).map((a) => (
-                  <button key={a} onClick={() => setTradeForm((f) => ({ ...f, action: a }))}
+                  <button key={a}
+                    onClick={() => {
+                      setTradeForm((f) => ({ ...f, action: a }));
+                      if (a === "close" && trader) void loadOpenPositions(trader.id);
+                    }}
                     className={cn(
                       "flex-1 py-2.5 rounded-lg text-sm font-bold uppercase border transition-all",
                       tradeForm.action === a
-                        ? a === "buy"   ? "bg-green-500 text-white border-green-500"
-                          : a === "sell"  ? "bg-red-500 text-white border-red-500"
+                        ? a === "buy"  ? "bg-green-500 text-white border-green-500"
+                          : a === "sell" ? "bg-red-500 text-white border-red-500"
                           : "bg-orange-500 text-white border-orange-500"
                         : "border-border text-muted-foreground hover:bg-secondary",
                     )}>
@@ -515,81 +545,169 @@ export default function TraderDashboard() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Market</Label>
-                  <Select value={tradeForm.market} onValueChange={(v) => setTradeForm((f) => ({ ...f, market: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="forex">Forex</SelectItem>
-                      <SelectItem value="crypto">Crypto</SelectItem>
-                      <SelectItem value="stocks">Stocks</SelectItem>
-                      <SelectItem value="commodities">Commodities</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Symbol</Label>
-                  <Input value={tradeForm.symbol}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-                    placeholder="EURUSD" className="uppercase font-mono" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Order Type</Label>
-                  <Select value={tradeForm.orderType} onValueChange={(v) => setTradeForm((f) => ({ ...f, orderType: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="market">Market</SelectItem>
-                      <SelectItem value="limit">Limit</SelectItem>
-                      <SelectItem value="stop">Stop</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              {/* ── CLOSE tab: open positions list ── */}
+              {tradeForm.action === "close" ? (
+                positionsLoading ? (
+                  <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" /><span>Loading open positions…</span>
+                  </div>
+                ) : openPositions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                    No running positions to close.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">Select a running trade to close it across all copier accounts:</p>
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                        onClick={() => trader && void loadOpenPositions(trader.id)}
+                      >
+                        <RefreshCw className="h-3 w-3" />Refresh
+                      </button>
+                    </div>
+                    {openPositions.map((pos) => {
+                      const isBuy = pos.action === "buy";
+                      const avgFill = pos.copiers.filter((c) => c.executedPrice != null).length > 0
+                        ? pos.copiers.filter((c) => c.executedPrice != null)
+                            .reduce((s, c) => s + (c.executedPrice ?? 0), 0) /
+                          pos.copiers.filter((c) => c.executedPrice != null).length
+                        : null;
+                      const isClosing = closingSignalId === pos.signalId;
+                      return (
+                        <div key={pos.signalId}
+                          className="flex items-center gap-3 rounded-xl border border-border bg-secondary/20 px-4 py-3 flex-wrap">
+                          <span className={cn(
+                            "text-[11px] font-black px-2.5 py-1 rounded-full shrink-0",
+                            isBuy ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
+                          )}>
+                            {isBuy ? "▲ BUY" : "▼ SELL"}
+                          </span>
+                          <span className="font-bold font-mono text-sm">{pos.symbol}</span>
+                          <span className="text-xs text-muted-foreground uppercase">{pos.market}</span>
+                          <span className="text-xs text-muted-foreground">Qty: {pos.quantity}</span>
+                          {avgFill != null && avgFill > 0 && (
+                            <span className="text-xs font-mono text-muted-foreground">
+                              @ <span className="text-foreground font-semibold">{avgFill.toFixed(5)}</span>
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto shrink-0">
+                            <Clock className="h-3 w-3 opacity-60" />
+                            {new Date(pos.createdAt).toLocaleString()}
+                          </span>
+                          <span className="text-xs border border-border rounded-full px-2 py-0.5 shrink-0">
+                            {pos.copiers.length} copier{pos.copiers.length !== 1 ? "s" : ""}
+                          </span>
+                          <Button
+                            size="sm" variant="destructive"
+                            className="h-8 text-xs px-4 font-bold shrink-0"
+                            disabled={isClosing}
+                            onClick={async () => {
+                              if (!confirm("Close this position across all copier accounts?")) return;
+                              setClosingSignalId(pos.signalId);
+                              try {
+                                const r = await fetch(`/api/signals/${pos.signalId}/close`, { method: "POST" });
+                                const d = await r.json() as { closed?: number; failed?: number; skipped?: number; error?: string };
+                                if (!r.ok) throw new Error(d.error ?? "Failed");
+                                toast({
+                                  title: "Position closed",
+                                  description: `${d.closed ?? 0} closed · ${d.failed ?? 0} failed · ${d.skipped ?? 0} skipped`,
+                                });
+                                if (trader) void loadOpenPositions(trader.id);
+                              } catch (e: unknown) {
+                                toast({ title: e instanceof Error ? e.message : "Failed to close", variant: "destructive" });
+                              } finally { setClosingSignalId(null); }
+                            }}
+                          >
+                            {isClosing
+                              ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Closing…</>
+                              : <><XCircle className="h-3.5 w-3.5 mr-1.5" />Close</>
+                            }
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : (
+                /* ── BUY / SELL form ── */
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Market</Label>
+                      <Select value={tradeForm.market} onValueChange={(v) => setTradeForm((f) => ({ ...f, market: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="forex">Forex</SelectItem>
+                          <SelectItem value="crypto">Crypto</SelectItem>
+                          <SelectItem value="stocks">Stocks</SelectItem>
+                          <SelectItem value="commodities">Commodities</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Symbol</Label>
+                      <Input value={tradeForm.symbol}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))}
+                        placeholder="EURUSD" className="uppercase font-mono" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Order Type</Label>
+                      <Select value={tradeForm.orderType} onValueChange={(v) => setTradeForm((f) => ({ ...f, orderType: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="market">Market</SelectItem>
+                          <SelectItem value="limit">Limit</SelectItem>
+                          <SelectItem value="stop">Stop</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Quantity / Lots</Label>
-                  <Input type="number" step="0.01" value={tradeForm.quantity}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, quantity: e.target.value }))} placeholder="0.01" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Price {tradeForm.orderType === "market" ? "(optional)" : ""}</Label>
-                  <Input type="number" step="0.00001" value={tradeForm.price}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, price: e.target.value }))} placeholder="0.00" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Stop Loss (optional)</Label>
-                  <Input type="number" step="0.00001" value={tradeForm.stopLoss}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, stopLoss: e.target.value }))} placeholder="0.00" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Take Profit (optional)</Label>
-                  <Input type="number" step="0.00001" value={tradeForm.takeProfit}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, takeProfit: e.target.value }))} placeholder="0.00" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Leverage</Label>
-                  <Input type="number" min={1} value={tradeForm.leverage}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, leverage: e.target.value }))} placeholder="1" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Notes (optional)</Label>
-                  <Input value={tradeForm.notes}
-                    onChange={(e) => setTradeForm((f) => ({ ...f, notes: e.target.value }))} placeholder="e.g. Breakout setup" />
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Quantity / Lots</Label>
+                      <Input type="number" step="0.01" value={tradeForm.quantity}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, quantity: e.target.value }))} placeholder="0.01" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Price {tradeForm.orderType === "market" ? "(optional)" : ""}</Label>
+                      <Input type="number" step="0.00001" value={tradeForm.price}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Stop Loss (optional)</Label>
+                      <Input type="number" step="0.00001" value={tradeForm.stopLoss}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, stopLoss: e.target.value }))} placeholder="0.00" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Take Profit (optional)</Label>
+                      <Input type="number" step="0.00001" value={tradeForm.takeProfit}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, takeProfit: e.target.value }))} placeholder="0.00" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Leverage</Label>
+                      <Input type="number" min={1} value={tradeForm.leverage}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, leverage: e.target.value }))} placeholder="1" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Notes (optional)</Label>
+                      <Input value={tradeForm.notes}
+                        onChange={(e) => setTradeForm((f) => ({ ...f, notes: e.target.value }))} placeholder="e.g. Breakout setup" />
+                    </div>
+                  </div>
 
-              <Button
-                className={cn("w-full h-11 text-base font-semibold",
-                  tradeForm.action === "buy"   ? "bg-green-600 hover:bg-green-700"
-                  : tradeForm.action === "sell" ? "bg-red-600 hover:bg-red-700"
-                  : "bg-orange-600 hover:bg-orange-700")}
-                onClick={executeSignal}
-                disabled={executing}
-              >
-                {executing ? "Sending…" : `${tradeForm.action.toUpperCase()} ${tradeForm.symbol || "—"}`}
-              </Button>
+                  <Button
+                    className={cn("w-full h-11 text-base font-semibold",
+                      tradeForm.action === "buy" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700")}
+                    onClick={executeSignal}
+                    disabled={executing}
+                  >
+                    {executing ? "Sending…" : `${tradeForm.action.toUpperCase()} ${tradeForm.symbol || "—"}`}
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         )}
