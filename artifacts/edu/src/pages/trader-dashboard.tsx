@@ -112,6 +112,7 @@ export default function TraderDashboard() {
     symbol: "", market: "forex", action: "buy", orderType: "market",
     price: "", quantity: "", stopLoss: "", takeProfit: "", leverage: "1", notes: "",
   });
+  const [tradingPairs, setTradingPairs] = useState<{ symbol: string; market: string }[]>([]);
   const [executing, setExecuting] = useState(false);
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -144,6 +145,16 @@ export default function TraderDashboard() {
       })
       .catch(() => toast({ title: "Failed to load trader profile", variant: "destructive" }))
       .finally(() => setLoading(false));
+
+    // load admin-configured trading pairs
+    fetch("/api/trading-pairs")
+      .then((r) => r.ok ? r.json() : [])
+      .then((pairs: { symbol: string; market: string }[]) => {
+        setTradingPairs(pairs);
+        const first = pairs.find((p) => p.market === "forex") ?? pairs[0];
+        if (first) setTradeForm((f) => ({ ...f, symbol: first.symbol, market: first.market }));
+      })
+      .catch(() => {});
   }, []);
 
   const loadMasterAccounts = () => {
@@ -659,21 +670,34 @@ export default function TraderDashboard() {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label>Market</Label>
-                      <Select value={tradeForm.market} onValueChange={(v) => setTradeForm((f) => ({ ...f, market: v }))}>
+                      <Select value={tradeForm.market} onValueChange={(v) => {
+                        const first = tradingPairs.find((p) => p.market === v) ?? tradingPairs[0];
+                        setTradeForm((f) => ({ ...f, market: v, symbol: first?.symbol ?? "" }));
+                      }}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="forex">Forex</SelectItem>
-                          <SelectItem value="crypto">Crypto</SelectItem>
-                          <SelectItem value="stocks">Stocks</SelectItem>
-                          <SelectItem value="commodities">Commodities</SelectItem>
+                          {["forex","crypto","stocks","commodities"].map((m) => (
+                            <SelectItem key={m} value={m} className="capitalize">{m.charAt(0).toUpperCase()+m.slice(1)}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Symbol</Label>
-                      <Input value={tradeForm.symbol}
-                        onChange={(e) => setTradeForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-                        placeholder="EURUSD" className="uppercase font-mono" />
+                      {tradingPairs.filter((p) => p.market === tradeForm.market).length > 0 ? (
+                        <Select value={tradeForm.symbol} onValueChange={(v) => setTradeForm((f) => ({ ...f, symbol: v }))}>
+                          <SelectTrigger className="font-mono"><SelectValue placeholder="Select symbol" /></SelectTrigger>
+                          <SelectContent>
+                            {tradingPairs.filter((p) => p.market === tradeForm.market).map((p) => (
+                              <SelectItem key={p.symbol} value={p.symbol} className="font-mono">{p.symbol}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={tradeForm.symbol}
+                          onChange={(e) => setTradeForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))}
+                          placeholder="EURUSD" className="uppercase font-mono" />
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label>Order Type</Label>
