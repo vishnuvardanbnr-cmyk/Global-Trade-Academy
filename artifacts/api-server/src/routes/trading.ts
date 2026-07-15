@@ -9,13 +9,104 @@ import {
   platformSubscriptionsTable, subscriptionPlansTable,
   siteSettingsTable,
 } from "@workspace/db";
-import { eq, and, desc, sql, gte, count } from "drizzle-orm";
+import { eq, and, desc, sql, gte, count, inArray, avg } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
 import { fanOutSignal, metaapiSubscribe, metaapiUnsubscribe, metaapiCreateAccount } from "../lib/fan-out";
 
 const router = Router();
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
+
+/**
+ * Recalculate winRate and roi from actual executed trade pairs.
+ * Matches every buy/sell signal with its subsequent close signal per symbol (FIFO),
+ * uses avg executedPrice from copy_trades as the fill price proxy,
+ * then derives win/loss and cumulative ROI from price differences.
+ */
+async function recalcTraderPerformance(traderId: number): Promise<void> {
+  try {
+    // 1. All executed signals for this trader with their avg fill price across copiers
+    const signals = await db
+      .select({
+        id:        tradeSignalsTable.id,
+        symbol:    tradeSignalsTable.symbol,
+        action:    tradeSignalsTable.action,
+        createdAt: tradeSignalsTable.createdAt,
+        signalPrice: tradeSignalsTable.price,
+      })
+      .from(tradeSignalsTable)
+      .where(and(
+        eq(tradeSignalsTable.traderId, traderId),
+        eq(tradeSignalsTable.status, "executed"),
+      ))
+      .orderBy(tradeSignalsTable.createdAt);
+
+    if (signals.length === 0) return;
+
+    // 2. Avg fill prices per signal from copy_trades
+    const sigIds = signals.map((s) => s.id);
+    const fillRows = await db
+      .select({
+        signalId: copyTradesTable.signalId,
+        avgPrice: avg(copyTradesTable.executedPrice).as("avg_price"),
+      })
+      .from(copyTradesTable)
+      .where(and(
+        inArray(copyTradesTable.signalId, sigIds),
+        eq(copyTradesTable.status, "executed"),
+      ))
+      .groupBy(copyTradesTable.signalId);
+
+    const fillMap = new Map(
+      fillRows.map((r) => [
+        r.signalId,
+        r.avgPrice ? parseFloat(r.avgPrice as string) : null,
+      ]),
+    );
+
+    // Helper: best price for a signal (fill price preferred, signal price fallback)
+    const getPrice = (sig: (typeof signals)[0]): number | null => {
+      return fillMap.get(sig.id) ?? (sig.signalPrice ? parseFloat(sig.signalPrice as string) : null);
+    };
+
+    // 3. Match open↔close pairs per symbol (FIFO queue)
+    const openStack = new Map<string, Array<{ price: number; action: string }>>();
+    let wins = 0, losses = 0, cumulativeReturn = 0;
+
+    for (const sig of signals) {
+      if (sig.action === "buy" || sig.action === "sell") {
+        const price = getPrice(sig);
+        if (price == null) continue;
+        const stack = openStack.get(sig.symbol) ?? [];
+        stack.push({ price, action: sig.action });
+        openStack.set(sig.symbol, stack);
+      } else if (sig.action === "close") {
+        const closePrice = getPrice(sig);
+        if (closePrice == null) continue;
+        const stack = openStack.get(sig.symbol);
+        if (!stack || stack.length === 0) continue;
+
+        const open = stack.shift()!;
+        const diff = open.action === "buy"
+          ? closePrice - open.price   // long: profit when close > open
+          : open.price - closePrice;  // short: profit when close < open
+
+        const returnPct = (diff / open.price) * 100;
+        cumulativeReturn += returnPct;
+        if (diff > 0) wins++; else losses++;
+      }
+    }
+
+    const totalClosed = wins + losses;
+    if (totalClosed === 0) return; // no closed pairs yet — don't overwrite zeros
+
+    const winRate = (wins / totalClosed) * 100;
+    await db.update(tradersTable).set({
+      winRate: winRate.toFixed(2),
+      roi:     cumulativeReturn.toFixed(2),
+    }).where(eq(tradersTable.id, traderId));
+  } catch { /* non-critical */ }
+}
 
 /** Recompute totalTrades + followers from live DB counts and persist them. */
 async function recalcTraderStats(traderId: number): Promise<void> {
@@ -671,6 +762,9 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
     setImmediate(() => {
       fanOutSignal(signal).catch((e) => console.error("Fan-out error:", e));
       recalcTraderStats(signal.traderId).catch(() => {});
+      // For close signals, wait for fill prices to arrive (4s fetch delay) then recalc
+      const delay = signal.action === "close" ? 8_000 : 0;
+      setTimeout(() => recalcTraderPerformance(signal.traderId).catch(() => {}), delay);
     });
   } catch (err) {
     req.log.error({ err }, "Error creating trade signal");

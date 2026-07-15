@@ -232,6 +232,63 @@ async function getMetaApiClientBase(metaapiAccountId: string, token: string): Pr
 }
 
 /**
+ * After a successful MetaAPI trade, fetch the actual fill price in the background
+ * and update copy_trades.executed_price + copy_trades.pnl (for closes).
+ * Fires asynchronously — never blocks the main execution path.
+ */
+function fetchAndStoreFillPrice(opts: {
+  tradeId: number;
+  metaapiAccountId: string;
+  positionId: string;
+  action: string;
+  token: string;
+}): void {
+  const { tradeId, metaapiAccountId, positionId, action, token } = opts;
+  // Wait a few seconds for MetaAPI to settle the order before querying
+  setTimeout(async () => {
+    try {
+      const clientBase = await getMetaApiClientBase(metaapiAccountId, token);
+      if (action === "close") {
+        // Query recent deal history for the close fill price + profit
+        const end   = new Date().toISOString();
+        const start = new Date(Date.now() - 90_000).toISOString(); // last 90s
+        const res = await fetchWithTimeout(
+          `${clientBase}/users/current/accounts/${metaapiAccountId}/history-deals/time/${start}/${end}`,
+          { headers: { "auth-token": token } },
+        );
+        if (!res.ok) return;
+        const deals = await res.json() as Array<{
+          positionId?: string; entryType?: string; price?: number; profit?: number;
+        }>;
+        const deal = deals.find(
+          (d) => d.positionId === positionId && d.entryType === "DEAL_ENTRY_OUT",
+        );
+        if (deal?.price != null) {
+          await db.update(copyTradesTable).set({
+            executedPrice: String(deal.price),
+            ...(deal.profit != null ? { pnl: String(deal.profit) } : {}),
+          }).where(eq(copyTradesTable.id, tradeId));
+        }
+      } else {
+        // Query open positions for the fill (open) price
+        const res = await fetchWithTimeout(
+          `${clientBase}/users/current/accounts/${metaapiAccountId}/positions`,
+          { headers: { "auth-token": token } },
+        );
+        if (!res.ok) return;
+        const positions = await res.json() as Array<{ id?: string; openPrice?: number }>;
+        const pos = positions.find((p) => p.id === positionId);
+        if (pos?.openPrice != null) {
+          await db.update(copyTradesTable).set({
+            executedPrice: String(pos.openPrice),
+          }).where(eq(copyTradesTable.id, tradeId));
+        }
+      }
+    } catch { /* non-critical — fill price is best-effort */ }
+  }, 4_000);
+}
+
+/**
  * Execute a trade signal directly on a MetaAPI account via the trading REST API.
  * Replaces the CopyFactory path — works per-copier, fully parallel.
  */
@@ -780,6 +837,17 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
           .update(copyTradesTable)
           .set({ status: "executed", brokerOrderId, executedPrice: signal.price ?? null })
           .where(eq(copyTradesTable.id, trade.id));
+
+        // Background: fetch actual fill price from MetaAPI and store it
+        if (account.type === "metaapi" && account.metaapiAccountId && brokerOrderId !== "unknown") {
+          fetchAndStoreFillPrice({
+            tradeId: trade.id,
+            metaapiAccountId: account.metaapiAccountId,
+            positionId: brokerOrderId,
+            action: signal.action,
+            token: metaapiToken,
+          });
+        }
         await db
           .update(copyAccountsTable)
           .set({ status: "active", lastError: null })
