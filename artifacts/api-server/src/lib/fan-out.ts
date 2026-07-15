@@ -288,6 +288,54 @@ function fetchAndStoreFillPrice(opts: {
   }, 4_000);
 }
 
+/** Background: fetch Binance futures order fill price and store in copy_trades */
+function fetchAndStoreBinanceFillPrice(
+  tradeId: number, apiKey: string, apiSecret: string, symbol: string, orderId: string,
+): void {
+  setTimeout(async () => {
+    try {
+      const params = new URLSearchParams({
+        symbol: symbol.toUpperCase(), orderId, timestamp: Date.now().toString(),
+      });
+      const hmac = createHmac("sha256", apiSecret).update(params.toString()).digest("hex");
+      params.append("signature", hmac);
+      const res = await fetchWithTimeout(
+        `https://fapi.binance.com/fapi/v1/order?${params.toString()}`,
+        { headers: { "X-MBX-APIKEY": apiKey } },
+      );
+      if (!res.ok) return;
+      const data = await res.json() as { avgPrice?: string };
+      if (data.avgPrice && parseFloat(data.avgPrice) > 0) {
+        await db.update(copyTradesTable).set({ executedPrice: data.avgPrice }).where(eq(copyTradesTable.id, tradeId));
+      }
+    } catch { /* non-critical */ }
+  }, 3_000);
+}
+
+/** Background: fetch Bybit order fill price and store in copy_trades */
+function fetchAndStoreBybitFillPrice(
+  tradeId: number, apiKey: string, apiSecret: string, symbol: string, orderId: string,
+): void {
+  setTimeout(async () => {
+    try {
+      const timestamp = Date.now().toString();
+      const params = new URLSearchParams({ category: "linear", orderId, symbol: symbol.toUpperCase() });
+      const toSign = `${timestamp}${apiKey}5000${params.toString()}`;
+      const sig = createHmac("sha256", apiSecret).update(toSign).digest("hex");
+      const res = await fetchWithTimeout(
+        `https://api.bybit.com/v5/order/history?${params.toString()}`,
+        { headers: { "X-BAPI-API-KEY": apiKey, "X-BAPI-TIMESTAMP": timestamp, "X-BAPI-SIGN": sig, "X-BAPI-RECV-WINDOW": "5000" } },
+      );
+      if (!res.ok) return;
+      const data = await res.json() as { result?: { list?: Array<{ avgPrice?: string }> } };
+      const avgPrice = data.result?.list?.[0]?.avgPrice;
+      if (avgPrice && parseFloat(avgPrice) > 0) {
+        await db.update(copyTradesTable).set({ executedPrice: avgPrice }).where(eq(copyTradesTable.id, tradeId));
+      }
+    } catch { /* non-critical */ }
+  }, 3_000);
+}
+
 /**
  * Execute a trade signal directly on a MetaAPI account via the trading REST API.
  * Replaces the CopyFactory path — works per-copier, fully parallel.
@@ -838,7 +886,7 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
           .set({ status: "executed", brokerOrderId, executedPrice: signal.price ?? null })
           .where(eq(copyTradesTable.id, trade.id));
 
-        // Background: fetch actual fill price from MetaAPI and store it
+        // Background: fetch actual fill price and store it
         if (account.type === "metaapi" && account.metaapiAccountId && brokerOrderId !== "unknown") {
           fetchAndStoreFillPrice({
             tradeId: trade.id,
@@ -847,6 +895,22 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
             action: signal.action,
             token: metaapiToken,
           });
+        } else if (account.type === "binance" && account.apiKey && account.apiSecret && brokerOrderId !== "unknown") {
+          fetchAndStoreBinanceFillPrice(
+            trade.id,
+            decrypt(account.apiKey),
+            decrypt(account.apiSecret),
+            signal.symbol,
+            brokerOrderId,
+          );
+        } else if (account.type === "bybit" && account.apiKey && account.apiSecret && brokerOrderId !== "unknown") {
+          fetchAndStoreBybitFillPrice(
+            trade.id,
+            decrypt(account.apiKey),
+            decrypt(account.apiSecret),
+            signal.symbol,
+            brokerOrderId,
+          );
         }
         await db
           .update(copyAccountsTable)
@@ -917,4 +981,141 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
     { signalId: signal.id, successCount, failCount },
     `fan-out complete: ${successCount} succeeded, ${failCount} failed`,
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DIRECT CLOSE — close a specific open signal across all its copiers
+════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Close all executed copy_trades for a specific signal by calling each
+ * copier's broker API directly using the stored brokerOrderId.
+ * Supports MetaAPI (POSITION_CLOSE_ID), Binance, Bybit.
+ * MT5 / agent / safe-mode trades are counted as "skipped" — the VPS handles those.
+ */
+export async function closeBySignalId(
+  signalId: number,
+): Promise<{ closed: number; failed: number; skipped: number }> {
+  // Fetch the original signal (needed for symbol + direction)
+  const [signal] = await db.select().from(tradeSignalsTable)
+    .where(eq(tradeSignalsTable.id, signalId)).limit(1);
+  if (!signal) throw new Error("Signal not found");
+
+  // Fetch all executed copy_trades for this signal
+  const trades = await db.select({
+    id:            copyTradesTable.id,
+    brokerOrderId: copyTradesTable.brokerOrderId,
+    copyAccountId: copyTradesTable.copyAccountId,
+    quantity:      copyTradesTable.quantity,
+  })
+    .from(copyTradesTable)
+    .where(and(eq(copyTradesTable.signalId, signalId), eq(copyTradesTable.status, "executed")));
+
+  if (trades.length === 0) return { closed: 0, failed: 0, skipped: 0 };
+
+  // Fetch accounts
+  const acctIds = [...new Set(trades.map((t) => t.copyAccountId))];
+  const accounts = await db.select().from(copyAccountsTable).where(inArray(copyAccountsTable.id, acctIds));
+  const acctMap = new Map(accounts.map((a) => [a.id, a]));
+
+  const metaapiToken = await getMetaapiToken().catch(() => "");
+  let closed = 0, failed = 0, skipped = 0;
+
+  await Promise.allSettled(
+    trades.map(async (trade) => {
+      const acct = acctMap.get(trade.copyAccountId);
+      if (!acct) { skipped++; return; }
+
+      // Agent / Safe / MT5 — cannot close remotely via platform; skip
+      if (acct.executionMode === "agent" || acct.executionMode === "safe" || acct.type === "mt5") {
+        skipped++;
+        return;
+      }
+
+      if (!trade.brokerOrderId) { skipped++; return; }
+
+      try {
+        if (acct.type === "metaapi" && acct.metaapiAccountId && metaapiToken) {
+          const clientBase = await getMetaApiClientBase(acct.metaapiAccountId, metaapiToken);
+          const res = await fetchWithTimeout(
+            `${clientBase}/users/current/accounts/${acct.metaapiAccountId}/trade`,
+            {
+              method: "POST",
+              headers: { "auth-token": metaapiToken, "Content-Type": "application/json" },
+              body: JSON.stringify({ actionType: "POSITION_CLOSE_ID", positionId: trade.brokerOrderId }),
+            },
+          );
+          if (!res.ok) { const t = await res.text(); throw new Error(`MetaAPI ${res.status}: ${t}`); }
+          await db.update(copyTradesTable).set({ status: "closed" }).where(eq(copyTradesTable.id, trade.id));
+          fetchAndStoreFillPrice({
+            tradeId: trade.id,
+            metaapiAccountId: acct.metaapiAccountId,
+            positionId: trade.brokerOrderId,
+            action: "close",
+            token: metaapiToken,
+          });
+          closed++;
+        } else if (acct.type === "binance" && acct.apiKey && acct.apiSecret) {
+          const apiKey    = decrypt(acct.apiKey);
+          const apiSecret = decrypt(acct.apiSecret);
+          const side      = signal.action === "buy" ? "SELL" : "BUY";
+          const qty       = trade.quantity ? parseFloat(trade.quantity as string).toFixed(6) : "0";
+          const params    = new URLSearchParams({
+            symbol: signal.symbol.toUpperCase(), side, type: "MARKET",
+            quantity: qty, reduceOnly: "true", timestamp: Date.now().toString(),
+          });
+          const hmac = createHmac("sha256", apiSecret).update(params.toString()).digest("hex");
+          params.append("signature", hmac);
+          const res = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/order?${params.toString()}`, {
+            method: "POST", headers: { "X-MBX-APIKEY": apiKey },
+          });
+          if (!res.ok) { const t = await res.text(); throw new Error(`Binance close: ${t}`); }
+          const json = await res.json() as { orderId?: number };
+          await db.update(copyTradesTable).set({ status: "closed" }).where(eq(copyTradesTable.id, trade.id));
+          if (json.orderId) {
+            fetchAndStoreBinanceFillPrice(trade.id, apiKey, apiSecret, signal.symbol, String(json.orderId));
+          }
+          closed++;
+        } else if (acct.type === "bybit" && acct.apiKey && acct.apiSecret) {
+          const apiKey    = decrypt(acct.apiKey);
+          const apiSecret = decrypt(acct.apiSecret);
+          const side      = signal.action === "buy" ? "Sell" : "Buy";
+          const qty       = trade.quantity ? parseFloat(trade.quantity as string).toFixed(6) : "0";
+          const timestamp = Date.now().toString();
+          const body      = JSON.stringify({
+            category: "linear", symbol: signal.symbol.toUpperCase(),
+            side, qty, orderType: "Market", reduceOnly: true,
+          });
+          const toSign = `${timestamp}${apiKey}5000${body}`;
+          const sig    = createHmac("sha256", apiSecret).update(toSign).digest("hex");
+          const res    = await fetchWithTimeout("https://api.bybit.com/v5/order/create", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-BAPI-API-KEY": apiKey, "X-BAPI-TIMESTAMP": timestamp,
+              "X-BAPI-SIGN": sig, "X-BAPI-RECV-WINDOW": "5000",
+            },
+            body,
+          });
+          const json = await res.json() as { retCode?: number; retMsg?: string; result?: { orderId?: string } };
+          if (json.retCode !== 0) throw new Error(json.retMsg ?? "Bybit error");
+          await db.update(copyTradesTable).set({ status: "closed" }).where(eq(copyTradesTable.id, trade.id));
+          if (json.result?.orderId) {
+            fetchAndStoreBybitFillPrice(trade.id, apiKey, apiSecret, signal.symbol, json.result.orderId);
+          }
+          closed++;
+        } else {
+          skipped++;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        await db.update(copyTradesTable)
+          .set({ status: "failed", errorMessage: msg })
+          .where(eq(copyTradesTable.id, trade.id));
+        failed++;
+      }
+    }),
+  );
+
+  return { closed, failed, skipped };
 }

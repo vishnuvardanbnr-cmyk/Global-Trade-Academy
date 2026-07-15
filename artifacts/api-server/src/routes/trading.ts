@@ -773,6 +773,172 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════
+   OPEN POSITIONS  (buy/sell signals not yet matched by a close)
+════════════════════════════════════════════════════════════════════ */
+
+router.get("/open-positions", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const traderId = req.query.traderId ? parseInt(req.query.traderId as string) : null;
+    if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
+
+    // All executed buy/sell/close for this trader ordered by time
+    const allSigs = await db.select().from(tradeSignalsTable)
+      .where(and(
+        eq(tradeSignalsTable.traderId, traderId),
+        eq(tradeSignalsTable.status, "executed"),
+        inArray(tradeSignalsTable.action, ["buy", "sell", "close"]),
+      ))
+      .orderBy(tradeSignalsTable.createdAt);
+
+    // FIFO match per symbol: consume one open for each close
+    const openStack = new Map<string, (typeof allSigs)>();
+    for (const sig of allSigs) {
+      if (sig.action === "buy" || sig.action === "sell") {
+        const st = openStack.get(sig.symbol) ?? [];
+        st.push(sig);
+        openStack.set(sig.symbol, st);
+      } else if (sig.action === "close") {
+        const st = openStack.get(sig.symbol);
+        if (st && st.length > 0) st.shift();
+      }
+    }
+
+    const openSigs: (typeof allSigs) = [];
+    for (const st of openStack.values()) openSigs.push(...st);
+    if (openSigs.length === 0) { res.json([]); return; }
+
+    // Join copy_trades + accounts for each open signal
+    const sigIds = openSigs.map((s) => s.id);
+    const ctRows = await db
+      .select({
+        id:            copyTradesTable.id,
+        signalId:      copyTradesTable.signalId,
+        copyAccountId: copyTradesTable.copyAccountId,
+        status:        copyTradesTable.status,
+        executedPrice: copyTradesTable.executedPrice,
+        quantity:      copyTradesTable.quantity,
+        brokerOrderId: copyTradesTable.brokerOrderId,
+        createdAt:     copyTradesTable.createdAt,
+        accountLabel:  copyAccountsTable.label,
+        accountType:   copyAccountsTable.type,
+        executionMode: copyAccountsTable.executionMode,
+      })
+      .from(copyTradesTable)
+      .innerJoin(copyAccountsTable, eq(copyTradesTable.copyAccountId, copyAccountsTable.id))
+      .where(and(
+        inArray(copyTradesTable.signalId, sigIds),
+        inArray(copyTradesTable.status, ["executed", "closed"]),
+      ));
+
+    const bySignal = new Map<number, typeof ctRows>();
+    for (const ct of ctRows) {
+      const arr = bySignal.get(ct.signalId) ?? [];
+      arr.push(ct);
+      bySignal.set(ct.signalId, arr);
+    }
+
+    res.json(openSigs.map((sig) => ({
+      signalId:    sig.id,
+      symbol:      sig.symbol,
+      market:      sig.market,
+      action:      sig.action,
+      quantity:    parseFloat(sig.quantity as string),
+      signalPrice: sig.price ? parseFloat(sig.price as string) : null,
+      notes:       sig.notes,
+      createdAt:   sig.createdAt,
+      copiers: (bySignal.get(sig.id) ?? []).map((ct) => ({
+        copyTradeId:   ct.id,
+        accountId:     ct.copyAccountId,
+        accountLabel:  ct.accountLabel ?? `Account #${ct.copyAccountId}`,
+        accountType:   ct.accountType,
+        executionMode: ct.executionMode,
+        executedPrice: ct.executedPrice ? parseFloat(ct.executedPrice as string) : null,
+        quantity:      ct.quantity ? parseFloat(ct.quantity as string) : null,
+        brokerOrderId: ct.brokerOrderId,
+        executedAt:    ct.createdAt,
+        status:        ct.status,
+      })),
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error fetching open positions");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   SIGNAL COPIERS  (copier breakdown for a single signal)
+════════════════════════════════════════════════════════════════════ */
+
+router.get("/signal-copiers", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const signalId = parseInt(req.query.signalId as string);
+    if (!signalId) { res.status(400).json({ error: "signalId required" }); return; }
+
+    const rows = await db
+      .select({
+        id:            copyTradesTable.id,
+        copyAccountId: copyTradesTable.copyAccountId,
+        status:        copyTradesTable.status,
+        executedPrice: copyTradesTable.executedPrice,
+        quantity:      copyTradesTable.quantity,
+        pnl:           copyTradesTable.pnl,
+        brokerOrderId: copyTradesTable.brokerOrderId,
+        errorMessage:  copyTradesTable.errorMessage,
+        createdAt:     copyTradesTable.createdAt,
+        accountLabel:  copyAccountsTable.label,
+        accountType:   copyAccountsTable.type,
+        executionMode: copyAccountsTable.executionMode,
+      })
+      .from(copyTradesTable)
+      .innerJoin(copyAccountsTable, eq(copyTradesTable.copyAccountId, copyAccountsTable.id))
+      .where(eq(copyTradesTable.signalId, signalId))
+      .orderBy(desc(copyTradesTable.createdAt));
+
+    res.json(rows.map((r) => ({
+      copyTradeId:   r.id,
+      accountId:     r.copyAccountId,
+      accountLabel:  r.accountLabel ?? `Account #${r.copyAccountId}`,
+      accountType:   r.accountType,
+      executionMode: r.executionMode,
+      executedPrice: r.executedPrice ? parseFloat(r.executedPrice as string) : null,
+      quantity:      r.quantity ? parseFloat(r.quantity as string) : null,
+      pnl:           r.pnl ? parseFloat(r.pnl as string) : null,
+      brokerOrderId: r.brokerOrderId,
+      errorMessage:  r.errorMessage,
+      executedAt:    r.createdAt,
+      status:        r.status,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "Error fetching signal copiers");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   DIRECT CLOSE — close a specific signal's positions across all copiers
+════════════════════════════════════════════════════════════════════ */
+
+router.post("/signals/:signalId/close", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const signalId = parseInt(req.params.signalId);
+    if (!signalId) { res.status(400).json({ error: "Invalid signalId" }); return; }
+    const { closeBySignalId } = await import("../lib/fan-out");
+    const result = await closeBySignalId(signalId);
+    res.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    req.log.error({ err }, "Error closing signal positions");
+    res.status(500).json({ error: msg });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
    COPY TRADES HISTORY
 ════════════════════════════════════════════════════════════════════ */
 
