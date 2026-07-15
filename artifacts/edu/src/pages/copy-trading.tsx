@@ -72,6 +72,28 @@ type SignalCopier = {
   brokerOrderId: string | null; errorMessage: string | null;
   executedAt: string; status: string;
 };
+type ClosedPosition = {
+  symbol: string; market: string; action: string;
+  openedAt: string; closedAt: string;
+  openPrice: number; closePrice: number; returnPct: number;
+  openSignalId: number; closeSignalId: number;
+};
+type CopierPnl = {
+  copyAccountId: number; accountLabel: string; accountType: string;
+  totalPnl: number | null; tradeCount: number; winCount: number;
+};
+type Subscriber = {
+  subId: number; userId: string; displayName: string;
+  accountLabel: string; accountType: string | null;
+  lotMultiplier: number; currentPnl: number | null;
+  status: string; since: string;
+};
+type TraderDashboard = {
+  stats: { totalTrades: number; winRate: number; roi: number; totalPnl: number; closedCount: number; followers: number };
+  closedPositions: ClosedPosition[];
+  copierPnl: CopierPnl[];
+  subscribers: Subscriber[];
+};
 
 /* ─── Managed VPS Status Card ────────────────────────────────────── */
 function ManagedVpsCard({ account }: { account: CopyAccount & { vpsStatus?: string; vpsIp?: string } }) {
@@ -1179,6 +1201,10 @@ function CopyTradingInner() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
+  const [dashboard, setDashboard] = useState<TraderDashboard | null>(null);
+  const [showClosedTrades, setShowClosedTrades] = useState(false);
+  const [showCopierPnl, setShowCopierPnl] = useState(false);
+  const [showSubscribers, setShowSubscribers] = useState(false);
   const [signalCopiersMap, setSignalCopiersMap] = useState<Record<number, SignalCopier[]>>({});
   const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
   const [closingSignalId, setClosingSignalId] = useState<number | null>(null);
@@ -1220,7 +1246,7 @@ function CopyTradingInner() {
       .catch(() => {});
   }, [isInstructor]);
 
-  /* Fetch open positions whenever myTrader is resolved */
+  /* Fetch open positions + dashboard whenever myTrader is resolved */
   const loadOpenPositions = useCallback(async (traderId: number) => {
     try {
       const r = await fetch(`/api/open-positions?traderId=${traderId}`);
@@ -1228,9 +1254,19 @@ function CopyTradingInner() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadDashboard = useCallback(async (traderId: number) => {
+    try {
+      const r = await fetch(`/api/trader-dashboard?traderId=${traderId}`);
+      if (r.ok) setDashboard(await r.json() as TraderDashboard);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
-    if (myTrader) void loadOpenPositions(myTrader.id);
-  }, [myTrader, loadOpenPositions]);
+    if (myTrader) {
+      void loadOpenPositions(myTrader.id);
+      void loadDashboard(myTrader.id);
+    }
+  }, [myTrader, loadOpenPositions, loadDashboard]);
 
   /* Lazy-load copier details for a signal when expanded */
   const loadSignalCopiers = async (signalId: number) => {
@@ -1322,6 +1358,218 @@ function CopyTradingInner() {
           <p>No trader profile linked to your account. Create one to enable direct trade execution.</p>
         </div>
       )}
+
+      {/* ── Trader Dashboard (instructor/trader only) ── */}
+      {isInstructor && dashboard && (() => {
+        const { stats, closedPositions, copierPnl, subscribers } = dashboard;
+        const acctBadge = (type: string | null) => {
+          if (!type) return null;
+          const cls =
+            type === "binance" ? "bg-yellow-100 text-yellow-700" :
+            type === "bybit"   ? "bg-orange-100 text-orange-700" :
+            type === "metaapi" ? "bg-blue-100 text-blue-700"     :
+            type === "mt5"     ? "bg-sky-100 text-sky-700"       : "bg-secondary text-muted-foreground";
+          return <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase ${cls}`}>{type}</span>;
+        };
+        return (
+          <div className="space-y-4">
+            {/* ── Stat row ── */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              {[
+                { label: "Total Signals", value: stats.totalTrades, fmt: (v: number) => v.toLocaleString(), color: "" },
+                { label: "Win Rate",       value: stats.winRate,     fmt: (v: number) => `${v.toFixed(1)}%`,  color: stats.winRate >= 50 ? "text-green-500" : "text-red-500" },
+                { label: "ROI",            value: stats.roi,         fmt: (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, color: stats.roi >= 0 ? "text-green-500" : "text-red-500" },
+                { label: "Total P&L",      value: stats.totalPnl,    fmt: (v: number) => `${v >= 0 ? "+" : ""}${Math.abs(v).toFixed(2)}`, color: stats.totalPnl >= 0 ? "text-green-500" : "text-red-500" },
+                { label: "Closed Trades",  value: stats.closedCount, fmt: (v: number) => v.toLocaleString(), color: "" },
+                { label: "Followers",      value: stats.followers,   fmt: (v: number) => v.toLocaleString(), color: "" },
+              ].map(({ label, value, fmt, color }) => (
+                <div key={label} className="rounded-xl border border-border bg-card p-3 text-center">
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
+                  <p className={`text-lg font-black tabular-nums ${color}`}>{fmt(value)}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Subscribers ── */}
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors"
+                onClick={() => setShowSubscribers((v) => !v)}
+              >
+                <span className="text-sm font-semibold flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  Subscribers
+                  <Badge variant="secondary">{subscribers.length}</Badge>
+                </span>
+                {showSubscribers ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </button>
+              {showSubscribers && (
+                subscribers.length === 0 ? (
+                  <p className="px-4 pb-4 text-sm text-muted-foreground">No one is copying you yet.</p>
+                ) : (
+                  <table className="w-full text-xs border-t border-border/40">
+                    <thead className="bg-secondary/30">
+                      <tr className="text-muted-foreground">
+                        <th className="text-left px-4 py-2 font-medium">Member</th>
+                        <th className="text-left px-4 py-2 font-medium">Account</th>
+                        <th className="text-right px-4 py-2 font-medium">Multiplier</th>
+                        <th className="text-right px-4 py-2 font-medium">P&L</th>
+                        <th className="text-center px-4 py-2 font-medium">Status</th>
+                        <th className="text-right px-4 py-2 font-medium">Since</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subscribers.map((s) => (
+                        <tr key={s.subId} className="border-t border-border/30">
+                          <td className="px-4 py-2.5 font-medium">{s.displayName}</td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5">
+                              {acctBadge(s.accountType)}
+                              <span className="truncate max-w-[120px]">{s.accountLabel}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
+                          <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                            {s.currentPnl != null
+                              ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
+                              : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>{s.status}</span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(s.since).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              )}
+            </div>
+
+            {/* ── Per-Copier P&L ── */}
+            {copierPnl.length > 0 && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors"
+                  onClick={() => setShowCopierPnl((v) => !v)}
+                >
+                  <span className="text-sm font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Copier P&L Summary
+                    <Badge variant="secondary">{copierPnl.length} account{copierPnl.length !== 1 ? "s" : ""}</Badge>
+                  </span>
+                  {showCopierPnl ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </button>
+                {showCopierPnl && (
+                  <table className="w-full text-xs border-t border-border/40">
+                    <thead className="bg-secondary/30">
+                      <tr className="text-muted-foreground">
+                        <th className="text-left px-4 py-2 font-medium">Account</th>
+                        <th className="text-right px-4 py-2 font-medium">Trades</th>
+                        <th className="text-right px-4 py-2 font-medium">Wins</th>
+                        <th className="text-right px-4 py-2 font-medium">Win %</th>
+                        <th className="text-right px-4 py-2 font-medium">Total P&L</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {copierPnl.map((c) => {
+                        const winPct = c.tradeCount > 0 ? (c.winCount / c.tradeCount) * 100 : 0;
+                        return (
+                          <tr key={c.copyAccountId} className="border-t border-border/30">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                {acctBadge(c.accountType)}
+                                <span className="font-medium">{c.accountLabel}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-right">{c.tradeCount}</td>
+                            <td className="px-4 py-2.5 text-right">{c.winCount}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              <span className={winPct >= 50 ? "text-green-600 font-semibold" : "text-red-500"}>{winPct.toFixed(0)}%</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                              {c.totalPnl != null
+                                ? <span className={c.totalPnl >= 0 ? "text-green-600" : "text-red-500"}>{c.totalPnl >= 0 ? "+" : ""}${c.totalPnl.toFixed(2)}</span>
+                                : <span className="text-muted-foreground">no PnL data</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {copierPnl.some((c) => c.totalPnl != null) && (() => {
+                      const grandTotal = copierPnl.reduce((sum, c) => sum + (c.totalPnl ?? 0), 0);
+                      return (
+                        <tfoot>
+                          <tr className="border-t border-border/40 bg-secondary/20 font-semibold">
+                            <td className="px-4 py-2 text-xs text-muted-foreground" colSpan={4}>Grand total</td>
+                            <td className={`px-4 py-2 text-right text-xs font-bold ${grandTotal >= 0 ? "text-green-600" : "text-red-500"}`}>
+                              {grandTotal >= 0 ? "+" : ""}${grandTotal.toFixed(2)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      );
+                    })()}
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* ── Closed Positions ── */}
+            {closedPositions.length > 0 && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors"
+                  onClick={() => setShowClosedTrades((v) => !v)}
+                >
+                  <span className="text-sm font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    Closed Positions
+                    <Badge variant="secondary">{closedPositions.length}</Badge>
+                  </span>
+                  {showClosedTrades ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </button>
+                {showClosedTrades && (
+                  <table className="w-full text-xs border-t border-border/40">
+                    <thead className="bg-secondary/30">
+                      <tr className="text-muted-foreground">
+                        <th className="text-left px-4 py-2 font-medium">Symbol</th>
+                        <th className="text-center px-4 py-2 font-medium">Dir</th>
+                        <th className="text-right px-4 py-2 font-medium">Open Price</th>
+                        <th className="text-right px-4 py-2 font-medium">Close Price</th>
+                        <th className="text-right px-4 py-2 font-medium">Return</th>
+                        <th className="text-right px-4 py-2 font-medium">Opened</th>
+                        <th className="text-right px-4 py-2 font-medium">Closed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {closedPositions.map((p, i) => {
+                        const win = p.returnPct > 0;
+                        return (
+                          <tr key={i} className="border-t border-border/30">
+                            <td className="px-4 py-2.5 font-bold font-mono">{p.symbol}</td>
+                            <td className="px-4 py-2.5 text-center">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${p.action === "buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                                {p.action === "buy" ? "▲ L" : "▼ S"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono">{p.openPrice.toFixed(5)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono">{p.closePrice.toFixed(5)}</td>
+                            <td className={`px-4 py-2.5 text-right font-mono font-bold ${win ? "text-green-600" : "text-red-500"}`}>
+                              {win ? "+" : ""}{p.returnPct.toFixed(2)}%
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(p.openedAt).toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(p.closedAt).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Open Positions (instructor/trader only) ── */}
       {isInstructor && myTrader && openPositions.length > 0 && (

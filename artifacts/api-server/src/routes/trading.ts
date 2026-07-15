@@ -773,6 +773,165 @@ router.post("/trade-signals", async (req, res): Promise<void> => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════
+   TRADER DASHBOARD  — stats + closed trades + copier PnL + subscribers
+════════════════════════════════════════════════════════════════════ */
+
+router.get("/trader-dashboard", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const traderId = req.query.traderId ? parseInt(req.query.traderId as string) : null;
+    if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
+
+    // ── 1. Trader headline stats ─────────────────────────────────
+    const [trader] = await db.select().from(tradersTable).where(eq(tradersTable.id, traderId)).limit(1);
+
+    // ── 2. All executed signals for matching ─────────────────────
+    const allSigs = await db.select().from(tradeSignalsTable)
+      .where(and(
+        eq(tradeSignalsTable.traderId, traderId),
+        eq(tradeSignalsTable.status, "executed"),
+        inArray(tradeSignalsTable.action, ["buy", "sell", "close"]),
+      ))
+      .orderBy(tradeSignalsTable.createdAt);
+
+    // ── 3. Avg fill prices per signal from copy_trades ───────────
+    const sigIds = allSigs.map((s) => s.id);
+    const fillRows = sigIds.length > 0 ? await db
+      .select({
+        signalId: copyTradesTable.signalId,
+        avgPrice: avg(copyTradesTable.executedPrice).as("ap"),
+      })
+      .from(copyTradesTable)
+      .where(and(inArray(copyTradesTable.signalId, sigIds), eq(copyTradesTable.status, "executed")))
+      .groupBy(copyTradesTable.signalId) : [];
+
+    const fillMap = new Map(fillRows.map((r) => [r.signalId, r.avgPrice ? parseFloat(r.avgPrice as string) : null]));
+
+    // ── 4. FIFO match → closed positions ────────────────────────
+    type OpenEntry = { sig: (typeof allSigs)[0]; price: number };
+    const openStack = new Map<string, OpenEntry[]>();
+    const closedPositions: Array<{
+      symbol: string; market: string; action: string;
+      openedAt: string; closedAt: string;
+      openPrice: number; closePrice: number;
+      returnPct: number; openSignalId: number; closeSignalId: number;
+    }> = [];
+
+    for (const sig of allSigs) {
+      const price = fillMap.get(sig.id) ?? (sig.price ? parseFloat(sig.price as string) : null);
+      if (sig.action === "buy" || sig.action === "sell") {
+        if (price == null) continue;
+        const st = openStack.get(sig.symbol) ?? [];
+        st.push({ sig, price });
+        openStack.set(sig.symbol, st);
+      } else if (sig.action === "close") {
+        const st = openStack.get(sig.symbol);
+        if (!st || st.length === 0) continue;
+        const open = st.shift()!;
+        if (price == null) continue;
+        const diff = open.sig.action === "buy" ? price - open.price : open.price - price;
+        const returnPct = (diff / open.price) * 100;
+        closedPositions.push({
+          symbol:        open.sig.symbol,
+          market:        open.sig.market,
+          action:        open.sig.action,
+          openedAt:      open.sig.createdAt as unknown as string,
+          closedAt:      sig.createdAt as unknown as string,
+          openPrice:     open.price,
+          closePrice:    price,
+          returnPct,
+          openSignalId:  open.sig.id,
+          closeSignalId: sig.id,
+        });
+      }
+    }
+
+    // ── 5. Aggregate PnL by copier account ───────────────────────
+    const pnlRows = sigIds.length > 0 ? await db
+      .select({
+        copyAccountId: copyTradesTable.copyAccountId,
+        totalPnl:      sql<string>`SUM(${copyTradesTable.pnl}::numeric)`.as("total_pnl"),
+        tradeCount:    sql<string>`COUNT(*)`.as("trade_count"),
+        winCount:      sql<string>`COUNT(*) FILTER (WHERE ${copyTradesTable.pnl}::numeric > 0)`.as("win_count"),
+        accountLabel:  copyAccountsTable.label,
+        accountType:   copyAccountsTable.type,
+      })
+      .from(copyTradesTable)
+      .innerJoin(copyAccountsTable, eq(copyTradesTable.copyAccountId, copyAccountsTable.id))
+      .where(and(
+        inArray(copyTradesTable.signalId, sigIds),
+        inArray(copyTradesTable.status, ["executed", "closed"]),
+      ))
+      .groupBy(copyTradesTable.copyAccountId, copyAccountsTable.label, copyAccountsTable.type) : [];
+
+    // ── 6. Subscribers list ──────────────────────────────────────
+    const subsRows = await db
+      .select({
+        subId:        copySubscriptionsTable.id,
+        userId:       copySubscriptionsTable.userId,
+        status:       copySubscriptionsTable.status,
+        lotMultiplier: copySubscriptionsTable.lotMultiplier,
+        currentPnl:   copySubscriptionsTable.currentPnl,
+        since:        copySubscriptionsTable.createdAt,
+        accountLabel: copyAccountsTable.label,
+        accountType:  copyAccountsTable.type,
+        displayName:  usersTable.displayName,
+        email:        usersTable.email,
+      })
+      .from(copySubscriptionsTable)
+      .leftJoin(copyAccountsTable, eq(copySubscriptionsTable.copyAccountId, copyAccountsTable.id))
+      .leftJoin(usersTable, eq(copySubscriptionsTable.userId, usersTable.id))
+      .where(eq(copySubscriptionsTable.traderId, traderId))
+      .orderBy(desc(copySubscriptionsTable.createdAt));
+
+    // ── 7. Total PnL across all copiers (from copy_trades.pnl) ──
+    const totalPnlRow = sigIds.length > 0 ? await db
+      .select({ total: sql<string>`COALESCE(SUM(${copyTradesTable.pnl}::numeric), 0)`.as("total") })
+      .from(copyTradesTable)
+      .where(and(
+        inArray(copyTradesTable.signalId, sigIds),
+        inArray(copyTradesTable.status, ["executed", "closed"]),
+      ))
+      .then((r) => r[0]) : { total: "0" };
+
+    res.json({
+      stats: {
+        totalTrades:  trader?.totalTrades ?? 0,
+        winRate:      trader?.winRate     ? parseFloat(trader.winRate as string)  : 0,
+        roi:          trader?.roi         ? parseFloat(trader.roi as string)       : 0,
+        totalPnl:     parseFloat(totalPnlRow?.total ?? "0"),
+        closedCount:  closedPositions.length,
+        followers:    trader?.followers   ?? 0,
+      },
+      closedPositions: closedPositions.slice().reverse(), // newest first
+      copierPnl: pnlRows.map((r) => ({
+        copyAccountId: r.copyAccountId,
+        accountLabel:  r.accountLabel ?? `Account #${r.copyAccountId}`,
+        accountType:   r.accountType,
+        totalPnl:      r.totalPnl     ? parseFloat(r.totalPnl)     : null,
+        tradeCount:    r.tradeCount   ? parseInt(r.tradeCount)      : 0,
+        winCount:      r.winCount     ? parseInt(r.winCount)        : 0,
+      })),
+      subscribers: subsRows.map((s) => ({
+        subId:        s.subId,
+        userId:       s.userId,
+        displayName:  s.displayName ?? s.email ?? "Unknown",
+        accountLabel: s.accountLabel ?? "Signal only",
+        accountType:  s.accountType ?? null,
+        lotMultiplier: s.lotMultiplier ? parseFloat(s.lotMultiplier as string) : 1,
+        currentPnl:   s.currentPnl ? parseFloat(s.currentPnl as string) : null,
+        status:       s.status,
+        since:        s.since,
+      })),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching trader dashboard");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
    OPEN POSITIONS  (buy/sell signals not yet matched by a close)
 ════════════════════════════════════════════════════════════════════ */
 
