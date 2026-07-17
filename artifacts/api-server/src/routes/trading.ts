@@ -53,7 +53,8 @@ async function recalcTraderPerformance(traderId: number): Promise<void> {
       .from(copyTradesTable)
       .where(and(
         inArray(copyTradesTable.signalId, sigIds),
-        eq(copyTradesTable.status, "executed"),
+        // Include "closed" so manually-closed open trades still provide their open price
+        inArray(copyTradesTable.status, ["executed", "closed"]),
       ))
       .groupBy(copyTradesTable.signalId);
 
@@ -1112,6 +1113,13 @@ router.post("/signals/:signalId/close", async (req, res): Promise<void> => {
     const { closeBySignalId } = await import("../lib/fan-out");
     const result = await closeBySignalId(signalId);
     res.json(result);
+    // Recalculate stats after close prices settle (fill-price fetches take ~4s)
+    if (result.closed > 0) {
+      setTimeout(() => {
+        recalcTraderStats(result.traderId).catch(() => {});
+        recalcTraderPerformance(result.traderId).catch(() => {});
+      }, 12_000);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     req.log.error({ err }, "Error closing signal positions");
@@ -1168,6 +1176,13 @@ router.post("/signals/close-all", async (req, res): Promise<void> => {
     }));
 
     res.json({ closed, failed, skipped, total: openIds.length });
+    // Recalculate stats after close prices settle (fill-price fetches take ~4s)
+    if (closed > 0) {
+      setTimeout(() => {
+        recalcTraderStats(traderId).catch(() => {});
+        recalcTraderPerformance(traderId).catch(() => {});
+      }, 12_000);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     req.log.error({ err }, "Error in close-all");

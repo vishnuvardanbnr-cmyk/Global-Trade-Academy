@@ -995,23 +995,25 @@ export async function fanOutSignal(signal: typeof tradeSignalsTable.$inferSelect
  */
 export async function closeBySignalId(
   signalId: number,
-): Promise<{ closed: number; failed: number; skipped: number }> {
-  // Fetch the original signal (needed for symbol + direction)
+): Promise<{ closed: number; failed: number; skipped: number; traderId: number }> {
+  // Fetch the original signal (needed for symbol + direction + traderId)
   const [signal] = await db.select().from(tradeSignalsTable)
     .where(eq(tradeSignalsTable.id, signalId)).limit(1);
   if (!signal) throw new Error("Signal not found");
 
-  // Fetch all executed copy_trades for this signal
+  // Fetch all executed copy_trades for this signal (include subscriptionId/userId for close records)
   const trades = await db.select({
-    id:            copyTradesTable.id,
-    brokerOrderId: copyTradesTable.brokerOrderId,
-    copyAccountId: copyTradesTable.copyAccountId,
-    quantity:      copyTradesTable.quantity,
+    id:             copyTradesTable.id,
+    brokerOrderId:  copyTradesTable.brokerOrderId,
+    copyAccountId:  copyTradesTable.copyAccountId,
+    subscriptionId: copyTradesTable.subscriptionId,
+    userId:         copyTradesTable.userId,
+    quantity:       copyTradesTable.quantity,
   })
     .from(copyTradesTable)
     .where(and(eq(copyTradesTable.signalId, signalId), eq(copyTradesTable.status, "executed")));
 
-  if (trades.length === 0) return { closed: 0, failed: 0, skipped: 0 };
+  if (trades.length === 0) return { closed: 0, failed: 0, skipped: 0, traderId: signal.traderId };
 
   // Fetch accounts
   const acctIds = [...new Set(trades.map((t) => t.copyAccountId))];
@@ -1020,6 +1022,20 @@ export async function closeBySignalId(
 
   const metaapiToken = await getMetaapiToken().catch(() => "");
   let closed = 0, failed = 0, skipped = 0;
+
+  // Collect successfully closed trades so we can create a close signal + close copy_trades for ROI tracking
+  type ClosedEntry = {
+    subscriptionId: number;
+    userId: string;
+    copyAccountId: number;
+    quantity: string | null;
+    closeOrderId: string;
+    acctType: string;
+    metaapiAccountId?: string;
+    encApiKey?: string;
+    encApiSecret?: string;
+  };
+  const closedEntries: ClosedEntry[] = [];
 
   await Promise.allSettled(
     trades.map(async (trade) => {
@@ -1046,13 +1062,16 @@ export async function closeBySignalId(
             },
           );
           if (!res.ok) { const t = await res.text(); throw new Error(`MetaAPI ${res.status}: ${t}`); }
+          // Mark original trade closed — keep executedPrice intact (= open price, needed for ROI calc)
           await db.update(copyTradesTable).set({ status: "closed" }).where(eq(copyTradesTable.id, trade.id));
-          fetchAndStoreFillPrice({
-            tradeId: trade.id,
+          closedEntries.push({
+            subscriptionId:   trade.subscriptionId,
+            userId:           trade.userId,
+            copyAccountId:    trade.copyAccountId,
+            quantity:         trade.quantity as string | null,
+            closeOrderId:     trade.brokerOrderId, // positionId used for MetaAPI deal history lookup
+            acctType:         "metaapi",
             metaapiAccountId: acct.metaapiAccountId,
-            positionId: trade.brokerOrderId,
-            action: "close",
-            token: metaapiToken,
           });
           closed++;
         } else if (acct.type === "binance" && acct.apiKey && acct.apiSecret) {
@@ -1071,9 +1090,19 @@ export async function closeBySignalId(
           });
           if (!res.ok) { const t = await res.text(); throw new Error(`Binance close: ${t}`); }
           const json = await res.json() as { orderId?: number };
+          // Mark original trade closed — keep executedPrice intact (= open price, needed for ROI calc)
           await db.update(copyTradesTable).set({ status: "closed" }).where(eq(copyTradesTable.id, trade.id));
           if (json.orderId) {
-            fetchAndStoreBinanceFillPrice(trade.id, apiKey, apiSecret, signal.symbol, String(json.orderId));
+            closedEntries.push({
+              subscriptionId: trade.subscriptionId,
+              userId:         trade.userId,
+              copyAccountId:  trade.copyAccountId,
+              quantity:       trade.quantity as string | null,
+              closeOrderId:   String(json.orderId),
+              acctType:       "binance",
+              encApiKey:      acct.apiKey,
+              encApiSecret:   acct.apiSecret,
+            });
           }
           closed++;
         } else if (acct.type === "bybit" && acct.apiKey && acct.apiSecret) {
@@ -1099,9 +1128,19 @@ export async function closeBySignalId(
           });
           const json = await res.json() as { retCode?: number; retMsg?: string; result?: { orderId?: string } };
           if (json.retCode !== 0) throw new Error(json.retMsg ?? "Bybit error");
+          // Mark original trade closed — keep executedPrice intact (= open price, needed for ROI calc)
           await db.update(copyTradesTable).set({ status: "closed" }).where(eq(copyTradesTable.id, trade.id));
           if (json.result?.orderId) {
-            fetchAndStoreBybitFillPrice(trade.id, apiKey, apiSecret, signal.symbol, json.result.orderId);
+            closedEntries.push({
+              subscriptionId: trade.subscriptionId,
+              userId:         trade.userId,
+              copyAccountId:  trade.copyAccountId,
+              quantity:       trade.quantity as string | null,
+              closeOrderId:   json.result.orderId,
+              acctType:       "bybit",
+              encApiKey:      acct.apiKey,
+              encApiSecret:   acct.apiSecret,
+            });
           }
           closed++;
         } else {
@@ -1117,5 +1156,49 @@ export async function closeBySignalId(
     }),
   );
 
-  return { closed, failed, skipped };
+  // Create a close signal + close copy_trades so recalcTraderPerformance can pair open↔close prices
+  if (closedEntries.length > 0) {
+    try {
+      const [closeSignal] = await db.insert(tradeSignalsTable).values({
+        traderId:   signal.traderId,
+        symbol:     signal.symbol,
+        market:     signal.market,
+        action:     "close",
+        orderType:  "market",
+        quantity:   signal.quantity,
+        status:     "executed",
+        executedAt: new Date(),
+      }).returning();
+
+      // Insert close copy_trades and kick off background fill-price fetches on them
+      await Promise.allSettled(closedEntries.map(async (ce) => {
+        const [ct] = await db.insert(copyTradesTable).values({
+          signalId:       closeSignal.id,
+          subscriptionId: ce.subscriptionId,
+          userId:         ce.userId,
+          copyAccountId:  ce.copyAccountId,
+          status:         "executed",
+          executedPrice:  null,
+          quantity:       ce.quantity,
+          brokerOrderId:  ce.closeOrderId,
+        }).returning();
+
+        if (ce.acctType === "metaapi" && ce.metaapiAccountId && metaapiToken) {
+          fetchAndStoreFillPrice({
+            tradeId:          ct.id,
+            metaapiAccountId: ce.metaapiAccountId,
+            positionId:       ce.closeOrderId,
+            action:           "close",
+            token:            metaapiToken,
+          });
+        } else if (ce.acctType === "binance" && ce.encApiKey && ce.encApiSecret) {
+          fetchAndStoreBinanceFillPrice(ct.id, decrypt(ce.encApiKey), decrypt(ce.encApiSecret), signal.symbol, ce.closeOrderId);
+        } else if (ce.acctType === "bybit" && ce.encApiKey && ce.encApiSecret) {
+          fetchAndStoreBybitFillPrice(ct.id, decrypt(ce.encApiKey), decrypt(ce.encApiSecret), signal.symbol, ce.closeOrderId);
+        }
+      }));
+    } catch { /* non-critical — close already happened; ROI recalc will retry next signal */ }
+  }
+
+  return { closed, failed, skipped, traderId: signal.traderId };
 }
