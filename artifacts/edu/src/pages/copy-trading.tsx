@@ -1306,9 +1306,7 @@ function CopyTradingInner() {
   const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
   const [dashboard, setDashboard] = useState<TraderDashboard | null>(null);
-  const [showClosedTrades, setShowClosedTrades] = useState(false);
-  const [showCopierPnl, setShowCopierPnl] = useState(false);
-  const [showSubscribers, setShowSubscribers] = useState(false);
+  const [instructorTab, setInstructorTab] = useState<"trade" | "positions" | "copiers" | "trades" | "history">("trade");
   const [signalCopiersMap, setSignalCopiersMap] = useState<Record<number, SignalCopier[]>>({});
   const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
   const [closingSignalId, setClosingSignalId] = useState<number | null>(null);
@@ -1404,12 +1402,25 @@ function CopyTradingInner() {
         title: `Position closed`,
         description: `${d.closed ?? 0} closed · ${d.failed ?? 0} failed · ${d.skipped ?? 0} skipped (VPS/MT5 close manually)`,
       });
-      if (myTrader) void loadOpenPositions(myTrader.id);
+      if (myTrader) {
+        void loadOpenPositions(myTrader.id);
+        void loadDashboard(myTrader.id);
+      }
     } catch (e: unknown) {
       toast({ title: e instanceof Error ? e.message : "Failed", variant: "destructive" });
     } finally {
       setClosingSignalId(null);
     }
+  };
+
+  const acctBadge = (type: string | null) => {
+    if (!type) return null;
+    const cls =
+      type === "binance" ? "bg-yellow-100 text-yellow-700" :
+      type === "bybit"   ? "bg-orange-100 text-orange-700" :
+      type === "metaapi" ? "bg-blue-100 text-blue-700"     :
+      type === "mt5"     ? "bg-sky-100 text-sky-700"       : "bg-secondary text-muted-foreground";
+    return <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase ${cls}`}>{type}</span>;
   };
 
   /* Derive subscriber count directly from trader.followers */
@@ -1448,50 +1459,19 @@ function CopyTradingInner() {
 
   return (
     <div className="space-y-8">
-      {/* ── Quick Trade Panel (instructor / admin only) ── */}
+      {/* ── Instructor panel — tabbed layout ── */}
       {isInstructor && myTrader && (
-        <QuickTradePanel
-          traderId={myTrader.id}
-          subscriberCount={subscriberCount}
-          onSignalCreated={(sig) => {
-            setSignals((prev) => [sig, ...prev]);
-            void loadOpenPositions(myTrader.id);
-          }}
-          openPositions={openPositions}
-          closingSignalId={closingSignalId}
-          onClosePosition={closePosition}
-        />
-      )}
-      {isInstructor && !myTrader && !loading && (
-        <div className="rounded-xl border border-dashed border-primary/30 p-4 text-center text-sm text-muted-foreground bg-primary/5">
-          <Crosshair className="h-5 w-5 mx-auto mb-1.5 opacity-40" />
-          <p>No trader profile linked to your account. Create one to enable direct trade execution.</p>
-        </div>
-      )}
-
-      {/* ── Trader Dashboard (instructor/trader only) ── */}
-      {isInstructor && dashboard && (() => {
-        const { stats, closedPositions, copierPnl, subscribers } = dashboard;
-        const acctBadge = (type: string | null) => {
-          if (!type) return null;
-          const cls =
-            type === "binance" ? "bg-yellow-100 text-yellow-700" :
-            type === "bybit"   ? "bg-orange-100 text-orange-700" :
-            type === "metaapi" ? "bg-blue-100 text-blue-700"     :
-            type === "mt5"     ? "bg-sky-100 text-sky-700"       : "bg-secondary text-muted-foreground";
-          return <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase ${cls}`}>{type}</span>;
-        };
-        return (
-          <div className="space-y-4">
-            {/* ── Stat row ── */}
+        <div className="space-y-4">
+          {/* Stats row — always visible */}
+          {dashboard && (
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               {[
-                { label: "Total Signals", value: stats.totalTrades, fmt: (v: number) => v.toLocaleString(), color: "" },
-                { label: "Win Rate",       value: stats.winRate,     fmt: (v: number) => `${v.toFixed(1)}%`,  color: stats.winRate >= 50 ? "text-green-500" : "text-red-500" },
-                { label: "ROI",            value: stats.roi,         fmt: (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, color: stats.roi >= 0 ? "text-green-500" : "text-red-500" },
-                { label: "Total P&L",      value: stats.totalPnl,    fmt: (v: number) => `${v >= 0 ? "+" : ""}${Math.abs(v).toFixed(2)}`, color: stats.totalPnl >= 0 ? "text-green-500" : "text-red-500" },
-                { label: "Closed Trades",  value: stats.closedCount, fmt: (v: number) => v.toLocaleString(), color: "" },
-                { label: "Followers",      value: stats.followers,   fmt: (v: number) => v.toLocaleString(), color: "" },
+                { label: "Total Signals", value: dashboard.stats.totalTrades, fmt: (v: number) => v.toLocaleString(), color: "" },
+                { label: "Win Rate",      value: dashboard.stats.winRate,     fmt: (v: number) => `${v.toFixed(1)}%`,  color: dashboard.stats.winRate >= 50 ? "text-green-500" : "text-red-500" },
+                { label: "ROI",           value: dashboard.stats.roi,         fmt: (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, color: dashboard.stats.roi >= 0 ? "text-green-500" : "text-red-500" },
+                { label: "Total P&L",     value: dashboard.stats.totalPnl,    fmt: (v: number) => `${v >= 0 ? "+" : ""}${Math.abs(v).toFixed(2)}`, color: dashboard.stats.totalPnl >= 0 ? "text-green-500" : "text-red-500" },
+                { label: "Closed Trades", value: dashboard.stats.closedCount, fmt: (v: number) => v.toLocaleString(), color: "" },
+                { label: "Followers",     value: dashboard.stats.followers,   fmt: (v: number) => v.toLocaleString(), color: "" },
               ].map(({ label, value, fmt, color }) => (
                 <div key={label} className="rounded-xl border border-border bg-card p-3 text-center">
                   <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
@@ -1499,155 +1479,361 @@ function CopyTradingInner() {
                 </div>
               ))}
             </div>
+          )}
 
-            {/* ── Subscribers ── */}
-            <div className="rounded-xl border border-border bg-card overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex gap-1 p-1 bg-secondary/40 rounded-xl border border-border overflow-x-auto">
+            {(
+              [
+                { id: "trade",     label: "Execute Trade",  Icon: Crosshair,   count: null as number | null },
+                { id: "positions", label: "Open Positions", Icon: AlertCircle, count: openPositions.length },
+                { id: "copiers",   label: "Copiers",        Icon: Users,       count: dashboard?.subscribers.length ?? null },
+                { id: "trades",    label: "Copied Trades",  Icon: TrendingUp,  count: dashboard?.closedPositions.length ?? null },
+                { id: "history",   label: "Signal History", Icon: Zap,         count: signals.length },
+              ]
+            ).map(({ id, label, Icon, count }) => (
               <button
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors"
-                onClick={() => setShowSubscribers((v) => !v)}
+                key={id}
+                onClick={() => setInstructorTab(id as "trade" | "positions" | "copiers" | "trades" | "history")}
+                className={`flex-1 min-w-max flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  instructorTab === id
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                }`}
               >
-                <span className="text-sm font-semibold flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" />
-                  Subscribers
-                  <Badge variant="secondary">{subscribers.length}</Badge>
-                </span>
-                {showSubscribers ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-              </button>
-              {showSubscribers && (
-                subscribers.length === 0 ? (
-                  <p className="px-4 pb-4 text-sm text-muted-foreground">No one is copying you yet.</p>
-                ) : (
-                  <table className="w-full text-xs border-t border-border/40">
-                    <thead className="bg-secondary/30">
-                      <tr className="text-muted-foreground">
-                        <th className="text-left px-4 py-2 font-medium">Member</th>
-                        <th className="text-left px-4 py-2 font-medium">Account</th>
-                        <th className="text-right px-4 py-2 font-medium">Multiplier</th>
-                        <th className="text-right px-4 py-2 font-medium">Balance</th>
-                        <th className="text-right px-4 py-2 font-medium">P&L</th>
-                        <th className="text-center px-4 py-2 font-medium">Status</th>
-                        <th className="text-right px-4 py-2 font-medium">Since</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {subscribers.map((s) => (
-                        <tr key={s.subId} className="border-t border-border/30">
-                          <td className="px-4 py-2.5 font-medium">{s.displayName}</td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-1.5">
-                              {acctBadge(s.accountType)}
-                              <span className="truncate max-w-[120px]">{s.accountLabel}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
-                          <td className="px-4 py-2.5 text-right font-mono">
-                            {s.allocatedAmount != null
-                              ? <span className="font-semibold">${s.allocatedAmount.toFixed(2)}</span>
-                              : s.maxAmount != null
-                                ? <span className="font-semibold">${s.maxAmount.toFixed(2)}</span>
-                                : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono font-semibold">
-                            {s.currentPnl != null
-                              ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
-                              : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-center">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>{s.status}</span>
-                          </td>
-                          <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(s.since).toLocaleDateString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )
-              )}
-            </div>
-
-            {/* ── Per-Copier P&L ── */}
-            {copierPnl.length > 0 && (
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <button
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors"
-                  onClick={() => setShowCopierPnl((v) => !v)}
-                >
-                  <span className="text-sm font-semibold flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    Copier P&L Summary
-                    <Badge variant="secondary">{copierPnl.length} account{copierPnl.length !== 1 ? "s" : ""}</Badge>
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+                {count !== null && count > 0 && (
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                    instructorTab === id ? "bg-primary/10 text-primary" : "bg-border text-muted-foreground"
+                  }`}>
+                    {count}
                   </span>
-                  {showCopierPnl ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                </button>
-                {showCopierPnl && (
-                  <table className="w-full text-xs border-t border-border/40">
-                    <thead className="bg-secondary/30">
-                      <tr className="text-muted-foreground">
-                        <th className="text-left px-4 py-2 font-medium">Account</th>
-                        <th className="text-right px-4 py-2 font-medium">Trades</th>
-                        <th className="text-right px-4 py-2 font-medium">Wins</th>
-                        <th className="text-right px-4 py-2 font-medium">Win %</th>
-                        <th className="text-right px-4 py-2 font-medium">Total P&L</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {copierPnl.map((c) => {
-                        const winPct = c.tradeCount > 0 ? (c.winCount / c.tradeCount) * 100 : 0;
-                        return (
-                          <tr key={c.copyAccountId} className="border-t border-border/30">
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Execute Trade tab ── */}
+          {instructorTab === "trade" && (
+            <QuickTradePanel
+              traderId={myTrader.id}
+              subscriberCount={subscriberCount}
+              onSignalCreated={(sig) => {
+                setSignals((prev) => [sig, ...prev]);
+                void loadOpenPositions(myTrader.id);
+              }}
+              openPositions={openPositions}
+              closingSignalId={closingSignalId}
+              onClosePosition={closePosition}
+            />
+          )}
+
+          {/* ── Open Positions tab ── */}
+          {instructorTab === "positions" && (
+            openPositions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
+                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">No open positions</p>
+                <p className="text-xs mt-1">All copier accounts are flat.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                    </span>
+                    Open Positions
+                    <Badge variant="secondary">{openPositions.length}</Badge>
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" className="text-xs" onClick={() => void loadOpenPositions(myTrader.id)}>
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
+                    </Button>
+                    <Button
+                      variant="destructive" size="sm" className="text-xs font-bold"
+                      disabled={closingSignalId !== null}
+                      onClick={async () => {
+                        if (!confirm(`Close ALL ${openPositions.length} open position${openPositions.length !== 1 ? "s" : ""} across all copier accounts? This cannot be undone.`)) return;
+                        setClosingSignalId(-1);
+                        try {
+                          const r = await fetch(`/api/signals/close-all?traderId=${myTrader.id}`, { method: "POST" });
+                          const d = await r.json() as { closed?: number; failed?: number; skipped?: number; error?: string };
+                          if (!r.ok) throw new Error(d.error ?? "Failed");
+                          toast({ title: "Close All complete", description: `${d.closed ?? 0} closed · ${d.failed ?? 0} failed · ${d.skipped ?? 0} skipped` });
+                          void loadOpenPositions(myTrader.id);
+                          void loadDashboard(myTrader.id);
+                        } catch (e: unknown) {
+                          toast({ title: e instanceof Error ? e.message : "Failed", variant: "destructive" });
+                        } finally { setClosingSignalId(null); }
+                      }}
+                    >
+                      {closingSignalId === -1 ? <><RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />Closing…</> : "⚠ Close All"}
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {openPositions.map((pos) => {
+                    const isBuy = pos.action === "buy";
+                    const filled = pos.copiers.filter((c) => c.executedPrice != null);
+                    const avgFill = filled.length > 0 ? filled.reduce((s, c) => s + (c.executedPrice ?? 0), 0) / filled.length : null;
+                    return (
+                      <div key={pos.signalId} className="rounded-xl border border-border bg-card overflow-hidden">
+                        <div className="flex items-center gap-3 px-4 py-3 flex-wrap">
+                          <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isBuy ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                            {isBuy ? "▲ BUY" : "▼ SELL"}
+                          </span>
+                          <span className="font-bold font-mono">{pos.symbol}</span>
+                          <span className="text-xs text-muted-foreground uppercase">{pos.market}</span>
+                          <span className="text-xs text-muted-foreground">Qty: {pos.quantity}</span>
+                          {avgFill != null && avgFill > 0 && (
+                            <span className="text-xs font-mono text-muted-foreground">
+                              Avg fill: <span className="text-foreground font-semibold">{avgFill.toFixed(5)}</span>
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3 inline mr-1 opacity-60" />
+                            {new Date(pos.createdAt).toLocaleString()}
+                          </span>
+                          <div className="ml-auto flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">{pos.copiers.length} copier{pos.copiers.length !== 1 ? "s" : ""}</Badge>
+                            <Button
+                              size="sm" variant="destructive" className="h-7 text-xs px-3"
+                              disabled={closingSignalId === pos.signalId}
+                              onClick={() => closePosition(pos.signalId)}
+                            >
+                              {closingSignalId === pos.signalId
+                                ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Closing…</>
+                                : <><XCircle className="h-3 w-3 mr-1" />Close</>
+                              }
+                            </Button>
+                          </div>
+                        </div>
+                        {pos.copiers.length > 0 && (
+                          <div className="border-t border-border/50">
+                            <table className="w-full text-xs">
+                              <thead className="bg-secondary/30">
+                                <tr className="text-muted-foreground">
+                                  <th className="text-left px-4 py-1.5 font-medium">Account</th>
+                                  <th className="text-right px-4 py-1.5 font-medium">Qty</th>
+                                  <th className="text-right px-4 py-1.5 font-medium">Fill Price</th>
+                                  <th className="text-right px-4 py-1.5 font-medium">Order ID</th>
+                                  <th className="text-center px-4 py-1.5 font-medium">Status</th>
+                                  <th className="text-right px-4 py-1.5 font-medium">Executed</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pos.copiers.map((c) => (
+                                  <tr key={c.copyTradeId} className="border-t border-border/30 last:border-0">
+                                    <td className="px-4 py-2">
+                                      <div className="flex items-center gap-1.5">
+                                        {acctBadge(c.accountType)}
+                                        <span className="font-medium truncate max-w-[120px]">{c.accountLabel}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono">{c.quantity?.toFixed(4) ?? "—"}</td>
+                                    <td className="px-4 py-2 text-right font-mono font-semibold">
+                                      {c.executedPrice != null ? c.executedPrice.toFixed(5) : <span className="text-muted-foreground">pending</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-muted-foreground text-[10px]">
+                                      {c.brokerOrderId ? <span title={c.brokerOrderId}>{c.brokerOrderId.slice(0, 12)}{c.brokerOrderId.length > 12 ? "…" : ""}</span> : "—"}
+                                    </td>
+                                    <td className="px-4 py-2 text-center">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                        c.status === "executed" ? "bg-green-100 text-green-700" :
+                                        c.status === "closed"   ? "bg-gray-100 text-gray-500"   :
+                                        c.status === "failed"   ? "bg-red-100 text-red-600"     : "bg-yellow-100 text-yellow-600"
+                                      }`}>{c.status}</span>
+                                    </td>
+                                    <td className="px-4 py-2 text-right text-muted-foreground">{new Date(c.executedAt).toLocaleTimeString()}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          )}
+
+          {/* ── Copiers tab ── */}
+          {instructorTab === "copiers" && (
+            !dashboard ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : dashboard.subscribers.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
+                <Users className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">No copiers yet</p>
+                <p className="text-xs mt-1">Share your trader profile to attract followers.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Subscriber list */}
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border/40">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <Users className="h-4 w-4 text-primary" />
+                      Active Copiers
+                      <Badge variant="secondary">{dashboard.subscribers.length}</Badge>
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-secondary/30">
+                        <tr className="text-muted-foreground">
+                          <th className="text-left px-4 py-2 font-medium">Member</th>
+                          <th className="text-left px-4 py-2 font-medium">Account</th>
+                          <th className="text-right px-4 py-2 font-medium">Capital</th>
+                          <th className="text-right px-4 py-2 font-medium">Lot ×</th>
+                          <th className="text-right px-4 py-2 font-medium">P&amp;L</th>
+                          <th className="text-center px-4 py-2 font-medium">Status</th>
+                          <th className="text-right px-4 py-2 font-medium">Since</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboard.subscribers.map((s) => (
+                          <tr key={s.subId} className="border-t border-border/30">
+                            <td className="px-4 py-2.5 font-medium">{s.displayName}</td>
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-1.5">
-                                {acctBadge(c.accountType)}
-                                <span className="font-medium">{c.accountLabel}</span>
+                                {acctBadge(s.accountType)}
+                                <span className="truncate max-w-[120px]">{s.accountLabel}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-right">{c.tradeCount}</td>
-                            <td className="px-4 py-2.5 text-right">{c.winCount}</td>
-                            <td className="px-4 py-2.5 text-right">
-                              <span className={winPct >= 50 ? "text-green-600 font-semibold" : "text-red-500"}>{winPct.toFixed(0)}%</span>
+                            <td className="px-4 py-2.5 text-right font-mono">
+                              {s.allocatedAmount != null
+                                ? <span className="font-semibold">${s.allocatedAmount.toFixed(2)}</span>
+                                : s.maxAmount != null
+                                  ? <span className="font-semibold">${s.maxAmount.toFixed(2)}</span>
+                                  : <span className="text-muted-foreground">—</span>}
                             </td>
+                            <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
                             <td className="px-4 py-2.5 text-right font-mono font-semibold">
-                              {c.totalPnl != null
-                                ? <span className={c.totalPnl >= 0 ? "text-green-600" : "text-red-500"}>{c.totalPnl >= 0 ? "+" : ""}${c.totalPnl.toFixed(2)}</span>
-                                : <span className="text-muted-foreground">no PnL data</span>}
+                              {s.currentPnl != null
+                                ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
+                                : <span className="text-muted-foreground">—</span>}
                             </td>
+                            <td className="px-4 py-2.5 text-center">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>
+                                {s.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(s.since).toLocaleDateString()}</td>
                           </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Per-account performance */}
+                {dashboard.copierPnl.length > 0 && (
+                  <div className="rounded-xl border border-border bg-card overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border/40">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-primary" />
+                        Account Performance
+                      </h3>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead className="bg-secondary/30">
+                        <tr className="text-muted-foreground">
+                          <th className="text-left px-4 py-2 font-medium">Account</th>
+                          <th className="text-right px-4 py-2 font-medium">Trades</th>
+                          <th className="text-right px-4 py-2 font-medium">Wins</th>
+                          <th className="text-right px-4 py-2 font-medium">Win Rate</th>
+                          <th className="text-right px-4 py-2 font-medium">Total P&amp;L</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboard.copierPnl.map((c) => {
+                          const winPct = c.tradeCount > 0 ? (c.winCount / c.tradeCount) * 100 : 0;
+                          return (
+                            <tr key={c.copyAccountId} className="border-t border-border/30">
+                              <td className="px-4 py-2.5">
+                                <div className="flex items-center gap-1.5">
+                                  {acctBadge(c.accountType)}
+                                  <span className="font-medium">{c.accountLabel}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-2.5 text-right">{c.tradeCount}</td>
+                              <td className="px-4 py-2.5 text-right">{c.winCount}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <span className={winPct >= 50 ? "text-green-600 font-semibold" : "text-red-500"}>{winPct.toFixed(0)}%</span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                                {c.totalPnl != null
+                                  ? <span className={c.totalPnl >= 0 ? "text-green-600" : "text-red-500"}>{c.totalPnl >= 0 ? "+" : ""}${c.totalPnl.toFixed(2)}</span>
+                                  : <span className="text-muted-foreground">—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      {dashboard.copierPnl.some((c) => c.totalPnl != null) && (() => {
+                        const grandTotal = dashboard.copierPnl.reduce((sum, c) => sum + (c.totalPnl ?? 0), 0);
+                        return (
+                          <tfoot>
+                            <tr className="border-t border-border/40 bg-secondary/20">
+                              <td className="px-4 py-2 text-xs text-muted-foreground font-semibold" colSpan={4}>Grand total</td>
+                              <td className={`px-4 py-2 text-right text-xs font-bold ${grandTotal >= 0 ? "text-green-600" : "text-red-500"}`}>
+                                {grandTotal >= 0 ? "+" : ""}${grandTotal.toFixed(2)}
+                              </td>
+                            </tr>
+                          </tfoot>
                         );
-                      })}
-                    </tbody>
-                    {copierPnl.some((c) => c.totalPnl != null) && (() => {
-                      const grandTotal = copierPnl.reduce((sum, c) => sum + (c.totalPnl ?? 0), 0);
-                      return (
-                        <tfoot>
-                          <tr className="border-t border-border/40 bg-secondary/20 font-semibold">
-                            <td className="px-4 py-2 text-xs text-muted-foreground" colSpan={4}>Grand total</td>
-                            <td className={`px-4 py-2 text-right text-xs font-bold ${grandTotal >= 0 ? "text-green-600" : "text-red-500"}`}>
-                              {grandTotal >= 0 ? "+" : ""}${grandTotal.toFixed(2)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      );
-                    })()}
-                  </table>
+                      })()}
+                    </table>
+                  </div>
                 )}
               </div>
-            )}
+            )
+          )}
 
-            {/* ── Closed Positions ── */}
-            {closedPositions.length > 0 && (
+          {/* ── Copied Trades tab ── */}
+          {instructorTab === "trades" && (
+            !dashboard ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : dashboard.closedPositions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
+                <TrendingDown className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">No closed trades yet</p>
+                <p className="text-xs mt-1">Positions appear here once closed.</p>
+              </div>
+            ) : (
               <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <button
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors"
-                  onClick={() => setShowClosedTrades((v) => !v)}
-                >
-                  <span className="text-sm font-semibold flex items-center gap-2">
+                <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
                     Closed Positions
-                    <Badge variant="secondary">{closedPositions.length}</Badge>
-                  </span>
-                  {showClosedTrades ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                </button>
-                {showClosedTrades && (
-                  <table className="w-full text-xs border-t border-border/40">
+                    <Badge variant="secondary">{dashboard.closedPositions.length}</Badge>
+                  </h3>
+                  {(() => {
+                    const wins = dashboard.closedPositions.filter((p) => p.returnPct > 0).length;
+                    const total = dashboard.closedPositions.length;
+                    const cumRet = dashboard.closedPositions.reduce((s, p) => s + p.returnPct, 0);
+                    return (
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span><span className="font-semibold text-foreground">{wins}/{total}</span> wins</span>
+                        <span className={`font-semibold ${cumRet >= 0 ? "text-green-600" : "text-red-500"}`}>
+                          {cumRet >= 0 ? "+" : ""}{cumRet.toFixed(2)}% cumulative
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
                     <thead className="bg-secondary/30">
                       <tr className="text-muted-foreground">
                         <th className="text-left px-4 py-2 font-medium">Symbol</th>
@@ -1660,7 +1846,7 @@ function CopyTradingInner() {
                       </tr>
                     </thead>
                     <tbody>
-                      {closedPositions.map((p, i) => {
+                      {dashboard.closedPositions.map((p, i) => {
                         const win = p.returnPct > 0;
                         return (
                           <tr key={i} className="border-t border-border/30">
@@ -1682,151 +1868,136 @@ function CopyTradingInner() {
                       })}
                     </tbody>
                   </table>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* ── Open Positions (instructor/trader only) ── */}
-      {isInstructor && myTrader && openPositions.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-              </span>
-              Open Positions
-              <Badge variant="secondary">{openPositions.length}</Badge>
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => myTrader && void loadOpenPositions(myTrader.id)}>
-                <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
-              </Button>
-              <Button
-                variant="destructive" size="sm" className="text-xs font-bold"
-                disabled={closingSignalId !== null}
-                onClick={async () => {
-                  if (!myTrader) return;
-                  if (!confirm(`Close ALL ${openPositions.length} open position${openPositions.length !== 1 ? "s" : ""} across all copier accounts? This cannot be undone.`)) return;
-                  setClosingSignalId(-1);
-                  try {
-                    const r = await fetch(`/api/signals/close-all?traderId=${myTrader.id}`, { method: "POST" });
-                    const d = await r.json() as { closed?: number; failed?: number; skipped?: number; error?: string };
-                    if (!r.ok) throw new Error(d.error ?? "Failed");
-                    toast({
-                      title: "Close All complete",
-                      description: `${d.closed ?? 0} closed · ${d.failed ?? 0} failed · ${d.skipped ?? 0} skipped`,
-                    });
-                    void loadOpenPositions(myTrader.id);
-                    void loadDashboard(myTrader.id);
-                  } catch (e: unknown) {
-                    toast({ title: e instanceof Error ? e.message : "Failed", variant: "destructive" });
-                  } finally { setClosingSignalId(null); }
-                }}
-              >
-                {closingSignalId === -1 ? <><RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />Closing…</> : "⚠ Close All"}
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {openPositions.map((pos) => {
-              const isBuy = pos.action === "buy";
-              const avgFill = pos.copiers.length > 0
-                ? pos.copiers.filter((c) => c.executedPrice != null).reduce((sum, c) => sum + (c.executedPrice ?? 0), 0) /
-                  (pos.copiers.filter((c) => c.executedPrice != null).length || 1)
-                : null;
-              return (
-                <div key={pos.signalId} className="rounded-xl border border-border bg-card overflow-hidden">
-                  {/* Position header */}
-                  <div className="flex items-center gap-3 px-4 py-3 flex-wrap">
-                    <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isBuy ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                      {isBuy ? "▲ BUY" : "▼ SELL"}
-                    </span>
-                    <span className="font-bold font-mono">{pos.symbol}</span>
-                    <span className="text-xs text-muted-foreground uppercase">{pos.market}</span>
-                    <span className="text-xs text-muted-foreground">Qty: {pos.quantity}</span>
-                    {avgFill != null && avgFill > 0 && (
-                      <span className="text-xs font-mono text-muted-foreground">
-                        Avg fill: <span className="text-foreground font-semibold">{avgFill.toFixed(5)}</span>
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3 inline mr-1 opacity-60" />
-                      {new Date(pos.createdAt).toLocaleString()}
-                    </span>
-                    <div className="ml-auto flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs">{pos.copiers.length} copier{pos.copiers.length !== 1 ? "s" : ""}</Badge>
-                      <Button
-                        size="sm" variant="destructive"
-                        className="h-7 text-xs px-3"
-                        disabled={closingSignalId === pos.signalId}
-                        onClick={() => closePosition(pos.signalId)}
-                      >
-                        {closingSignalId === pos.signalId
-                          ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Closing…</>
-                          : <><XCircle className="h-3 w-3 mr-1" />Close Position</>
-                        }
-                      </Button>
-                    </div>
-                  </div>
-                  {/* Copier rows */}
-                  {pos.copiers.length > 0 && (
-                    <div className="border-t border-border/50">
-                      <table className="w-full text-xs">
-                        <thead className="bg-secondary/30">
-                          <tr className="text-muted-foreground">
-                            <th className="text-left px-4 py-1.5 font-medium">Account</th>
-                            <th className="text-right px-4 py-1.5 font-medium">Qty</th>
-                            <th className="text-right px-4 py-1.5 font-medium">Fill Price</th>
-                            <th className="text-right px-4 py-1.5 font-medium">Order ID</th>
-                            <th className="text-center px-4 py-1.5 font-medium">Status</th>
-                            <th className="text-right px-4 py-1.5 font-medium">Executed</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pos.copiers.map((c) => (
-                            <tr key={c.copyTradeId} className="border-t border-border/30 last:border-0">
-                              <td className="px-4 py-2">
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase ${
-                                    c.accountType === "binance" ? "bg-yellow-100 text-yellow-700" :
-                                    c.accountType === "bybit"   ? "bg-orange-100 text-orange-700" :
-                                    c.accountType === "metaapi" ? "bg-blue-100 text-blue-700"    : "bg-secondary text-muted-foreground"
-                                  }`}>{c.accountType}</span>
-                                  <span className="font-medium truncate max-w-[120px]">{c.accountLabel}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-2 text-right font-mono">{c.quantity?.toFixed(4) ?? "—"}</td>
-                              <td className="px-4 py-2 text-right font-mono font-semibold">
-                                {c.executedPrice != null ? c.executedPrice.toFixed(5) : <span className="text-muted-foreground">pending</span>}
-                              </td>
-                              <td className="px-4 py-2 text-right font-mono text-muted-foreground text-[10px]">
-                                {c.brokerOrderId ? <span title={c.brokerOrderId}>{c.brokerOrderId.slice(0, 12)}{c.brokerOrderId.length > 12 ? "…" : ""}</span> : "—"}
-                              </td>
-                              <td className="px-4 py-2 text-center">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                                  c.status === "executed" ? "bg-green-100 text-green-700" :
-                                  c.status === "closed"   ? "bg-gray-100 text-gray-500"   :
-                                  c.status === "failed"   ? "bg-red-100 text-red-600"     : "bg-yellow-100 text-yellow-600"
-                                }`}>{c.status}</span>
-                              </td>
-                              <td className="px-4 py-2 text-right text-muted-foreground">
-                                {new Date(c.executedAt).toLocaleTimeString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
                 </div>
-              );
-            })}
-          </div>
-        </section>
+              </div>
+            )
+          )}
+
+          {/* ── Signal History tab ── */}
+          {instructorTab === "history" && (
+            signals.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
+                <Zap className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">No signals yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">Click a row to expand copier execution details</p>
+                <div className="rounded-xl border border-border overflow-hidden">
+                  {signals.slice(0, 50).map((sig, idx) => {
+                    const isExpanded = expandedSignalId === sig.id;
+                    const copiers = signalCopiersMap[sig.id];
+                    return (
+                      <div key={sig.id} className={idx > 0 ? "border-t border-border/40" : ""}>
+                        <button
+                          className="w-full text-left px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-secondary/20 transition-colors"
+                          onClick={() => toggleSignalExpand(sig.id)}
+                        >
+                          <ActionBadge action={sig.action} />
+                          <span className="font-bold font-mono text-sm">{sig.symbol}</span>
+                          <span className="text-xs text-muted-foreground uppercase">{sig.market}</span>
+                          {sig.price && <span className="text-xs font-mono">@ {sig.price}</span>}
+                          <span className="text-xs text-muted-foreground">Qty: {sig.quantity}</span>
+                          {sig.notes && <span className="text-xs text-muted-foreground italic truncate max-w-[160px]">{sig.notes}</span>}
+                          <div className="ml-auto flex items-center gap-2 shrink-0">
+                            <StatusIcon status={sig.status} />
+                            <span className="text-[11px] text-muted-foreground">{new Date(sig.createdAt).toLocaleString()}</span>
+                            {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t border-border/30 bg-secondary/10">
+                            {!copiers ? (
+                              <div className="flex items-center gap-2 px-6 py-3 text-xs text-muted-foreground">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading copier details…
+                              </div>
+                            ) : copiers.length === 0 ? (
+                              <p className="px-6 py-3 text-xs text-muted-foreground">No copy trades recorded for this signal.</p>
+                            ) : (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-muted-foreground border-b border-border/30">
+                                    <th className="text-left px-6 py-1.5 font-medium">Account</th>
+                                    <th className="text-right px-4 py-1.5 font-medium">Qty</th>
+                                    <th className="text-right px-4 py-1.5 font-medium">Fill Price</th>
+                                    <th className="text-right px-4 py-1.5 font-medium">P&amp;L</th>
+                                    <th className="text-right px-4 py-1.5 font-medium">Order ID</th>
+                                    <th className="text-center px-4 py-1.5 font-medium">Status</th>
+                                    <th className="text-right px-4 py-1.5 font-medium">Time</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {copiers.map((c) => (
+                                    <tr key={c.copyTradeId} className="border-t border-border/20">
+                                      <td className="px-6 py-2">
+                                        <div className="flex items-center gap-1.5">
+                                          {acctBadge(c.accountType)}
+                                          <span className="font-medium">{c.accountLabel}</span>
+                                          {(c.executionMode === "agent" || c.executionMode === "safe") && (
+                                            <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700">VPS</span>
+                                          )}
+                                        </div>
+                                        {c.errorMessage && (
+                                          <p className="text-red-400 text-[10px] mt-0.5 truncate max-w-[200px]" title={c.errorMessage}>{c.errorMessage}</p>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-2 text-right font-mono">{c.quantity?.toFixed(4) ?? "—"}</td>
+                                      <td className="px-4 py-2 text-right font-mono font-semibold">
+                                        {c.executedPrice != null ? c.executedPrice.toFixed(5) : <span className="text-muted-foreground">—</span>}
+                                      </td>
+                                      <td className="px-4 py-2 text-right font-mono font-semibold">
+                                        {c.pnl != null
+                                          ? <span className={c.pnl >= 0 ? "text-green-600" : "text-red-500"}>{c.pnl >= 0 ? "+" : ""}{c.pnl.toFixed(2)}</span>
+                                          : <span className="text-muted-foreground">—</span>}
+                                      </td>
+                                      <td className="px-4 py-2 text-right font-mono text-muted-foreground text-[10px]">
+                                        {c.brokerOrderId ? <span title={c.brokerOrderId}>{c.brokerOrderId.slice(0, 12)}{c.brokerOrderId.length > 12 ? "…" : ""}</span> : "—"}
+                                      </td>
+                                      <td className="px-4 py-2 text-center">
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                          c.status === "executed" ? "bg-green-100 text-green-700" :
+                                          c.status === "closed"   ? "bg-gray-100 text-gray-500"  :
+                                          c.status === "failed"   ? "bg-red-100 text-red-600"    : "bg-yellow-100 text-yellow-600"
+                                        }`}>{c.status}</span>
+                                      </td>
+                                      <td className="px-4 py-2 text-right text-muted-foreground">{new Date(c.executedAt).toLocaleTimeString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                {copiers.some((c) => c.pnl != null) && (() => {
+                                  const totalPnl = copiers.reduce((sum, c) => sum + (c.pnl ?? 0), 0);
+                                  return (
+                                    <tfoot>
+                                      <tr className="border-t border-border/40 bg-secondary/20">
+                                        <td colSpan={3} className="px-6 py-1.5 text-xs text-muted-foreground">Total P&amp;L across copiers</td>
+                                        <td className={`px-4 py-1.5 text-right text-xs font-bold ${totalPnl >= 0 ? "text-green-600" : "text-red-500"}`}>
+                                          {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)}
+                                        </td>
+                                        <td colSpan={3} />
+                                      </tr>
+                                    </tfoot>
+                                  );
+                                })()}
+                              </table>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* No trader profile message */}
+      {isInstructor && !myTrader && !loading && (
+        <div className="rounded-xl border border-dashed border-primary/30 p-4 text-center text-sm text-muted-foreground bg-primary/5">
+          <Crosshair className="h-5 w-5 mx-auto mb-1.5 opacity-40" />
+          <p>No trader profile linked to your account. Create one to enable direct trade execution.</p>
+        </div>
       )}
 
       {/* ── Connected Accounts ── */}
@@ -1989,13 +2160,12 @@ function CopyTradingInner() {
         </section>
       )}
 
-      {/* ── Signal History ── */}
-      {signals.length > 0 && (
+      {/* ── Signal History (non-instructor only; instructors see this in their tab) ── */}
+      {!isInstructor && signals.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-base font-semibold flex items-center gap-2">
             <Zap className="h-4 w-4 text-yellow-500" />Signal History
             <Badge variant="secondary" className="text-xs">{signals.length}</Badge>
-            {isInstructor && <span className="text-xs text-muted-foreground font-normal">Click a row to see copier details</span>}
           </h2>
           <div className="rounded-xl border border-border overflow-hidden">
             {signals.slice(0, 30).map((sig, idx) => {
@@ -2120,8 +2290,8 @@ function CopyTradingInner() {
         </section>
       )}
 
-      {/* ── Execution History ── */}
-      {copyTrades.length > 0 && (
+      {/* ── Execution History (non-instructor only; instructors see copied trades in their tab) ── */}
+      {!isInstructor && copyTrades.length > 0 && (
         <section className="space-y-3">
           <button className="flex items-center gap-2 text-base font-semibold hover:text-primary transition-colors"
             onClick={() => setShowHistory(!showHistory)}>
