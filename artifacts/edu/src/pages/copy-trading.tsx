@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
 import { BrokerServerSearch } from "@/components/ui/broker-server-search";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,6 +98,14 @@ type TraderDashboard = {
   closedPositions: ClosedPosition[];
   copierPnl: CopierPnl[];
   subscribers: Subscriber[];
+};
+type CopierTrade = {
+  symbol: string; market: string; side: string;
+  openPrice: number | null; closePrice: number | null;
+  lots: number | null; pnl: number | null; returnPct: number | null;
+  status: string; orderId: string | null;
+  openTime: string; closeTime: string | null; durationMs: number | null;
+  accountLabel: string; accountType: string | null; displayName: string;
 };
 
 /* ─── Risk Disclaimer Modal ──────────────────────────────────────── */
@@ -1306,6 +1317,7 @@ function CopyTradingInner() {
   const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
   const [dashboard, setDashboard] = useState<TraderDashboard | null>(null);
+  const [copierTrades, setCopierTrades] = useState<CopierTrade[]>([]);
   const [instructorTab, setInstructorTab] = useState<"trade" | "positions" | "copiers" | "trades" | "history">("trade");
   const [signalCopiersMap, setSignalCopiersMap] = useState<Record<number, SignalCopier[]>>({});
   const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
@@ -1358,8 +1370,12 @@ function CopyTradingInner() {
 
   const loadDashboard = useCallback(async (traderId: number) => {
     try {
-      const r = await fetch(`/api/trader-dashboard?traderId=${traderId}`);
-      if (r.ok) setDashboard(await r.json() as TraderDashboard);
+      const [dashRes, tradesRes] = await Promise.all([
+        fetch(`/api/trader-dashboard?traderId=${traderId}`),
+        fetch(`/api/trader-copier-trades?traderId=${traderId}`),
+      ]);
+      if (dashRes.ok)   setDashboard(await dashRes.json() as TraderDashboard);
+      if (tradesRes.ok) setCopierTrades(await tradesRes.json() as CopierTrade[]);
     } catch { /* ignore */ }
   }, []);
 
@@ -1668,210 +1684,451 @@ function CopyTradingInner() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : dashboard.subscribers.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
-                <Users className="h-7 w-7 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No copiers yet</p>
-                <p className="text-xs mt-1">Share your trader profile to attract followers.</p>
-              </div>
             ) : (
               <div className="space-y-4">
-                {/* Subscriber list */}
-                <div className="rounded-xl border border-border bg-card overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border/40">
-                    <h3 className="text-sm font-semibold flex items-center gap-2">
-                      <Users className="h-4 w-4 text-primary" />
-                      Active Copiers
-                      <Badge variant="secondary">{dashboard.subscribers.length}</Badge>
-                    </h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-secondary/30">
-                        <tr className="text-muted-foreground">
-                          <th className="text-left px-4 py-2 font-medium">Member</th>
-                          <th className="text-left px-4 py-2 font-medium">Account</th>
-                          <th className="text-right px-4 py-2 font-medium">Capital</th>
-                          <th className="text-right px-4 py-2 font-medium">Lot ×</th>
-                          <th className="text-right px-4 py-2 font-medium">P&amp;L</th>
-                          <th className="text-center px-4 py-2 font-medium">Status</th>
-                          <th className="text-right px-4 py-2 font-medium">Since</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dashboard.subscribers.map((s) => (
-                          <tr key={s.subId} className="border-t border-border/30">
-                            <td className="px-4 py-2.5 font-medium">{s.displayName}</td>
-                            <td className="px-4 py-2.5">
-                              <div className="flex items-center gap-1.5">
-                                {acctBadge(s.accountType)}
-                                <span className="truncate max-w-[120px]">{s.accountLabel}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-mono">
-                              {s.allocatedAmount != null
-                                ? <span className="font-semibold">${s.allocatedAmount.toFixed(2)}</span>
-                                : s.maxAmount != null
-                                  ? <span className="font-semibold">${s.maxAmount.toFixed(2)}</span>
-                                  : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
-                            <td className="px-4 py-2.5 text-right font-mono font-semibold">
-                              {s.currentPnl != null
-                                ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
-                                : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-center">
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>
-                                {s.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(s.since).toLocaleDateString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
 
-                {/* Per-account performance */}
-                {dashboard.copierPnl.length > 0 && (
-                  <div className="rounded-xl border border-border bg-card overflow-hidden">
-                    <div className="px-4 py-3 border-b border-border/40">
-                      <h3 className="text-sm font-semibold flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-primary" />
-                        Account Performance
-                      </h3>
+                {/* ── Performance Dashboard (equity curve + stat cards) ── */}
+                {(() => {
+                  // Build equity curve from closed positions (sorted oldest → newest)
+                  const sorted = [...dashboard.closedPositions].sort(
+                    (a, b) => new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime()
+                  );
+                  let cum = 0;
+                  const curveData = sorted.map((p) => {
+                    cum += p.returnPct;
+                    return { t: new Date(p.closedAt).getTime(), v: parseFloat(cum.toFixed(2)) };
+                  });
+
+                  // Max drawdown from equity curve
+                  let peak = 0, maxDD = 0;
+                  curveData.forEach(({ v }) => {
+                    if (v > peak) peak = v;
+                    const dd = peak - v;
+                    if (dd > maxDD) maxDD = dd;
+                  });
+
+                  // Avg monthly ROI – last 3 calendar months
+                  const byMonth = new Map<string, number>();
+                  for (const p of dashboard.closedPositions) {
+                    const key = p.closedAt.toString().slice(0, 7);
+                    byMonth.set(key, (byMonth.get(key) ?? 0) + p.returnPct);
+                  }
+                  const monthKeys = [...byMonth.keys()].sort().slice(-3);
+                  const avgMonthlyRoi = monthKeys.length > 0
+                    ? monthKeys.reduce((s, k) => s + (byMonth.get(k) ?? 0), 0) / monthKeys.length
+                    : 0;
+
+                  // Max ROI – best 30-day rolling window
+                  let maxRoi30 = 0;
+                  for (let i = 0; i < curveData.length; i++) {
+                    const windowStart = curveData[i].t - 30 * 86400000;
+                    const windowSum = curveData
+                      .slice(0, i + 1)
+                      .filter((d) => d.t >= windowStart)
+                      .reduce((s, d, idx, arr) => idx === 0 ? d.v : d.v - arr[0].v, 0);
+                    if (windowSum > maxRoi30) maxRoi30 = windowSum;
+                  }
+
+                  // AUM – sum of allocated / max amounts
+                  const aum = dashboard.subscribers.reduce(
+                    (s, sub) => s + (sub.allocatedAmount ?? sub.maxAmount ?? 0), 0
+                  );
+
+                  const perfCards = [
+                    {
+                      label: "Win Rate",
+                      main: `${dashboard.stats.winRate.toFixed(1)}%`,
+                      sub: `${dashboard.stats.closedCount} / ${dashboard.stats.totalTrades} trades ↑`,
+                      color: dashboard.stats.winRate >= 50 ? "text-green-400" : "text-red-400",
+                    },
+                    {
+                      label: "Max Drawdown",
+                      main: `${maxDD.toFixed(2)}%`,
+                      sub: "Peak-to-trough",
+                      color: maxDD > 10 ? "text-red-400" : "text-red-400",
+                    },
+                    {
+                      label: "Avg Monthly ROI",
+                      main: `${avgMonthlyRoi >= 0 ? "+" : ""}${avgMonthlyRoi.toFixed(1)}%`,
+                      sub: "Last 3 months avg",
+                      color: avgMonthlyRoi >= 0 ? "text-green-400" : "text-red-400",
+                    },
+                    {
+                      label: "Max ROI (30D peak)",
+                      main: `${maxRoi30 >= 0 ? "+" : ""}${maxRoi30.toFixed(1)}%`,
+                      sub: "Best 30D window",
+                      color: maxRoi30 >= 0 ? "text-green-400" : "text-red-400",
+                    },
+                    {
+                      label: "Followers",
+                      main: `${dashboard.stats.followers}`,
+                      sub: "Active copiers",
+                      color: "text-foreground",
+                    },
+                    {
+                      label: "AUM",
+                      main: aum > 0 ? `${aum.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—",
+                      sub: "Managed capital",
+                      color: "text-foreground",
+                    },
+                  ];
+
+                  const isPositive = curveData.length === 0 || curveData[curveData.length - 1].v >= 0;
+
+                  return (
+                    <div className="rounded-xl border border-border bg-card overflow-hidden">
+                      {/* Equity Curve */}
+                      <div className="px-4 pt-4 pb-2 border-b border-border/40">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-semibold text-foreground">Equity Curve</span>
+                          {curveData.length > 0 && (
+                            <span className={`text-sm font-bold ${isPositive ? "text-green-400" : "text-red-400"}`}>
+                              {isPositive ? "+" : ""}{curveData[curveData.length - 1].v.toFixed(2)}% cumulative
+                            </span>
+                          )}
+                        </div>
+                        {curveData.length < 2 ? (
+                          <div className="h-28 flex items-center justify-center text-xs text-muted-foreground">
+                            Close at least 2 trades to see the equity curve
+                          </div>
+                        ) : (
+                          <ResponsiveContainer width="100%" height={110}>
+                            <AreaChart data={curveData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                              <defs>
+                                <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%"  stopColor={isPositive ? "#22c55e" : "#ef4444"} stopOpacity={0.25} />
+                                  <stop offset="95%" stopColor={isPositive ? "#22c55e" : "#ef4444"} stopOpacity={0.02} />
+                                </linearGradient>
+                              </defs>
+                              <XAxis dataKey="t" hide />
+                              <YAxis hide domain={["auto", "auto"]} />
+                              <Tooltip
+                                content={({ active, payload }) =>
+                                  active && payload?.[0] ? (
+                                    <div className="bg-card border border-border rounded px-2 py-1 text-xs font-mono">
+                                      {(payload[0].value as number) >= 0 ? "+" : ""}
+                                      {(payload[0].value as number).toFixed(2)}%
+                                    </div>
+                                  ) : null
+                                }
+                              />
+                              <Area
+                                type="monotone" dataKey="v"
+                                stroke={isPositive ? "#22c55e" : "#ef4444"}
+                                strokeWidth={2}
+                                fill="url(#eqGrad)"
+                                dot={false}
+                                activeDot={{ r: 3 }}
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+
+                      {/* 6 stat cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 divide-x divide-y divide-border/40">
+                        {perfCards.map((c) => (
+                          <div key={c.label} className="px-5 py-4">
+                            <p className="text-[11px] text-muted-foreground mb-1">{c.label}</p>
+                            <p className={`text-2xl font-black tabular-nums ${c.color}`}>{c.main}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{c.sub}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <table className="w-full text-xs">
-                      <thead className="bg-secondary/30">
-                        <tr className="text-muted-foreground">
-                          <th className="text-left px-4 py-2 font-medium">Account</th>
-                          <th className="text-right px-4 py-2 font-medium">Trades</th>
-                          <th className="text-right px-4 py-2 font-medium">Wins</th>
-                          <th className="text-right px-4 py-2 font-medium">Win Rate</th>
-                          <th className="text-right px-4 py-2 font-medium">Total P&amp;L</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dashboard.copierPnl.map((c) => {
-                          const winPct = c.tradeCount > 0 ? (c.winCount / c.tradeCount) * 100 : 0;
-                          return (
-                            <tr key={c.copyAccountId} className="border-t border-border/30">
-                              <td className="px-4 py-2.5">
-                                <div className="flex items-center gap-1.5">
-                                  {acctBadge(c.accountType)}
-                                  <span className="font-medium">{c.accountLabel}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-2.5 text-right">{c.tradeCount}</td>
-                              <td className="px-4 py-2.5 text-right">{c.winCount}</td>
-                              <td className="px-4 py-2.5 text-right">
-                                <span className={winPct >= 50 ? "text-green-600 font-semibold" : "text-red-500"}>{winPct.toFixed(0)}%</span>
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-mono font-semibold">
-                                {c.totalPnl != null
-                                  ? <span className={c.totalPnl >= 0 ? "text-green-600" : "text-red-500"}>{c.totalPnl >= 0 ? "+" : ""}${c.totalPnl.toFixed(2)}</span>
-                                  : <span className="text-muted-foreground">—</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      {dashboard.copierPnl.some((c) => c.totalPnl != null) && (() => {
-                        const grandTotal = dashboard.copierPnl.reduce((sum, c) => sum + (c.totalPnl ?? 0), 0);
-                        return (
-                          <tfoot>
-                            <tr className="border-t border-border/40 bg-secondary/20">
-                              <td className="px-4 py-2 text-xs text-muted-foreground font-semibold" colSpan={4}>Grand total</td>
-                              <td className={`px-4 py-2 text-right text-xs font-bold ${grandTotal >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                {grandTotal >= 0 ? "+" : ""}${grandTotal.toFixed(2)}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        );
-                      })()}
-                    </table>
+                  );
+                })()}
+
+                {/* Subscriber list */}
+                {dashboard.subscribers.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border py-10 text-center text-muted-foreground">
+                    <Users className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm font-medium">No copiers yet</p>
+                    <p className="text-xs mt-1">Share your trader profile to attract followers.</p>
                   </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-border bg-card overflow-hidden">
+                      <div className="px-4 py-3 border-b border-border/40">
+                        <h3 className="text-sm font-semibold flex items-center gap-2">
+                          <Users className="h-4 w-4 text-primary" />
+                          Active Copiers
+                          <Badge variant="secondary">{dashboard.subscribers.length}</Badge>
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-secondary/30">
+                            <tr className="text-muted-foreground">
+                              <th className="text-left px-4 py-2 font-medium">Member</th>
+                              <th className="text-left px-4 py-2 font-medium">Account</th>
+                              <th className="text-right px-4 py-2 font-medium">Capital</th>
+                              <th className="text-right px-4 py-2 font-medium">Lot ×</th>
+                              <th className="text-right px-4 py-2 font-medium">P&amp;L</th>
+                              <th className="text-center px-4 py-2 font-medium">Status</th>
+                              <th className="text-right px-4 py-2 font-medium">Since</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboard.subscribers.map((s) => (
+                              <tr key={s.subId} className="border-t border-border/30">
+                                <td className="px-4 py-2.5 font-medium">{s.displayName}</td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-1.5">
+                                    {acctBadge(s.accountType)}
+                                    <span className="truncate max-w-[120px]">{s.accountLabel}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono">
+                                  {s.allocatedAmount != null
+                                    ? <span className="font-semibold">${s.allocatedAmount.toFixed(2)}</span>
+                                    : s.maxAmount != null
+                                      ? <span className="font-semibold">${s.maxAmount.toFixed(2)}</span>
+                                      : <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
+                                <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                                  {s.currentPnl != null
+                                    ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
+                                    : <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>
+                                    {s.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(s.since).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Per-account performance */}
+                    {dashboard.copierPnl.length > 0 && (
+                      <div className="rounded-xl border border-border bg-card overflow-hidden">
+                        <div className="px-4 py-3 border-b border-border/40">
+                          <h3 className="text-sm font-semibold flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-primary" />
+                            Account Performance
+                          </h3>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead className="bg-secondary/30">
+                            <tr className="text-muted-foreground">
+                              <th className="text-left px-4 py-2 font-medium">Account</th>
+                              <th className="text-right px-4 py-2 font-medium">Trades</th>
+                              <th className="text-right px-4 py-2 font-medium">Wins</th>
+                              <th className="text-right px-4 py-2 font-medium">Win Rate</th>
+                              <th className="text-right px-4 py-2 font-medium">Total P&amp;L</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboard.copierPnl.map((c) => {
+                              const winPct = c.tradeCount > 0 ? (c.winCount / c.tradeCount) * 100 : 0;
+                              return (
+                                <tr key={c.copyAccountId} className="border-t border-border/30">
+                                  <td className="px-4 py-2.5">
+                                    <div className="flex items-center gap-1.5">
+                                      {acctBadge(c.accountType)}
+                                      <span className="font-medium">{c.accountLabel}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right">{c.tradeCount}</td>
+                                  <td className="px-4 py-2.5 text-right">{c.winCount}</td>
+                                  <td className="px-4 py-2.5 text-right">
+                                    <span className={winPct >= 50 ? "text-green-600 font-semibold" : "text-red-500"}>{winPct.toFixed(0)}%</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                                    {c.totalPnl != null
+                                      ? <span className={c.totalPnl >= 0 ? "text-green-600" : "text-red-500"}>{c.totalPnl >= 0 ? "+" : ""}${c.totalPnl.toFixed(2)}</span>
+                                      : <span className="text-muted-foreground">—</span>}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          {dashboard.copierPnl.some((c) => c.totalPnl != null) && (() => {
+                            const grandTotal = dashboard.copierPnl.reduce((sum, c) => sum + (c.totalPnl ?? 0), 0);
+                            return (
+                              <tfoot>
+                                <tr className="border-t border-border/40 bg-secondary/20">
+                                  <td className="px-4 py-2 text-xs text-muted-foreground font-semibold" colSpan={4}>Grand total</td>
+                                  <td className={`px-4 py-2 text-right text-xs font-bold ${grandTotal >= 0 ? "text-green-600" : "text-red-500"}`}>
+                                    {grandTotal >= 0 ? "+" : ""}${grandTotal.toFixed(2)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            );
+                          })()}
+                        </table>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )
           )}
 
           {/* ── Copied Trades tab ── */}
-          {instructorTab === "trades" && (
-            !dashboard ? (
+          {instructorTab === "trades" && (() => {
+            if (!dashboard) return (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : dashboard.closedPositions.length === 0 ? (
+            );
+            if (copierTrades.length === 0) return (
               <div className="rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
                 <TrendingDown className="h-7 w-7 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No closed trades yet</p>
-                <p className="text-xs mt-1">Positions appear here once closed.</p>
+                <p className="text-sm font-medium">No copied trades yet</p>
+                <p className="text-xs mt-1">Closed copier positions will appear here.</p>
               </div>
-            ) : (
+            );
+
+            const fmt = (ms: number) => {
+              const h = Math.floor(ms / 3600000);
+              const m = Math.floor((ms % 3600000) / 60000);
+              if (h > 0) return `${h}h ${m}m`;
+              return `${m}m`;
+            };
+            const fmtPrice = (v: number | null) => v == null ? "—" : v < 10 ? v.toFixed(5) : v.toFixed(2);
+            const fmtTime = (s: string | null) =>
+              s ? new Date(s).toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }) +
+                " " + new Date(s).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "—";
+
+            const executed = copierTrades.filter((t) => t.status !== "failed").length;
+            const failed   = copierTrades.filter((t) => t.status === "failed").length;
+
+            return (
               <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
+                {/* Header */}
+                <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between gap-3 flex-wrap">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
-                    Closed Positions
-                    <Badge variant="secondary">{dashboard.closedPositions.length}</Badge>
+                    Copied Trades
+                    <Badge variant="secondary">{copierTrades.length}</Badge>
                   </h3>
-                  {(() => {
-                    const wins = dashboard.closedPositions.filter((p) => p.returnPct > 0).length;
-                    const total = dashboard.closedPositions.length;
-                    const cumRet = dashboard.closedPositions.reduce((s, p) => s + p.returnPct, 0);
-                    return (
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span><span className="font-semibold text-foreground">{wins}/{total}</span> wins</span>
-                        <span className={`font-semibold ${cumRet >= 0 ? "text-green-600" : "text-red-500"}`}>
-                          {cumRet >= 0 ? "+" : ""}{cumRet.toFixed(2)}% cumulative
-                        </span>
-                      </div>
-                    );
-                  })()}
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="flex items-center gap-1 text-green-600 font-semibold">
+                      <CheckCircle2 className="h-3 w-3" /> Executed {executed}
+                    </span>
+                    <span className="flex items-center gap-1 text-red-500 font-semibold">
+                      <XCircle className="h-3 w-3" /> Failed {failed}
+                    </span>
+                    <span className="text-muted-foreground">Total Orders {copierTrades.length}</span>
+                  </div>
                 </div>
+
+                {/* Table */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
-                    <thead className="bg-secondary/30">
-                      <tr className="text-muted-foreground">
-                        <th className="text-left px-4 py-2 font-medium">Symbol</th>
-                        <th className="text-center px-4 py-2 font-medium">Dir</th>
-                        <th className="text-right px-4 py-2 font-medium">Open Price</th>
-                        <th className="text-right px-4 py-2 font-medium">Close Price</th>
-                        <th className="text-right px-4 py-2 font-medium">Return</th>
-                        <th className="text-right px-4 py-2 font-medium">Opened</th>
-                        <th className="text-right px-4 py-2 font-medium">Closed</th>
+                    <thead className="bg-secondary/30 sticky top-0">
+                      <tr className="text-muted-foreground border-b border-border/40">
+                        <th className="text-left px-3 py-2.5 font-medium">Account</th>
+                        <th className="text-left px-3 py-2.5 font-medium">Pair</th>
+                        <th className="text-center px-3 py-2.5 font-medium">Side</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Open Price</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Close Price</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Lots</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Profit/Loss</th>
+                        <th className="text-right px-3 py-2.5 font-medium">% Return</th>
+                        <th className="text-center px-3 py-2.5 font-medium">Status</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Order ID</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Open Time</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Close Time</th>
+                        <th className="text-right px-3 py-2.5 font-medium">Duration</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {dashboard.closedPositions.map((p, i) => {
-                        const win = p.returnPct > 0;
+                      {copierTrades.map((t, i) => {
+                        const win = (t.pnl ?? 0) > 0 || (t.returnPct ?? 0) > 0;
+                        const initials = t.displayName
+                          .split(" ").slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
                         return (
-                          <tr key={i} className="border-t border-border/30">
-                            <td className="px-4 py-2.5 font-bold font-mono">{p.symbol}</td>
-                            <td className="px-4 py-2.5 text-center">
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${p.action === "buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                                {p.action === "buy" ? "▲ L" : "▼ S"}
+                          <tr key={i} className="border-t border-border/30 hover:bg-secondary/10 transition-colors">
+                            {/* Account */}
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-2 min-w-[130px]">
+                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">
+                                  {initials || "?"}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="font-medium truncate max-w-[90px]">{t.displayName}</div>
+                                  {acctBadge(t.accountType)}
+                                </div>
+                              </div>
+                            </td>
+                            {/* Pair */}
+                            <td className="px-3 py-2.5 font-bold font-mono">{t.symbol}</td>
+                            {/* Side */}
+                            <td className="px-3 py-2.5 text-center">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${t.side === "buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                                {t.side === "buy" ? "▲ BUY" : "▼ SELL"}
                               </span>
                             </td>
-                            <td className="px-4 py-2.5 text-right font-mono">{p.openPrice.toFixed(5)}</td>
-                            <td className="px-4 py-2.5 text-right font-mono">{p.closePrice.toFixed(5)}</td>
-                            <td className={`px-4 py-2.5 text-right font-mono font-bold ${win ? "text-green-600" : "text-red-500"}`}>
-                              {win ? "+" : ""}{p.returnPct.toFixed(2)}%
+                            {/* Prices */}
+                            <td className="px-3 py-2.5 text-right font-mono">{fmtPrice(t.openPrice)}</td>
+                            <td className="px-3 py-2.5 text-right font-mono">{fmtPrice(t.closePrice)}</td>
+                            {/* Lots */}
+                            <td className="px-3 py-2.5 text-right font-mono">
+                              {t.lots != null ? t.lots.toFixed(2) : "—"}
                             </td>
-                            <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(p.openedAt).toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(p.closedAt).toLocaleString()}</td>
+                            {/* P&L */}
+                            <td className={`px-3 py-2.5 text-right font-mono font-semibold ${t.pnl == null ? "text-muted-foreground" : win ? "text-green-600" : "text-red-500"}`}>
+                              {t.pnl == null ? "—" : `${t.pnl >= 0 ? "+" : ""}${Math.abs(t.pnl).toFixed(2)}`}
+                            </td>
+                            {/* % Return */}
+                            <td className={`px-3 py-2.5 text-right font-mono font-bold ${t.returnPct == null ? "text-muted-foreground" : t.returnPct >= 0 ? "text-green-600" : "text-red-500"}`}>
+                              {t.returnPct == null ? "0.00%" : `${t.returnPct >= 0 ? "+" : ""}${t.returnPct.toFixed(2)}%`}
+                            </td>
+                            {/* Status */}
+                            <td className="px-3 py-2.5 text-center">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                t.status === "closed"   ? "bg-blue-100 text-blue-700"  :
+                                t.status === "open"     ? "bg-green-100 text-green-700":
+                                t.status === "failed"   ? "bg-red-100 text-red-600"   : "bg-secondary text-muted-foreground"
+                              }`}>
+                                {t.status === "open" ? "Open" : t.status === "closed" ? "Closed" : t.status === "failed" ? "Failed" : t.status}
+                              </span>
+                            </td>
+                            {/* Order ID */}
+                            <td className="px-3 py-2.5 text-right font-mono text-[10px] text-muted-foreground">
+                              {t.orderId ? (
+                                <span title={t.orderId}>{t.orderId.slice(0, 14)}{t.orderId.length > 14 ? "…" : ""}</span>
+                              ) : "—"}
+                            </td>
+                            {/* Times */}
+                            <td className="px-3 py-2.5 text-right text-muted-foreground whitespace-nowrap">{fmtTime(t.openTime)}</td>
+                            <td className="px-3 py-2.5 text-right text-muted-foreground whitespace-nowrap">{fmtTime(t.closeTime)}</td>
+                            {/* Duration */}
+                            <td className="px-3 py-2.5 text-right text-muted-foreground">
+                              {t.durationMs != null ? fmt(t.durationMs) : "—"}
+                            </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Footer summary */}
+                <div className="px-4 py-2.5 border-t border-border/40 bg-secondary/10 flex items-center gap-6 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                    Executed <span className="font-bold text-foreground ml-1">{executed}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <XCircle className="h-3 w-3 text-red-500" />
+                    Failed <span className="font-bold text-foreground ml-1">{failed}</span>
+                  </span>
+                  <span className="ml-auto">
+                    Total Orders <span className="font-bold text-foreground">{copierTrades.length}</span>
+                  </span>
+                </div>
               </div>
-            )
-          )}
+            );
+          })()}
 
           {/* ── Signal History tab ── */}
           {instructorTab === "history" && (

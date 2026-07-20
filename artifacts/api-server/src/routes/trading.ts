@@ -955,6 +955,165 @@ router.get("/trader-dashboard", async (req, res): Promise<void> => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════
+   COPIER TRADES  (per-copier per-trade rows for instructor view)
+════════════════════════════════════════════════════════════════════ */
+
+router.get("/trader-copier-trades", async (req, res): Promise<void> => {
+  try {
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const traderId = req.query.traderId ? parseInt(req.query.traderId as string) : null;
+    if (!traderId) { res.status(400).json({ error: "traderId required" }); return; }
+
+    // All signals for this trader (buy/sell/close, any status)
+    const allSigs = await db.select().from(tradeSignalsTable)
+      .where(and(
+        eq(tradeSignalsTable.traderId, traderId),
+        inArray(tradeSignalsTable.action, ["buy", "sell", "close"]),
+      ))
+      .orderBy(tradeSignalsTable.createdAt);
+
+    const sigIds = allSigs.map((s) => s.id);
+    if (sigIds.length === 0) { res.json([]); return; }
+
+    // All copy_trades for those signals joined with accounts + users
+    const rows = await db
+      .select({
+        ctId:          copyTradesTable.id,
+        signalId:      copyTradesTable.signalId,
+        copyAccountId: copyTradesTable.copyAccountId,
+        status:        copyTradesTable.status,
+        executedPrice: copyTradesTable.executedPrice,
+        quantity:      copyTradesTable.quantity,
+        pnl:           copyTradesTable.pnl,
+        brokerOrderId: copyTradesTable.brokerOrderId,
+        createdAt:     copyTradesTable.createdAt,
+        accountLabel:  copyAccountsTable.label,
+        accountType:   copyAccountsTable.type,
+        displayName:   usersTable.displayName,
+        email:         usersTable.email,
+      })
+      .from(copyTradesTable)
+      .innerJoin(copyAccountsTable, eq(copyTradesTable.copyAccountId, copyAccountsTable.id))
+      .leftJoin(usersTable, eq(copyTradesTable.userId, usersTable.id))
+      .where(inArray(copyTradesTable.signalId, sigIds))
+      .orderBy(copyTradesTable.createdAt);
+
+    const sigMap = new Map(allSigs.map((s) => [s.id, s]));
+
+    // Group by copyAccountId for FIFO matching
+    type CtRow = (typeof rows)[0];
+    const byAccount = new Map<number, CtRow[]>();
+    for (const r of rows) {
+      const arr = byAccount.get(r.copyAccountId) ?? [];
+      arr.push(r);
+      byAccount.set(r.copyAccountId, arr);
+    }
+
+    type TradePair = {
+      symbol: string; market: string; side: string;
+      openPrice: number | null; closePrice: number | null;
+      lots: number | null; pnl: number | null; returnPct: number | null;
+      status: string; orderId: string | null;
+      openTime: string; closeTime: string | null; durationMs: number | null;
+      accountLabel: string; accountType: string | null; displayName: string;
+    };
+    const result: TradePair[] = [];
+
+    for (const [, ctRows] of byAccount) {
+      ctRows.sort((a, b) =>
+        new Date(a.createdAt as unknown as string).getTime() -
+        new Date(b.createdAt as unknown as string).getTime()
+      );
+
+      type OpenEntry = { ct: CtRow; sig: (typeof allSigs)[0] };
+      const stack = new Map<string, OpenEntry[]>();
+
+      for (const ct of ctRows) {
+        const sig = sigMap.get(ct.signalId);
+        if (!sig) continue;
+        const acctLabel = ct.accountLabel ?? `Account #${ct.copyAccountId}`;
+        const userName  = ct.displayName ?? ct.email ?? "Unknown";
+
+        if (sig.action === "buy" || sig.action === "sell") {
+          if (ct.status === "failed") {
+            result.push({
+              symbol: sig.symbol, market: sig.market, side: sig.action,
+              openPrice: ct.executedPrice ? parseFloat(ct.executedPrice as string) : null,
+              closePrice: null,
+              lots: ct.quantity ? parseFloat(ct.quantity as string) : null,
+              pnl: ct.pnl ? parseFloat(ct.pnl as string) : null,
+              returnPct: null, status: "failed", orderId: ct.brokerOrderId,
+              openTime: ct.createdAt as unknown as string,
+              closeTime: null, durationMs: null,
+              accountLabel: acctLabel, accountType: ct.accountType, displayName: userName,
+            });
+            continue;
+          }
+          if (ct.status !== "executed" && ct.status !== "closed") continue;
+          const arr = stack.get(sig.symbol) ?? [];
+          arr.push({ ct, sig });
+          stack.set(sig.symbol, arr);
+        } else if (sig.action === "close") {
+          const arr = stack.get(sig.symbol);
+          if (!arr || arr.length === 0) continue;
+          const open = arr.shift()!;
+          const openPrice  = open.ct.executedPrice ? parseFloat(open.ct.executedPrice as string) : null;
+          const closePrice = ct.executedPrice ? parseFloat(ct.executedPrice as string) : null;
+          const lots       = open.ct.quantity  ? parseFloat(open.ct.quantity  as string) : null;
+          const pnl        = ct.pnl            ? parseFloat(ct.pnl            as string)
+                           : open.ct.pnl       ? parseFloat(open.ct.pnl       as string) : null;
+          let returnPct: number | null = null;
+          if (openPrice != null && closePrice != null) {
+            const diff = open.sig.action === "buy" ? closePrice - openPrice : openPrice - closePrice;
+            returnPct = (diff / openPrice) * 100;
+          }
+          const openMs  = new Date(open.ct.createdAt as unknown as string).getTime();
+          const closeMs = new Date(ct.createdAt as unknown as string).getTime();
+          result.push({
+            symbol: open.sig.symbol, market: open.sig.market, side: open.sig.action,
+            openPrice, closePrice, lots, pnl, returnPct,
+            status: ct.status === "failed" ? "failed" : "closed",
+            orderId: open.ct.brokerOrderId,
+            openTime:  open.ct.createdAt as unknown as string,
+            closeTime: ct.createdAt as unknown as string,
+            durationMs: closeMs - openMs,
+            accountLabel: acctLabel, accountType: ct.accountType, displayName: userName,
+          });
+        }
+      }
+
+      // Remaining open (unmatched) positions
+      for (const [, entries] of stack) {
+        for (const { ct, sig } of entries) {
+          if (ct.status === "executed") {
+            result.push({
+              symbol: sig.symbol, market: sig.market, side: sig.action,
+              openPrice: ct.executedPrice ? parseFloat(ct.executedPrice as string) : null,
+              closePrice: null,
+              lots: ct.quantity ? parseFloat(ct.quantity as string) : null,
+              pnl: ct.pnl ? parseFloat(ct.pnl as string) : null,
+              returnPct: null, status: "open", orderId: ct.brokerOrderId,
+              openTime: ct.createdAt as unknown as string,
+              closeTime: null, durationMs: null,
+              accountLabel: ct.accountLabel ?? `Account #${ct.copyAccountId}`,
+              accountType: ct.accountType,
+              displayName: ct.displayName ?? ct.email ?? "Unknown",
+            });
+          }
+        }
+      }
+    }
+
+    result.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching trader copier trades");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
    OPEN POSITIONS  (buy/sell signals not yet matched by a close)
 ════════════════════════════════════════════════════════════════════ */
 
