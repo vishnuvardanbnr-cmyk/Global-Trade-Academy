@@ -84,7 +84,7 @@ type ClosedPosition = {
 };
 type CopierPnl = {
   copyAccountId: number; accountLabel: string; accountType: string;
-  totalPnl: number | null; tradeCount: number; winCount: number;
+  totalPnl: number | null; tradeCount: number; winCount: number; failCount: number;
 };
 type Subscriber = {
   subId: number; userId: string; displayName: string;
@@ -1839,134 +1839,204 @@ function CopyTradingInner() {
                   );
                 })()}
 
-                {/* Subscriber list */}
-                {dashboard.subscribers.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border py-10 text-center text-muted-foreground">
-                    <Users className="h-7 w-7 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm font-medium">No copiers yet</p>
-                    <p className="text-xs mt-1">Share your trader profile to attract followers.</p>
-                  </div>
-                ) : (
-                  <>
+                {/* ── Traders Panel (Image 3 layout) ── */}
+                {(() => {
+                  // Merge subscriber info with copierPnl by accountLabel
+                  const pnlByLabel = new Map(dashboard.copierPnl.map((p) => [p.accountLabel, p]));
+
+                  const rows = dashboard.subscribers.map((s) => {
+                    const pnl = pnlByLabel.get(s.accountLabel);
+                    const unrealised = s.currentPnl ?? 0;
+                    const realised   = pnl?.totalPnl ?? 0;
+                    const totalGain  = unrealised + realised;
+                    const acctSize   = s.allocatedAmount ?? s.maxAmount ?? 0;
+                    const gainPct    = acctSize > 0 ? (totalGain / acctSize) * 100 : null;
+                    return {
+                      ...s,
+                      unrealised, realised, totalGain, acctSize, gainPct,
+                      orders:    pnl?.tradeCount ?? 0,
+                      won:       pnl?.winCount   ?? 0,
+                      failed:    pnl?.failCount  ?? 0,
+                    };
+                  });
+
+                  const totalAum     = rows.reduce((s, r) => s + r.acctSize, 0);
+                  const totalGainAll = rows.reduce((s, r) => s + r.totalGain, 0);
+                  const avgGainPct   = rows.filter((r) => r.gainPct != null).length > 0
+                    ? rows.reduce((s, r) => s + (r.gainPct ?? 0), 0) /
+                      rows.filter((r) => r.gainPct != null).length
+                    : 0;
+
+                  const totalExecuted = rows.reduce((s, r) => s + r.orders, 0);
+                  const totalFailed   = rows.reduce((s, r) => s + r.failed, 0);
+
+                  const headerCards = [
+                    {
+                      label: "TOTAL COPIERS",
+                      main:  `${dashboard.subscribers.length}`,
+                      sub:   "Active accounts",
+                      color: "text-foreground",
+                      big:   true,
+                    },
+                    {
+                      label: "TOTAL AUM",
+                      main:  totalAum > 0 ? `${totalAum.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—",
+                      sub:   "Combined capital",
+                      color: "text-primary",
+                      big:   false,
+                    },
+                    {
+                      label: "TOTAL GAIN ($)",
+                      main:  totalGainAll !== 0
+                        ? `${totalGainAll >= 0 ? "+" : ""}${Math.abs(totalGainAll).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                        : "—",
+                      sub:   "Across all accounts",
+                      color: totalGainAll >= 0 ? "text-green-400" : "text-red-400",
+                      big:   false,
+                    },
+                    {
+                      label: "AVG GAIN %",
+                      main:  `${avgGainPct >= 0 ? "+" : ""}${avgGainPct.toFixed(2)}%`,
+                      sub:   "Per account avg",
+                      color: avgGainPct >= 0 ? "text-green-400" : "text-red-400",
+                      big:   false,
+                    },
+                  ];
+
+                  if (rows.length === 0) return (
+                    <div className="rounded-xl border border-dashed border-border py-10 text-center text-muted-foreground">
+                      <Users className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm font-medium">No copiers yet</p>
+                      <p className="text-xs mt-1">Share your trader profile to attract followers.</p>
+                    </div>
+                  );
+
+                  return (
                     <div className="rounded-xl border border-border bg-card overflow-hidden">
-                      <div className="px-4 py-3 border-b border-border/40">
-                        <h3 className="text-sm font-semibold flex items-center gap-2">
-                          <Users className="h-4 w-4 text-primary" />
-                          Active Copiers
-                          <Badge variant="secondary">{dashboard.subscribers.length}</Badge>
-                        </h3>
+                      {/* 4-card header */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/40 border-b border-border/40">
+                        {headerCards.map((c) => (
+                          <div key={c.label} className="px-5 py-4">
+                            <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">{c.label}</p>
+                            <p className={`text-2xl font-black tabular-nums ${c.color}`}>{c.main}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{c.sub}</p>
+                          </div>
+                        ))}
                       </div>
+
+                      {/* Traders table */}
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
-                          <thead className="bg-secondary/30">
-                            <tr className="text-muted-foreground">
-                              <th className="text-left px-4 py-2 font-medium">Member</th>
-                              <th className="text-left px-4 py-2 font-medium">Account</th>
-                              <th className="text-right px-4 py-2 font-medium">Capital</th>
-                              <th className="text-right px-4 py-2 font-medium">Lot ×</th>
-                              <th className="text-right px-4 py-2 font-medium">P&amp;L</th>
-                              <th className="text-center px-4 py-2 font-medium">Status</th>
-                              <th className="text-right px-4 py-2 font-medium">Since</th>
+                          <thead className="bg-secondary/30 border-b border-border/40">
+                            <tr className="text-muted-foreground uppercase text-[10px] tracking-wide">
+                              <th className="text-left px-4 py-2.5 font-semibold">Account</th>
+                              <th className="text-left px-4 py-2.5 font-semibold">Broker</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Account Size</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Unrealised P&amp;L</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Realised P&amp;L</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Total Gain</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Gain %</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Orders</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Won</th>
+                              <th className="text-right px-4 py-2.5 font-semibold">Failed</th>
+                              <th className="text-center px-4 py-2.5 font-semibold">Status</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {dashboard.subscribers.map((s) => (
-                              <tr key={s.subId} className="border-t border-border/30">
-                                <td className="px-4 py-2.5 font-medium">{s.displayName}</td>
-                                <td className="px-4 py-2.5">
-                                  <div className="flex items-center gap-1.5">
-                                    {acctBadge(s.accountType)}
-                                    <span className="truncate max-w-[120px]">{s.accountLabel}</span>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono">
-                                  {s.allocatedAmount != null
-                                    ? <span className="font-semibold">${s.allocatedAmount.toFixed(2)}</span>
-                                    : s.maxAmount != null
-                                      ? <span className="font-semibold">${s.maxAmount.toFixed(2)}</span>
-                                      : <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono">{s.lotMultiplier}×</td>
-                                <td className="px-4 py-2.5 text-right font-mono font-semibold">
-                                  {s.currentPnl != null
-                                    ? <span className={s.currentPnl >= 0 ? "text-green-600" : "text-red-500"}>{s.currentPnl >= 0 ? "+" : ""}${s.currentPnl.toFixed(2)}</span>
-                                    : <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="px-4 py-2.5 text-center">
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>
-                                    {s.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-2.5 text-right text-muted-foreground">{new Date(s.since).toLocaleDateString()}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Per-account performance */}
-                    {dashboard.copierPnl.length > 0 && (
-                      <div className="rounded-xl border border-border bg-card overflow-hidden">
-                        <div className="px-4 py-3 border-b border-border/40">
-                          <h3 className="text-sm font-semibold flex items-center gap-2">
-                            <TrendingUp className="h-4 w-4 text-primary" />
-                            Account Performance
-                          </h3>
-                        </div>
-                        <table className="w-full text-xs">
-                          <thead className="bg-secondary/30">
-                            <tr className="text-muted-foreground">
-                              <th className="text-left px-4 py-2 font-medium">Account</th>
-                              <th className="text-right px-4 py-2 font-medium">Trades</th>
-                              <th className="text-right px-4 py-2 font-medium">Wins</th>
-                              <th className="text-right px-4 py-2 font-medium">Win Rate</th>
-                              <th className="text-right px-4 py-2 font-medium">Total P&amp;L</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {dashboard.copierPnl.map((c) => {
-                              const winPct = c.tradeCount > 0 ? (c.winCount / c.tradeCount) * 100 : 0;
+                            {rows.map((r) => {
+                              const initials = r.displayName
+                                .split(" ").slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
                               return (
-                                <tr key={c.copyAccountId} className="border-t border-border/30">
-                                  <td className="px-4 py-2.5">
-                                    <div className="flex items-center gap-1.5">
-                                      {acctBadge(c.accountType)}
-                                      <span className="font-medium">{c.accountLabel}</span>
+                                <tr key={r.subId} className="border-t border-border/30 hover:bg-secondary/10 transition-colors">
+                                  {/* Account */}
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">
+                                        {initials || "?"}
+                                      </span>
+                                      <div>
+                                        <div className="font-semibold text-foreground">{r.displayName}</div>
+                                        <div className="text-[10px] text-muted-foreground">Live Account</div>
+                                      </div>
                                     </div>
                                   </td>
-                                  <td className="px-4 py-2.5 text-right">{c.tradeCount}</td>
-                                  <td className="px-4 py-2.5 text-right">{c.winCount}</td>
-                                  <td className="px-4 py-2.5 text-right">
-                                    <span className={winPct >= 50 ? "text-green-600 font-semibold" : "text-red-500"}>{winPct.toFixed(0)}%</span>
+                                  {/* Broker */}
+                                  <td className="px-4 py-3">
+                                    {acctBadge(r.accountType) ?? <span className="text-muted-foreground">—</span>}
                                   </td>
-                                  <td className="px-4 py-2.5 text-right font-mono font-semibold">
-                                    {c.totalPnl != null
-                                      ? <span className={c.totalPnl >= 0 ? "text-green-600" : "text-red-500"}>{c.totalPnl >= 0 ? "+" : ""}${c.totalPnl.toFixed(2)}</span>
-                                      : <span className="text-muted-foreground">—</span>}
+                                  {/* Account Size */}
+                                  <td className="px-4 py-3 text-right font-mono font-semibold">
+                                    {r.acctSize > 0 ? `${r.acctSize.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                                  </td>
+                                  {/* Unrealised P&L */}
+                                  <td className={`px-4 py-3 text-right font-mono font-semibold ${r.unrealised >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                    {r.unrealised !== 0
+                                      ? `${r.unrealised >= 0 ? "+" : ""}${Math.abs(r.unrealised).toFixed(2)}`
+                                      : <span className="text-muted-foreground">$0.00</span>}
+                                  </td>
+                                  {/* Realised P&L */}
+                                  <td className={`px-4 py-3 text-right font-mono font-semibold ${r.realised >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                    {r.realised !== 0
+                                      ? `${r.realised >= 0 ? "+" : ""}${Math.abs(r.realised).toFixed(2)}`
+                                      : <span className="text-muted-foreground">$0.00</span>}
+                                  </td>
+                                  {/* Total Gain */}
+                                  <td className={`px-4 py-3 text-right font-mono font-bold ${r.totalGain >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                    {r.totalGain !== 0
+                                      ? `${r.totalGain >= 0 ? "+" : ""}${Math.abs(r.totalGain).toFixed(2)}`
+                                      : <span className="text-muted-foreground">$0.00</span>}
+                                  </td>
+                                  {/* Gain % */}
+                                  <td className={`px-4 py-3 text-right font-mono font-semibold ${(r.gainPct ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                    {r.gainPct != null
+                                      ? `${r.gainPct >= 0 ? "+" : ""}${r.gainPct.toFixed(2)}%`
+                                      : "—"}
+                                  </td>
+                                  {/* Orders */}
+                                  <td className="px-4 py-3 text-right font-semibold">{r.orders}</td>
+                                  {/* Won */}
+                                  <td className="px-4 py-3 text-right font-semibold text-green-500">{r.won}</td>
+                                  {/* Failed */}
+                                  <td className="px-4 py-3 text-right font-semibold text-red-500">{r.failed}</td>
+                                  {/* Status */}
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                                      r.status === "active"
+                                        ? "bg-green-500/10 text-green-400 border-green-500/30"
+                                        : "bg-secondary text-muted-foreground border-border"
+                                    }`}>
+                                      {r.status === "active" ? "● Active" : r.status}
+                                    </span>
                                   </td>
                                 </tr>
                               );
                             })}
                           </tbody>
-                          {dashboard.copierPnl.some((c) => c.totalPnl != null) && (() => {
-                            const grandTotal = dashboard.copierPnl.reduce((sum, c) => sum + (c.totalPnl ?? 0), 0);
-                            return (
-                              <tfoot>
-                                <tr className="border-t border-border/40 bg-secondary/20">
-                                  <td className="px-4 py-2 text-xs text-muted-foreground font-semibold" colSpan={4}>Grand total</td>
-                                  <td className={`px-4 py-2 text-right text-xs font-bold ${grandTotal >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                    {grandTotal >= 0 ? "+" : ""}${grandTotal.toFixed(2)}
-                                  </td>
-                                </tr>
-                              </tfoot>
-                            );
-                          })()}
                         </table>
                       </div>
-                    )}
-                  </>
-                )}
+
+                      {/* Footer summary */}
+                      <div className="px-4 py-2.5 border-t border-border/40 bg-secondary/10 flex items-center gap-6 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded bg-green-500/15 flex items-center justify-center">
+                            <CheckCircle2 className="h-2.5 w-2.5 text-green-500" />
+                          </span>
+                          Executed <span className="font-bold text-foreground ml-1">{totalExecuted}</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded bg-red-500/15 flex items-center justify-center">
+                            <XCircle className="h-2.5 w-2.5 text-red-500" />
+                          </span>
+                          Failed <span className="font-bold text-foreground ml-1">{totalFailed}</span>
+                        </span>
+                        <span className="ml-auto flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded bg-secondary flex items-center justify-center text-[8px] font-bold text-foreground">{totalExecuted + totalFailed}</span>
+                          Total Orders <span className="font-bold text-foreground ml-1">{totalExecuted + totalFailed}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )
           )}

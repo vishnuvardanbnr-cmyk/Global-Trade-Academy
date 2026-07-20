@@ -884,6 +884,21 @@ router.get("/trader-dashboard", async (req, res): Promise<void> => {
       ))
       .groupBy(copyTradesTable.copyAccountId, copyAccountsTable.label, copyAccountsTable.type) : [];
 
+    // ── 5b. Failed trade counts per copier account ────────────────
+    const failRows = sigIds.length > 0 ? await db
+      .select({
+        copyAccountId: copyTradesTable.copyAccountId,
+        failCount:     sql<string>`COUNT(*)`.as("fail_count"),
+      })
+      .from(copyTradesTable)
+      .where(and(
+        inArray(copyTradesTable.signalId, sigIds),
+        eq(copyTradesTable.status, "failed"),
+      ))
+      .groupBy(copyTradesTable.copyAccountId) : [];
+
+    const failMap = new Map(failRows.map((r) => [r.copyAccountId, r.failCount ? parseInt(r.failCount) : 0]));
+
     // ── 6. Subscribers list ──────────────────────────────────────
     const subsRows = await db
       .select({
@@ -933,6 +948,7 @@ router.get("/trader-dashboard", async (req, res): Promise<void> => {
         totalPnl:      r.totalPnl     ? parseFloat(r.totalPnl)     : null,
         tradeCount:    r.tradeCount   ? parseInt(r.tradeCount)      : 0,
         winCount:      r.winCount     ? parseInt(r.winCount)        : 0,
+        failCount:     failMap.get(r.copyAccountId) ?? 0,
       })),
       subscribers: subsRows.map((s) => ({
         subId:           s.subId,
