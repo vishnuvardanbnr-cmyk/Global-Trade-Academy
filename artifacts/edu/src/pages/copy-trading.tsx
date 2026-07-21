@@ -1351,15 +1351,7 @@ function CopyTradingInner() {
 
   useEffect(() => { load(); }, []);
 
-  /* Fetch the current user's own trader profile (any role) */
-  useEffect(() => {
-    fetch("/api/my-trader")
-      .then((r) => r.ok ? r.json() : null)
-      .then((t) => { if (t) setMyTrader(t as Trader); })
-      .catch(() => {});
-  }, []);
-
-  /* Fetch open positions + dashboard whenever myTrader is resolved */
+  /* Open positions for copier view */
   const loadOpenPositions = useCallback(async (traderId: number) => {
     try {
       const r = await fetch(`/api/open-positions?traderId=${traderId}`);
@@ -1367,23 +1359,9 @@ function CopyTradingInner() {
     } catch { /* ignore */ }
   }, []);
 
-  const loadDashboard = useCallback(async (traderId: number) => {
-    try {
-      const [dashRes, tradesRes] = await Promise.all([
-        fetch(`/api/trader-dashboard?traderId=${traderId}`),
-        fetch(`/api/trader-copier-trades?traderId=${traderId}`),
-      ]);
-      if (dashRes.ok)   setDashboard(await dashRes.json() as TraderDashboard);
-      if (tradesRes.ok) setCopierTrades(await tradesRes.json() as CopierTrade[]);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    if (myTrader) {
-      void loadOpenPositions(myTrader.id);
-      void loadDashboard(myTrader.id);
-    }
-  }, [myTrader, loadOpenPositions, loadDashboard]);
+  /* Stub — analytics panel now lives in trader-dashboard.tsx */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const loadDashboard = useCallback(async (_traderId: number) => {}, []);
 
   /* Lazy-load copier details for a signal when expanded */
   const loadSignalCopiers = async (signalId: number) => {
