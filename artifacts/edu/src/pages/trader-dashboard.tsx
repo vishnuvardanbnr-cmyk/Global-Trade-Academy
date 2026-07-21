@@ -197,6 +197,12 @@ export default function TraderDashboard() {
             riskScore: data.riskScore?.toString() ?? "",
           });
           void loadDashboard(data.id);
+          // Load signals eagerly so count badge is visible immediately
+          setHistLoading(true);
+          fetch(`/api/trade-signals?traderId=${data.id}`)
+            .then((r) => r.json()).then(setSignals)
+            .catch(() => {})
+            .finally(() => setHistLoading(false));
         }
       })
       .catch(() => toast({ title: "Failed to load trader profile", variant: "destructive" }))
@@ -266,7 +272,7 @@ export default function TraderDashboard() {
 
   useEffect(() => {
     if (tab === "master" && trader) loadMasterAccounts();
-    if (tab === "history" && trader) loadSignals();
+    if (tab === "history" && trader && signals.length === 0) loadSignals();
     if ((tab === "execute" || tab === "positions") && trader) void loadOpenPositions(trader.id);
   }, [tab, trader]);
 
@@ -383,13 +389,13 @@ export default function TraderDashboard() {
   );
 
   const tabs = [
-    { id: "profile" as const,        label: "Profile",          icon: Settings2 },
-    { id: "master" as const,         label: "Master Account",   icon: Server },
-    { id: "execute" as const,        label: "Execute Trade",    icon: Zap },
-    { id: "positions" as const,      label: "Open Positions",   icon: Activity },
-    { id: "history" as const,        label: "Signal History",   icon: History },
-    { id: "copiers" as const,        label: "Copiers",          icon: Users },
-    { id: "copied-trades" as const,  label: "Copied Trades",    icon: TrendingUp },
+    { id: "profile" as const,        label: "Profile",          icon: Settings2,  count: null as number | null },
+    { id: "master" as const,         label: "Master Account",   icon: Server,      count: null },
+    { id: "execute" as const,        label: "Execute Trade",    icon: Zap,         count: null },
+    { id: "positions" as const,      label: "Open Positions",   icon: Activity,    count: openPositions.length > 0 ? openPositions.length : null },
+    { id: "history" as const,        label: "Signal History",   icon: History,     count: signals.length > 0 ? signals.length : null },
+    { id: "copiers" as const,        label: "Copiers",          icon: Users,       count: dashboard ? dashboard.subscribers.length : null },
+    { id: "copied-trades" as const,  label: "Copied Trades",    icon: TrendingUp,  count: copierTrades.length > 0 ? copierTrades.length : null },
   ];
 
   return (
@@ -497,20 +503,28 @@ export default function TraderDashboard() {
         })()}
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 bg-muted/50 rounded-xl w-fit flex-wrap">
+        <div className="flex gap-1 p-1 bg-muted/50 rounded-xl overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0",
                 tab === t.id
                   ? "bg-white shadow-sm text-foreground dark:bg-card"
-                  : "text-muted-foreground hover:text-foreground",
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/50",
               )}
             >
               <t.icon className="h-3.5 w-3.5" />
               {t.label}
+              {t.count !== null && t.count > 0 && (
+                <span className={cn(
+                  "text-[9px] px-1.5 py-0.5 rounded-full font-bold",
+                  tab === t.id ? "bg-primary/10 text-primary" : "bg-border text-muted-foreground"
+                )}>
+                  {t.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
