@@ -1351,14 +1351,13 @@ function CopyTradingInner() {
 
   useEffect(() => { load(); }, []);
 
-  /* Fetch the instructor's own trader profile for quick-trade */
+  /* Fetch the current user's own trader profile (any role) */
   useEffect(() => {
-    if (!isInstructor) return;
     fetch("/api/my-trader")
       .then((r) => r.ok ? r.json() : null)
       .then((t) => { if (t) setMyTrader(t as Trader); })
       .catch(() => {});
-  }, [isInstructor]);
+  }, []);
 
   /* Fetch open positions + dashboard whenever myTrader is resolved */
   const loadOpenPositions = useCallback(async (traderId: number) => {
@@ -1475,8 +1474,8 @@ function CopyTradingInner() {
 
   return (
     <div className="space-y-8">
-      {/* ── Instructor panel — tabbed layout ── */}
-      {isInstructor && myTrader && (
+      {/* ── Trader panel — tabbed layout ── */}
+      {myTrader && (
         <div className="space-y-4">
           {/* Stats row — always visible */}
           {dashboard && (
@@ -2320,7 +2319,7 @@ function CopyTradingInner() {
       )}
 
       {/* No trader profile message */}
-      {isInstructor && !myTrader && !loading && (
+      {!myTrader && !loading && (
         <div className="rounded-xl border border-dashed border-primary/30 p-4 text-center text-sm text-muted-foreground bg-primary/5">
           <Crosshair className="h-5 w-5 mx-auto mb-1.5 opacity-40" />
           <p>No trader profile linked to your account. Create one to enable direct trade execution.</p>
@@ -2396,7 +2395,7 @@ function CopyTradingInner() {
       </section>
 
       {/* ── Plan / Copier Usage Banner ── */}
-      {!isInstructor && (() => {
+      {!myTrader && (() => {
         const plan = user?.plan ?? "free";
         const limits: Record<string, number> = { free: 1, pro: 3, premium: -1, elite: -1 };
         const limit = limits[plan] ?? 1;
@@ -2487,8 +2486,8 @@ function CopyTradingInner() {
         </section>
       )}
 
-      {/* ── Signal History (non-instructor only; instructors see this in their tab) ── */}
-      {!isInstructor && signals.length > 0 && (
+      {/* ── Signal History (non-trader only; traders see this in their tab) ── */}
+      {!myTrader && signals.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-base font-semibold flex items-center gap-2">
             <Zap className="h-4 w-4 text-yellow-500" />Signal History
@@ -2503,7 +2502,7 @@ function CopyTradingInner() {
                   {/* Signal row */}
                   <button
                     className="w-full text-left px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-secondary/20 transition-colors"
-                    onClick={() => isInstructor ? toggleSignalExpand(sig.id) : undefined}
+                    onClick={() => myTrader ? toggleSignalExpand(sig.id) : undefined}
                   >
                     <ActionBadge action={sig.action} />
                     <span className="font-bold font-mono text-sm">{sig.symbol}</span>
@@ -2516,7 +2515,7 @@ function CopyTradingInner() {
                     <div className="ml-auto flex items-center gap-2 shrink-0">
                       <StatusIcon status={sig.status} />
                       <span className="text-[11px] text-muted-foreground">{new Date(sig.createdAt).toLocaleString()}</span>
-                      {isInstructor && (
+                      {myTrader && (
                         isExpanded
                           ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
                           : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -2524,8 +2523,8 @@ function CopyTradingInner() {
                     </div>
                   </button>
 
-                  {/* Copier detail panel (instructor only, expanded) */}
-                  {isInstructor && isExpanded && (
+                  {/* Copier detail panel (trader only, expanded) */}
+                  {myTrader && isExpanded && (
                     <div className="border-t border-border/30 bg-secondary/10">
                       {!copiers ? (
                         <div className="flex items-center gap-2 px-6 py-3 text-xs text-muted-foreground">
@@ -2617,8 +2616,8 @@ function CopyTradingInner() {
         </section>
       )}
 
-      {/* ── Execution History (non-instructor only; instructors see copied trades in their tab) ── */}
-      {!isInstructor && copyTrades.length > 0 && (
+      {/* ── Execution History (non-trader only; traders see copied trades in their tab) ── */}
+      {!myTrader && copyTrades.length > 0 && (
         <section className="space-y-3">
           <button className="flex items-center gap-2 text-base font-semibold hover:text-primary transition-colors"
             onClick={() => setShowHistory(!showHistory)}>
