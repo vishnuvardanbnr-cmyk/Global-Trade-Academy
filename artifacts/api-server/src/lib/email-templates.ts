@@ -36,7 +36,6 @@ function baseLayout(content: string, previewText = ""): string {
     .content-box { background: #0d1117; border: 1px solid #1f2937; border-radius: 10px; padding: 16px 20px; margin: 16px 0; }
     .content-box p { margin: 0; color: #d1d5db; }
     .otp-block { text-align: center; margin: 32px 0; }
-    .otp-code { display: inline-block; font-size: 44px; font-weight: 800; letter-spacing: 14px; color: #f9fafb; background: #0d1117; padding: 20px 32px; border-radius: 14px; border: 1px solid #1f2937; font-family: 'Courier New', Courier, monospace; text-indent: 14px; }
     .otp-timer { display: inline-block; margin-top: 12px; font-size: 12px; color: #6b7280; background: #1f2937; padding: 4px 12px; border-radius: 999px; }
     .security-notice { background: #0d1117; border: 1px solid #1f2937; border-left: 3px solid #374151; border-radius: 8px; padding: 14px 16px; margin-top: 24px; }
     .security-notice p { margin: 0; font-size: 12px; color: #4b5563; line-height: 1.5; }
@@ -165,13 +164,25 @@ export function liveClassReminderEmail(opts: {
   return baseLayout(content, `Live session "${opts.classTitle}" is starting soon`);
 }
 
+function otpDigits(code: string): string {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+      <tr>
+        ${code.split("").map((d) => `
+          <td style="padding:0 4px;">
+            <span style="display:inline-block;width:40px;height:52px;line-height:52px;text-align:center;background:#0d1117;border:1px solid #374151;border-radius:8px;font-size:28px;font-weight:800;color:#f9fafb;font-family:'Courier New',Courier,monospace;">${d}</span>
+          </td>`).join("")}
+      </tr>
+    </table>`;
+}
+
 export function otpEmail(opts: { name?: string; code: string }): string {
   const content = `
     <h2>Verify your email</h2>
     <p class="subtitle">Hi ${opts.name ? `<strong style="color:#e5e7eb">${opts.name}</strong>` : "there"} 👋 — Welcome to Bright Insight! Use the code below to verify your email address and complete registration.</p>
     <div class="otp-block">
-      <div class="otp-code">${opts.code}</div>
-      <div><span class="otp-timer">⏱ Expires in 10 minutes</span></div>
+      ${otpDigits(opts.code)}
+      <div style="margin-top:14px;"><span class="otp-timer">⏱ Expires in 10 minutes</span></div>
     </div>
     <p style="text-align:center;color:#6b7280;font-size:13px;">Enter this code in the sign-up screen to continue.</p>
     <hr class="divider" />
@@ -187,8 +198,8 @@ export function passwordResetEmail(opts: { name?: string; code: string }): strin
     <h2>Reset your password</h2>
     <p class="subtitle">Hi ${opts.name ? `<strong style="color:#e5e7eb">${opts.name}</strong>` : "there"} — we received a request to reset your Bright Insight password. Use the code below to proceed.</p>
     <div class="otp-block">
-      <div class="otp-code">${opts.code}</div>
-      <div><span class="otp-timer">⏱ Expires in 10 minutes</span></div>
+      ${otpDigits(opts.code)}
+      <div style="margin-top:14px;"><span class="otp-timer">⏱ Expires in 10 minutes</span></div>
     </div>
     <p style="text-align:center;color:#6b7280;font-size:13px;">Enter this code to set a new password.</p>
     <hr class="divider" />
