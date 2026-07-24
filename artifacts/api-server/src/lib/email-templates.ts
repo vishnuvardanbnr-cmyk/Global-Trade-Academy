@@ -169,8 +169,8 @@ function otpDigits(code: string): string {
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
       <tr>
         ${code.split("").map((d) => `
-          <td style="padding:0 4px;">
-            <span style="display:inline-block;width:40px;height:52px;line-height:52px;text-align:center;background:#0d1117;border:1px solid #374151;border-radius:8px;font-size:28px;font-weight:800;color:#f9fafb;font-family:'Courier New',Courier,monospace;">${d}</span>
+          <td style="padding:0 3px;">
+            <span style="display:inline-block;width:34px;height:44px;line-height:44px;text-align:center;background:#0d1117;border:1px solid #374151;border-radius:7px;font-size:22px;font-weight:800;color:#f9fafb;font-family:'Courier New',Courier,monospace;">${d}</span>
           </td>`).join("")}
       </tr>
     </table>`;
