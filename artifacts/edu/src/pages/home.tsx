@@ -209,6 +209,16 @@ export default function Home() {
   const [isMuted, setIsMuted] = useState(true);
   const [galleryIdx, setGalleryIdx] = useState(0);
 
+  // Stable ref callback — fires exactly once when the video element mounts
+  // (unlike inline arrow refs which re-fire on every render)
+  const videoRefCallback = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node) {
+      node.defaultMuted = true;
+      node.muted = true;
+    }
+  }, []);
+
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
       .then((r) => r.json())
@@ -222,10 +232,6 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  // Imperatively mute on mount — React's `muted` JSX prop is unreliable
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.muted = true;
-  }, []);
 
   const hero = lp.hero;
   const markets = lp.markets ?? DEFAULT_CONTENT.markets;
@@ -282,12 +288,12 @@ export default function Home() {
                   {embed.type === "video" ? (
                     <>
                       <video
-                        ref={videoRef}
+                        ref={videoRefCallback}
                         src={embed.src}
                         autoPlay
                         playsInline
                         loop
-                        onLoadedMetadata={(e) => { e.currentTarget.muted = true; setIsMuted(true); }}
+                        onLoadedMetadata={(e) => { e.currentTarget.muted = true; }}
                         className="w-full h-full object-contain"
                       />
                       {/* Mute / Unmute overlay — top-right corner, always visible */}
