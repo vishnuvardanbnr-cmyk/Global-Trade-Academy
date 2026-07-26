@@ -222,6 +222,11 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  // Imperatively mute on mount — React's `muted` JSX prop is unreliable
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = true;
+  }, []);
+
   const hero = lp.hero;
   const markets = lp.markets ?? DEFAULT_CONTENT.markets;
   const stats = lp.stats;
@@ -277,14 +282,12 @@ export default function Home() {
                   {embed.type === "video" ? (
                     <>
                       <video
-                        ref={(el) => {
-                          (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
-                          if (el) { el.muted = true; }
-                        }}
+                        ref={videoRef}
                         src={embed.src}
                         autoPlay
                         playsInline
                         loop
+                        muted
                         className="w-full h-full object-contain"
                       />
                       {/* Mute / Unmute overlay — top-right corner, always visible */}
