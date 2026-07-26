@@ -56,7 +56,7 @@ const studentNav = [
   { href: "/trading", label: "Markets", icon: LineChart },
   { href: "/courses", label: "Academy", icon: BookOpen },
   { href: "/copy-trading", label: "Copy Trading", icon: TrendingUp },
-  { href: "/community", label: "Community", icon: MessageSquare },
+  { href: "/recordings", label: "Recordings", icon: Video },
 ];
 
 const instructorNav = [
@@ -79,6 +79,7 @@ const adminNav = [
   { href: "/admin", label: "Live Classes", icon: Video, tab: "live-classes" },
   { href: "/admin", label: "Enrollments", icon: GraduationCap, tab: "enrollments" },
   { href: "/admin", label: "Community", icon: MessageSquare, tab: "community" },
+  { href: "/admin", label: "Recordings", icon: Video, tab: "recordings" },
   { href: "/admin", label: "Events", icon: Calendar, tab: "events" },
   { href: "/admin", label: "Broadcast", icon: Megaphone, tab: "broadcast" },
   { href: "/admin", label: "Activity", icon: Activity, tab: "activity" },
@@ -177,9 +178,9 @@ function MobileBottomNav({
   if (location.startsWith("/courses/")) return null;
 
   const moreLinks = [
-    { href: "/copy-trading", label: "Copy Trading",  icon: TrendingUp },
-    { href: "/community",    label: "Community",     icon: MessageSquare },
-    { href: "/settings",     label: "Settings",      icon: Settings },
+    { href: "/copy-trading", label: "Copy Trading", icon: TrendingUp },
+    { href: "/recordings",   label: "Recordings",   icon: Video },
+    { href: "/settings",     label: "Settings",     icon: Settings },
   ];
 
   const isActive = (href: string) =>

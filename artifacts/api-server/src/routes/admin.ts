@@ -10,7 +10,7 @@ import {
   platformSubscriptionsTable, subscriptionPlansTable,
   tradersTable, copyAccountsTable, tradeSignalsTable,
   copySubscriptionsTable, masterPositionsTable, copyTradesTable,
-  managedVpsTable,
+  managedVpsTable, zoomRecordingsTable,
 } from "@workspace/db";
 import { eq, and, inArray, sql, desc, gte, not, asc } from "drizzle-orm";
 import { notifyUsers } from "../lib/notify";
@@ -1574,6 +1574,68 @@ router.get("/admin/trading/positions", async (req, res): Promise<void> => {
     })));
   } catch (err) {
     req.log.error({ err }, "admin trading positions");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   ZOOM RECORDINGS
+══════════════════════════════════════════════════════════════════ */
+
+/* GET /admin/zoom-recordings — list all (admin only) */
+router.get("/admin/zoom-recordings", async (req, res): Promise<void> => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const user = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId)).limit(1).then(r => r[0]);
+    if (!user || user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
+    const recordings = await db.select().from(zoomRecordingsTable).orderBy(desc(zoomRecordingsTable.createdAt));
+    res.json(recordings);
+  } catch (err) {
+    req.log.error({ err }, "Error listing zoom recordings");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /admin/zoom-recordings — create */
+router.post("/admin/zoom-recordings", async (req, res): Promise<void> => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const user = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId)).limit(1).then(r => r[0]);
+    if (!user || user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
+    const { title, description, videoUrl, thumbnailUrl, recordedAt, isPublished } = req.body as Record<string, string | boolean | undefined>;
+    if (!title || !(title as string).trim() || !videoUrl || !(videoUrl as string).trim()) {
+      res.status(400).json({ error: "title and videoUrl required" }); return;
+    }
+    const [rec] = await db.insert(zoomRecordingsTable).values({
+      title: (title as string).trim(),
+      description: description ? (description as string).trim() || null : null,
+      videoUrl: (videoUrl as string).trim(),
+      thumbnailUrl: thumbnailUrl ? (thumbnailUrl as string).trim() || null : null,
+      recordedAt: recordedAt ? new Date(recordedAt as string) : null,
+      isPublished: isPublished !== false,
+    }).returning();
+    res.json(rec);
+  } catch (err) {
+    req.log.error({ err }, "Error creating zoom recording");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* DELETE /admin/zoom-recordings/:id */
+router.delete("/admin/zoom-recordings/:id", async (req, res): Promise<void> => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const user = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId)).limit(1).then(r => r[0]);
+    if (!user || user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.delete(zoomRecordingsTable).where(eq(zoomRecordingsTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting zoom recording");
     res.status(500).json({ error: "Internal server error" });
   }
 });

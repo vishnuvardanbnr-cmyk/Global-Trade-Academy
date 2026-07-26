@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -6,6 +6,7 @@ import {
   ArrowRight, BarChart3, BookOpen, Globe2, ShieldCheck,
   TrendingUp, Star, Users, CheckCircle2, PlayCircle, Award,
   Facebook, Instagram, Youtube, Twitter, Linkedin, X,
+  Volume2, VolumeX,
 } from "lucide-react";
 
 type GalleryItem = { url: string; caption: string };
@@ -159,9 +160,9 @@ const DEFAULT_CONTENT: LandingContent = {
 function getEmbedUrl(url: string): { type: "iframe" | "video"; src: string } | null {
   if (!url || !url.trim()) return null;
   const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-  if (ytMatch) return { type: "iframe", src: `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1` };
+  if (ytMatch) return { type: "iframe", src: `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1&mute=1&autoplay=1` };
   const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-  if (vimeoMatch) return { type: "iframe", src: `https://player.vimeo.com/video/${vimeoMatch[1]}` };
+  if (vimeoMatch) return { type: "iframe", src: `https://player.vimeo.com/video/${vimeoMatch[1]}?muted=1&autoplay=1` };
   if (/\.(mp4|webm|ogg)(\?.*)?$/i.test(url)) return { type: "video", src: url };
   return { type: "iframe", src: url };
 }
@@ -204,6 +205,8 @@ export default function Home() {
   const [legalModal, setLegalModal] = useState<"privacy" | "terms" | "support" | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isMuted, setIsMuted] = useState(true);
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -269,9 +272,30 @@ export default function Home() {
               const embed = getEmbedUrl(hero.demoVideoUrl!);
               if (!embed) return null;
               return (
-                <div id="demo-video" className="mb-10 rounded-2xl overflow-hidden shadow-2xl border border-border/60 max-w-3xl mx-auto aspect-video bg-black">
+                <div id="demo-video" className="mb-10 rounded-2xl overflow-hidden shadow-2xl border border-border/60 max-w-3xl mx-auto aspect-video bg-black relative">
                   {embed.type === "video" ? (
-                    <video src={embed.src} controls className="w-full h-full object-contain" />
+                    <>
+                      <video
+                        ref={videoRef}
+                        src={embed.src}
+                        controls
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-contain"
+                      />
+                      <button
+                        onClick={() => {
+                          const next = !isMuted;
+                          if (videoRef.current) videoRef.current.muted = next;
+                          setIsMuted(next);
+                        }}
+                        className="absolute bottom-14 right-3 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-colors"
+                        title={isMuted ? "Unmute" : "Mute"}
+                      >
+                        {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                      </button>
+                    </>
                   ) : (
                     <iframe
                       src={embed.src}

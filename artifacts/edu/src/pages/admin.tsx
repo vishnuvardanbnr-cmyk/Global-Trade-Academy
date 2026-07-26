@@ -4153,6 +4153,9 @@ export default function AdminPanel() {
           <TabsTrigger value="trading" className="flex items-center gap-1.5">
             <TrendingUp className="h-3.5 w-3.5" />Trading
           </TabsTrigger>
+          <TabsTrigger value="recordings" className="flex items-center gap-1.5">
+            <Video className="h-3.5 w-3.5" />Recordings
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-6"><OverviewTab /></TabsContent>
@@ -4170,7 +4173,152 @@ export default function AdminPanel() {
         <TabsContent value="livekit" className="mt-6"><LiveKitAccountsTab /></TabsContent>
         <TabsContent value="subscriptions" className="mt-6"><SubscriptionsTab /></TabsContent>
         <TabsContent value="trading" className="mt-6"><TradingTab /></TabsContent>
+        <TabsContent value="recordings" className="mt-6"><ZoomRecordingsTab /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
+   ZOOM RECORDINGS TAB
+════════════════════════════════════════════ */
+type ZoomRec = {
+  id: number; title: string; description: string | null;
+  videoUrl: string; thumbnailUrl: string | null;
+  recordedAt: string | null; isPublished: boolean; createdAt: string;
+};
+
+function ZoomRecordingsTab() {
+  const { toast } = useToast();
+  const [recordings, setRecordings] = useState<ZoomRec[]>([]);
+  const [rLoading, setRLoading] = useState(true);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [recordedAt, setRecordedAt] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setRLoading(true);
+    try {
+      const r = await fetch("/api/admin/zoom-recordings");
+      if (r.ok) setRecordings(await r.json() as ZoomRec[]);
+    } finally { setRLoading(false); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const add = async () => {
+    if (!title.trim() || !videoUrl.trim()) {
+      toast({ title: "Title and Video URL required", variant: "destructive" }); return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch("/api/admin/zoom-recordings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || null,
+          videoUrl: videoUrl.trim(),
+          recordedAt: recordedAt || null,
+        }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      const rec = await r.json() as ZoomRec;
+      setRecordings(prev => [rec, ...prev]);
+      setTitle(""); setDescription(""); setVideoUrl(""); setRecordedAt("");
+      toast({ title: "Recording added!" });
+    } catch { toast({ title: "Failed to add recording", variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async (id: number) => {
+    if (!confirm("Delete this recording?")) return;
+    try {
+      await fetch(`/api/admin/zoom-recordings/${id}`, { method: "DELETE" });
+      setRecordings(prev => prev.filter(r => r.id !== id));
+      toast({ title: "Recording deleted" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Add Recording */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Video className="h-4 w-4" />Add Zoom Recording
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Title *</label>
+              <Input placeholder="e.g. Session 1 — Forex Basics" value={title} onChange={e => setTitle(e.target.value)} className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Recorded Date</label>
+              <Input type="date" value={recordedAt} onChange={e => setRecordedAt(e.target.value)} className="h-8 text-sm" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Video URL * (YouTube, Vimeo, Zoom, or direct link)</label>
+            <Input placeholder="https://youtube.com/watch?v=..." value={videoUrl} onChange={e => setVideoUrl(e.target.value)} className="h-8 text-sm" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Description (optional)</label>
+            <Textarea placeholder="Brief description of this session..." value={description} onChange={e => setDescription(e.target.value)} className="text-sm resize-none" rows={2} />
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={add} disabled={saving || !title.trim() || !videoUrl.trim()}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />{saving ? "Adding…" : "Add Recording"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* List */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            Recordings
+            <Badge variant="secondary" className="text-xs">{recordings.length}</Badge>
+            <Button variant="outline" size="sm" className="ml-auto h-7 text-xs" onClick={load} disabled={rLoading}>
+              {rLoading ? "Loading…" : "Refresh"}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {rLoading ? (
+            <div className="space-y-2">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
+          ) : recordings.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">No recordings yet. Add one above.</p>
+          ) : (
+            <div className="space-y-2">
+              {recordings.map(r => (
+                <div key={r.id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{r.title}</p>
+                    {r.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{r.description}</p>}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <a href={r.videoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1 truncate max-w-[280px]">
+                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />{r.videoUrl}
+                      </a>
+                      {r.recordedAt && (
+                        <span className="text-[10px] text-muted-foreground shrink-0">· {new Date(r.recordedAt).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive hover:text-destructive shrink-0" onClick={() => remove(r.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

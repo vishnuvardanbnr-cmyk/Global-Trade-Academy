@@ -22,3 +22,4 @@ export * from "./livekit-accounts";
 export * from "./groups";
 export * from "./push-subscriptions";
 export * from "./managed-vps";
+export * from "./zoom-recordings";

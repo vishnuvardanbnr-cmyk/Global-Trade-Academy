@@ -7,7 +7,7 @@ import {
   copyAccountsTable, tradeSignalsTable, copyTradesTable,
   masterPositionsTable, usersTable,
   platformSubscriptionsTable, subscriptionPlansTable,
-  siteSettingsTable,
+  siteSettingsTable, zoomRecordingsTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, gte, count, inArray, avg } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encrypt";
@@ -188,6 +188,78 @@ router.get("/traders/:traderId", async (req, res): Promise<void> => {
   }
 });
 
+/* GET /traders/:traderId/equity — equity curve + stats for any logged-in user */
+router.get("/traders/:traderId/equity", async (req, res): Promise<void> => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const traderId = parseInt(req.params.traderId);
+    if (isNaN(traderId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const trader = await db.select().from(tradersTable).where(eq(tradersTable.id, traderId)).limit(1).then(r => r[0]);
+    if (!trader) { res.status(404).json({ error: "Trader not found" }); return; }
+
+    const allSigs = await db.select({
+      id:        tradeSignalsTable.id,
+      symbol:    tradeSignalsTable.symbol,
+      action:    tradeSignalsTable.action,
+      price:     tradeSignalsTable.price,
+      createdAt: tradeSignalsTable.createdAt,
+    }).from(tradeSignalsTable)
+      .where(and(eq(tradeSignalsTable.traderId, traderId), eq(tradeSignalsTable.status, "executed")))
+      .orderBy(tradeSignalsTable.createdAt);
+
+    const sigIds = allSigs.map(s => s.id);
+    const fillRows = sigIds.length > 0 ? await db.select({
+      signalId: copyTradesTable.signalId,
+      avgPrice: avg(copyTradesTable.executedPrice).as("ap"),
+    }).from(copyTradesTable)
+      .where(and(inArray(copyTradesTable.signalId, sigIds), eq(copyTradesTable.status, "executed")))
+      .groupBy(copyTradesTable.signalId) : [];
+
+    const fillMap = new Map(fillRows.map(r => [r.signalId, r.avgPrice ? parseFloat(r.avgPrice as string) : null]));
+
+    type OpenEntry = { sig: (typeof allSigs)[0]; price: number };
+    const openStack = new Map<string, OpenEntry[]>();
+    const closedPositions: Array<{ closedAt: string; returnPct: number }> = [];
+
+    for (const sig of allSigs) {
+      const price = fillMap.get(sig.id) ?? (sig.price ? parseFloat(sig.price as string) : null);
+      if (sig.action === "buy" || sig.action === "sell") {
+        if (price == null) continue;
+        const st = openStack.get(sig.symbol) ?? [];
+        st.push({ sig, price });
+        openStack.set(sig.symbol, st);
+      } else if (sig.action === "close") {
+        const st = openStack.get(sig.symbol);
+        if (!st || st.length === 0) continue;
+        const open = st.shift()!;
+        if (price == null) continue;
+        const diff = open.sig.action === "buy" ? price - open.price : open.price - price;
+        closedPositions.push({
+          closedAt:  sig.createdAt as unknown as string,
+          returnPct: (diff / open.price) * 100,
+        });
+      }
+    }
+
+    res.json({
+      closedPositions,
+      stats: {
+        winRate:       trader.winRate       ? parseFloat(trader.winRate as string)       : 0,
+        roi:           trader.roi           ? parseFloat(trader.roi as string)            : 0,
+        totalTrades:   trader.totalTrades   ?? 0,
+        followers:     trader.followers     ?? 0,
+        maxDrawdown:   trader.maxDrawdown   ? parseFloat(trader.maxDrawdown as string)   : 0,
+        monthlyReturn: trader.monthlyReturn ? parseFloat(trader.monthlyReturn as string) : 0,
+      },
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error getting trader equity");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* My trader profile — returns the authenticated user's own trader row */
 router.get("/my-trader", async (req, res): Promise<void> => {
   try {
@@ -199,6 +271,21 @@ router.get("/my-trader", async (req, res): Promise<void> => {
     res.json(buildTraderResponse(trader));
   } catch (err) {
     req.log.error({ err }, "Error getting my trader");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /zoom-recordings — published recordings (any logged-in user) */
+router.get("/zoom-recordings", async (req, res): Promise<void> => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const recordings = await db.select().from(zoomRecordingsTable)
+      .where(eq(zoomRecordingsTable.isPublished, true))
+      .orderBy(desc(zoomRecordingsTable.createdAt));
+    res.json(recordings);
+  } catch (err) {
+    req.log.error({ err }, "Error listing zoom recordings");
     res.status(500).json({ error: "Internal server error" });
   }
 });
