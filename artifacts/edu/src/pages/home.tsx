@@ -287,7 +287,7 @@ export default function Home() {
                         autoPlay
                         playsInline
                         loop
-                        muted
+                        onLoadedMetadata={(e) => { e.currentTarget.muted = true; setIsMuted(true); }}
                         className="w-full h-full object-contain"
                       />
                       {/* Mute / Unmute overlay — top-right corner, always visible */}
