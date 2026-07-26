@@ -207,6 +207,7 @@ export default function Home() {
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(true);
+  const [galleryIdx, setGalleryIdx] = useState(0);
 
   useEffect(() => {
     fetch("/api/site-settings/landing_page")
@@ -276,24 +277,28 @@ export default function Home() {
                   {embed.type === "video" ? (
                     <>
                       <video
-                        ref={videoRef}
+                        ref={(el) => {
+                          (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
+                          if (el) { el.muted = true; }
+                        }}
                         src={embed.src}
-                        controls
                         autoPlay
                         playsInline
-                        muted
+                        loop
                         className="w-full h-full object-contain"
                       />
+                      {/* Mute / Unmute overlay — top-right corner, always visible */}
                       <button
                         onClick={() => {
                           const next = !isMuted;
                           if (videoRef.current) videoRef.current.muted = next;
                           setIsMuted(next);
                         }}
-                        className="absolute bottom-14 right-3 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-colors"
+                        className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-black/70 hover:bg-black/90 text-white text-xs font-medium rounded-full px-3 py-1.5 transition-colors backdrop-blur-sm"
                         title={isMuted ? "Unmute" : "Mute"}
                       >
-                        {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                        {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                        {isMuted ? "Unmute" : "Mute"}
                       </button>
                     </>
                   ) : (
@@ -474,34 +479,98 @@ export default function Home() {
 
 
 
-        {/* Gallery */}
+        {/* Gallery Slider */}
         {gallery.length > 0 && (
           <section className="py-24 bg-white">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6">
-              <div className="text-center mb-12">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6">
+              <div className="text-center mb-10">
                 <h2 className="text-4xl font-extrabold text-foreground mb-3">Gallery</h2>
                 <p className="text-lg text-muted-foreground">A glimpse into our trading community and events.</p>
               </div>
-              <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 space-y-4">
-                {gallery.map((img, i) => (
-                  <div
-                    key={i}
-                    className="break-inside-avoid rounded-2xl overflow-hidden border border-border shadow-sm cursor-pointer group relative"
-                    onClick={() => setLightbox(img)}
+
+              {/* Slider */}
+              <div className="relative group">
+                {/* Main image */}
+                <div
+                  className="overflow-hidden rounded-2xl border border-border shadow-xl bg-black cursor-pointer"
+                  style={{ height: "clamp(260px, 52vw, 560px)" }}
+                  onClick={() => setLightbox(gallery[galleryIdx])}
+                >
+                  <img
+                    key={galleryIdx}
+                    src={gallery[galleryIdx].url}
+                    alt={gallery[galleryIdx].caption || `Gallery ${galleryIdx + 1}`}
+                    className="w-full h-full object-contain transition-opacity duration-300"
+                  />
+                  {gallery[galleryIdx].caption && (
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-5 py-4 rounded-b-2xl">
+                      <p className="text-white text-sm font-medium">{gallery[galleryIdx].caption}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prev button */}
+                {gallery.length > 1 && (
+                  <button
+                    onClick={() => setGalleryIdx((i) => (i - 1 + gallery.length) % gallery.length)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-2.5 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                    aria-label="Previous"
                   >
-                    <img
-                      src={img.url}
-                      alt={img.caption || `Gallery ${i + 1}`}
-                      className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    {img.caption && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-                        <p className="text-white text-sm font-medium">{img.caption}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                  </button>
+                )}
+
+                {/* Next button */}
+                {gallery.length > 1 && (
+                  <button
+                    onClick={() => setGalleryIdx((i) => (i + 1) % gallery.length)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-2.5 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                    aria-label="Next"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+                  </button>
+                )}
+
+                {/* Counter badge */}
+                <div className="absolute top-3 left-3 bg-black/60 text-white text-xs font-medium rounded-full px-2.5 py-1 backdrop-blur-sm">
+                  {galleryIdx + 1} / {gallery.length}
+                </div>
               </div>
+
+              {/* Dot indicators */}
+              {gallery.length > 1 && (
+                <div className="flex justify-center gap-2 mt-5">
+                  {gallery.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setGalleryIdx(i)}
+                      className={`rounded-full transition-all duration-200 ${
+                        i === galleryIdx
+                          ? "bg-primary w-6 h-2.5"
+                          : "bg-border hover:bg-muted-foreground w-2.5 h-2.5"
+                      }`}
+                      aria-label={`Go to image ${i + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Thumbnail strip */}
+              {gallery.length > 1 && (
+                <div className="flex gap-2 mt-4 overflow-x-auto pb-1 justify-center flex-wrap">
+                  {gallery.map((img, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setGalleryIdx(i)}
+                      className={`shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all ${
+                        i === galleryIdx ? "border-primary ring-2 ring-primary/30" : "border-transparent opacity-60 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )}
