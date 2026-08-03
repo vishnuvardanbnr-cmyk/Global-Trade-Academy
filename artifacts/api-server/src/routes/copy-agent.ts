@@ -6,7 +6,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
-  copyAccountsTable, agentSignalQueueTable, copyTradesTable,
+  copyAccountsTable, agentSignalQueueTable, copyTradesTable, managedVpsTable,
 } from "@workspace/db";
 import { eq, and, lt, inArray } from "drizzle-orm";
 import { notifyUser } from "../lib/notify";
