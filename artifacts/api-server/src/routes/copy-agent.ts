@@ -591,18 +591,69 @@ router.get("/copy-agent/vps-status", async (req, res): Promise<void> => {
         copyAccountId: managedVpsTable.copyAccountId,
         status:        managedVpsTable.status,
         ipAddress:     managedVpsTable.ipAddress,
+        errorMessage:  managedVpsTable.errorMessage,
       })
       .from(managedVpsTable)
       .where(eq(managedVpsTable.userId, clerkId));
 
     // keyed by copyAccountId for easy lookup
-    const map: Record<number, { status: string; ipAddress: string | null }> = {};
+    const map: Record<number, { status: string; ipAddress: string | null; errorMessage: string | null }> = {};
     for (const row of rows) {
-      map[row.copyAccountId] = { status: row.status, ipAddress: row.ipAddress };
+      map[row.copyAccountId] = { status: row.status, ipAddress: row.ipAddress, errorMessage: row.errorMessage };
     }
     res.json(map);
   } catch (err) {
     req.log.error({ err }, "vps-status error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* ── POST /api/copy-agent/retry-vps/:copyAccountId ──────────────────
+   Clears the error record and re-triggers VPS provisioning.          */
+router.post("/copy-agent/retry-vps/:copyAccountId", async (req, res): Promise<void> => {
+  try {
+    const { getAuth } = await import("../lib/auth");
+    const { userId: clerkId } = getAuth(req);
+    if (!clerkId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    const copyAccountId = parseInt(req.params.copyAccountId);
+    if (isNaN(copyAccountId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const { copyAccountsTable } = await import("@workspace/db");
+    const account = await db.select().from(copyAccountsTable)
+      .where(and(eq(copyAccountsTable.id, copyAccountId), eq(copyAccountsTable.userId, clerkId)))
+      .limit(1).then((r) => r[0]);
+    if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+
+    // Only delete error records — no instance_id means no real VPS was created
+    await db.delete(managedVpsTable)
+      .where(and(
+        eq(managedVpsTable.copyAccountId, copyAccountId),
+        eq(managedVpsTable.status, "error"),
+      ));
+
+    // Re-trigger provisioning
+    const { provisionVps, provisionSafeVps } = await import("../lib/vps-manager");
+    if (account.executionMode === "safe") {
+      provisionSafeVps({
+        userId:      clerkId,
+        copyAccountId,
+        agentToken:  account.agentToken  ?? "",
+        mt5Login:    account.mt5Login    ?? "",
+        mt5Password: account.mt5Password ?? "",
+        mt5Server:   account.mt5Server   ?? "",
+      }).catch((err: unknown) => req.log.error({ err }, "VPS retry (safe) failed"));
+    } else {
+      provisionVps({
+        userId:       clerkId,
+        copyAccountId,
+        agentToken:   account.agentToken ?? "",
+      }).catch((err: unknown) => req.log.error({ err }, "VPS retry (agent) failed"));
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "retry-vps error");
     res.status(500).json({ error: "Server error" });
   }
 });

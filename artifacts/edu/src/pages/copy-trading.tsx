@@ -177,7 +177,9 @@ function DisclaimerModal({ onAccept, onDecline }: { onAccept: () => void; onDecl
 }
 
 /* ─── Managed VPS Status Card ────────────────────────────────────── */
-function ManagedVpsCard({ account }: { account: CopyAccount & { vpsStatus?: string; vpsIp?: string } }) {
+function ManagedVpsCard({ account, onRetry }: { account: CopyAccount & { vpsStatus?: string; vpsIp?: string; vpsError?: string | null }; onRetry?: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+
   const isAgentOnline = account.agentLastSeen
     ? (Date.now() - new Date(account.agentLastSeen).getTime()) < 15_000
     : false;
@@ -186,11 +188,21 @@ function ManagedVpsCard({ account }: { account: CopyAccount & { vpsStatus?: stri
 
   const statusUI: Record<string, { label: string; color: string; pulse: boolean }> = {
     provisioning: { label: "Provisioning VPS in Malaysia… (~2 min)", color: "text-yellow-600", pulse: true },
-    running:      { label: "VPS Running", color: "text-green-600", pulse: false },
-    error:        { label: "VPS Error", color: "text-red-600", pulse: false },
-    stopped:      { label: "VPS Stopped", color: "text-gray-500", pulse: false },
+    running:      { label: "VPS Running",  color: "text-green-600", pulse: false },
+    error:        { label: "VPS Error",    color: "text-red-600",   pulse: false },
+    stopped:      { label: "VPS Stopped",  color: "text-gray-500",  pulse: false },
   };
   const ui = statusUI[vpsStatus] ?? statusUI.provisioning;
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await fetch(`/api/copy-agent/retry-vps/${account.id}`, { method: "POST" });
+      onRetry?.();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 w-full">
@@ -232,6 +244,30 @@ function ManagedVpsCard({ account }: { account: CopyAccount & { vpsStatus?: stri
         <p className="mt-2 text-[12px] text-muted-foreground">
           Your dedicated VPS is being set up. It will automatically start executing trades once ready — no action needed.
         </p>
+      )}
+
+      {vpsStatus === "error" && (
+        <div className="mt-3 space-y-2">
+          {account.vpsError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2">
+              <p className="text-[11px] font-medium text-red-700 mb-0.5">Error details</p>
+              <p className="text-[11px] text-red-600 font-mono break-all">{account.vpsError}</p>
+              {account.vpsError.includes("Unauthorized IP") && (
+                <p className="text-[11px] text-red-700 mt-1.5 font-medium">
+                  Fix: In your Vultr account → Account → API → edit the API key → set <strong>Access Control</strong> to <em>Allow All</em> (or add this IP to the allowlist), then click Retry.
+                </p>
+              )}
+            </div>
+          )}
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="flex items-center gap-1.5 text-[12px] font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
+            {retrying ? "Retrying…" : "Retry provisioning"}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -1312,7 +1348,7 @@ function CopyTradingInner() {
   const [myTrader, setMyTrader] = useState<Trader | null>(null);
   const [subscriptions, setSubs] = useState<Subscription[]>([]);
   const [accounts, setAccounts] = useState<CopyAccount[]>([]);
-  const [vpsStatusMap, setVpsStatusMap] = useState<Record<number, { status: string; ipAddress: string | null }>>({});
+  const [vpsStatusMap, setVpsStatusMap] = useState<Record<number, { status: string; ipAddress: string | null; errorMessage: string | null }>>({});
   const [signals, setSignals] = useState<Signal[]>([]);
   const [copyTrades, setCopyTrades] = useState<CopyTrade[]>([]);
   const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
@@ -2378,7 +2414,9 @@ function CopyTradingInner() {
                   ...a,
                   vpsStatus: vpsStatusMap[a.id]?.status,
                   vpsIp:     vpsStatusMap[a.id]?.ipAddress ?? undefined,
+                  vpsError:  vpsStatusMap[a.id]?.errorMessage ?? null,
                 }}
+                onRetry={() => load()}
               />
             ))}
           </div>
