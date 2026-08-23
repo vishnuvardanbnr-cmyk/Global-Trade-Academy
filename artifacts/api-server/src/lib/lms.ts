@@ -222,7 +222,8 @@ export async function isEnrolled(userId: string, courseId: number): Promise<bool
  *            lessons[i > 0] additionally requires that lessons[i-1]'s gate is
  *            approved when lessons[i-1] has a linked quiz (gated lesson).
  *            If lessons[i-1] has no linked quiz, no gate is required.
- *            A missing gate row for a gated lesson is treated as BLOCKED
+ *            A lesson already completed by this user remains replayable even
+ *            while a later gate is awaiting review. A missing gate row for a gated lesson is treated as BLOCKED
  *            (not approved) — students cannot skip gates that haven't been
  *            created yet by bypassing the lesson completion flow.
  */
@@ -278,14 +279,30 @@ export async function getUnlockedLessonIds(
     .where(and(eq(lessonGatesTable.userId, userId), inArray(lessonGatesTable.lessonId, lessonIds)));
   const gateByLesson = new Map(gates.map((g) => [g.lessonId, g]));
 
+  // Completed lessons must always remain replayable. Without this exception,
+  // a pending gate on a later lesson could hide an earlier completed lesson
+  // from the curriculum after a reload.
+  const completedRows = await db
+    .select({ lessonId: lessonProgressTable.lessonId })
+    .from(lessonProgressTable)
+    .where(and(
+      eq(lessonProgressTable.userId, userId),
+      eq(lessonProgressTable.completed, true),
+      inArray(lessonProgressTable.lessonId, lessonIds),
+    ));
+  const completedIds = new Set(completedRows.map((row) => row.lessonId));
+
   // Step 4: Apply sequential gate ordering rule
-  const unlocked: number[] = [];
+  const unlocked = new Set<number>(completedIds);
   for (let i = 0; i < lessons.length; i++) {
     const l = lessons[i];
+    // Completion is permanent for replay purposes; drip timing only controls
+    // first access to lessons that have not been completed yet.
+    if (completedIds.has(l.id)) continue;
     if (!dripUnlocked.has(l.id)) continue;
 
     if (i === 0) {
-      unlocked.push(l.id);
+      unlocked.add(l.id);
       continue;
     }
 
@@ -294,19 +311,19 @@ export async function getUnlockedLessonIds(
 
     if (!prevIsGated) {
       // Previous lesson has no linked quiz → no gate required
-      unlocked.push(l.id);
+      unlocked.add(l.id);
     } else {
       // Previous lesson IS gated: must have an approved gate row to proceed.
       // Missing gate row (no gate created yet) counts as BLOCKED.
       const prevGate = gateByLesson.get(prevLesson.id);
       if (prevGate?.status === "approved") {
-        unlocked.push(l.id);
+        unlocked.add(l.id);
       }
       // awaiting_quiz | pending_review | rejected | missing → blocked
     }
   }
 
-  return unlocked;
+  return lessons.filter((lesson) => unlocked.has(lesson.id)).map((lesson) => lesson.id);
 }
 
 /**

@@ -1486,6 +1486,9 @@ export default function CourseDetail() {
 
   function lessonLocked(l: DbLesson): boolean {
     if (!isEnrolled) return !l.isFree;
+    // Completed lessons are always available for replay, even if the next
+    // lesson is waiting for quiz approval.
+    if (completedSet.has(l.id)) return false;
     if (progress?.unlockedLessonIds) return !unlockedSet.has(l.id);
     return false;
   }
